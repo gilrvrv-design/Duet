@@ -5,13 +5,14 @@ Errors use RFC 9457 problem details with stable codes (spec §6.3).
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
@@ -21,9 +22,11 @@ from duet.compose import CompositionRequest, compose
 from duet.compose.service import Composer, CompositionError
 from duet.difficulty import check_pianist, pianist_difficulty
 from duet.feasibility import check_robot
+from duet.jobs import TERMINAL, JobFailure, JobRunner, job_view
 from duet.kinematics import reachability
 from duet.midi_io import midi_to_score, score_to_midi_bytes
 from duet.profile import keyboard_profile, robot_profile
+from duet.progress import Progress, no_progress
 from duet.repair import repair_robot
 from duet.score import DuetScore
 
@@ -64,6 +67,8 @@ def create_app(
     app = FastAPI(title="Duet", version=__version__)
     store = store or store_from_env(os.environ.get("DUET_DB"))
     app.state.store = store
+    jobs = JobRunner(store)
+    app.state.jobs = jobs
 
     def get_composer() -> Composer:
         if composer_factory is not None:
@@ -143,14 +148,13 @@ def create_app(
         return {**duet_view(record), "changes": result.summary().splitlines()}
 
     # Compositions ------------------------------------------------------------
-    @app.post("/v1/compositions", status_code=201)
-    def create_composition(request: CompositionRequest):
+    def run_composition(request: CompositionRequest, progress: Progress) -> dict:
         try:
-            result = compose(request, get_composer())
+            result = compose(request, get_composer(), progress=progress)
         except CompositionError as exc:
-            raise Problem(502, "COMPOSITION_FAILED", str(exc)) from exc
+            raise JobFailure("COMPOSITION_FAILED", str(exc)) from exc
         except RuntimeError as exc:
-            raise Problem(502, "LLM_ERROR", str(exc)) from exc
+            raise JobFailure("LLM_ERROR", str(exc)) from exc
         record = store.add(
             "duet",
             result.score,
@@ -162,33 +166,76 @@ def create_app(
         )
         return duet_view(record)
 
+    @app.post("/v1/compositions", status_code=201)
+    def create_composition(request: CompositionRequest, background: bool = False):
+        if background:
+            return _accepted(jobs.submit("composition", lambda p: run_composition(request, p)))
+        return _sync(lambda: run_composition(request, no_progress))
+
     # Transcriptions ----------------------------------------------------------
+    def run_transcription(path: str, filename: str | None, route: str, progress: Progress) -> dict:
+        from duet.audio.io import AudioError
+        from duet.audio.pipeline import transcribe_file
+
+        try:
+            result = transcribe_file(path, route=route, progress=progress)
+        except AudioError as exc:
+            raise JobFailure("AUDIO_INVALID", str(exc)) from exc
+        except RuntimeError as exc:
+            raise JobFailure("ROUTE_UNAVAILABLE", str(exc)) from exc
+        finally:
+            Path(path).unlink(missing_ok=True)  # audio is not kept (FR-A10)
+        return _transcription_view(store.add("transcription", result, filename=filename))
+
     @app.post("/v1/transcriptions", status_code=201)
     async def create_transcription(
         file: Annotated[UploadFile, File()],
         rights_confirmed: Annotated[bool, Form()],
         route: Annotated[Literal["auto", "melody", "full"], Form()] = "auto",
+        background: bool = False,
     ):
         if not rights_confirmed:
             raise Problem(
                 422, "RIGHTS_NOT_CONFIRMED", "confirm you have the right to use this audio"
             )
-        from duet.audio.io import AudioError
-        from duet.audio.pipeline import transcribe_file
-
         data = await _read_upload(file)
         suffix = Path(file.filename or "upload.wav").suffix or ".wav"
-        with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:  # audio is not kept (FR-A10)
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(data)
-            tmp.flush()
-            try:
-                result = transcribe_file(tmp.name, route=route)
-            except AudioError as exc:
-                raise Problem(422, "AUDIO_INVALID", str(exc)) from exc
-            except RuntimeError as exc:
-                raise Problem(422, "ROUTE_UNAVAILABLE", str(exc)) from exc
-        record = store.add("transcription", result, filename=file.filename)
-        return _transcription_view(record)
+
+        def work(progress):
+            return run_transcription(tmp.name, file.filename, route, progress)
+
+        if background:
+            return _accepted(jobs.submit("transcription", work))
+        return _sync(lambda: work(no_progress))
+
+    # Jobs --------------------------------------------------------------------
+    @app.get("/v1/jobs/{job_id}")
+    def get_job(job_id: str):
+        return job_view(store.get("job", job_id))
+
+    @app.websocket("/v1/jobs/{job_id}/stream")
+    async def stream_job(websocket: WebSocket, job_id: str):
+        await websocket.accept()
+        sent = 0
+        try:
+            while True:
+                try:
+                    job = store.get("job", job_id)
+                except NotFound:
+                    await websocket.send_json({"error": {"code": "NOT_FOUND", "detail": job_id}})
+                    break
+                for event in job.meta["events"][sent:]:
+                    await websocket.send_json({"event": event})
+                sent = len(job.meta["events"])
+                if job.meta["state"] in TERMINAL:
+                    await websocket.send_json({"job": job_view(job)})
+                    break
+                await asyncio.sleep(0.05)
+        except WebSocketDisconnect:
+            return
+        await websocket.close()
 
     @app.get("/v1/transcriptions/{tid}")
     def get_transcription(tid: str):
@@ -228,6 +275,23 @@ def create_app(
         return duet_view(duet)
 
     return app
+
+
+SYNC_STATUS = {"AUDIO_INVALID": 422, "ROUTE_UNAVAILABLE": 422}
+
+
+def _sync(work):
+    """Run a job's work inline and turn its failure into a problem response."""
+    try:
+        return work()
+    except JobFailure as exc:
+        raise Problem(SYNC_STATUS.get(exc.code, 502), exc.code, exc.detail) from exc
+
+
+def _accepted(job) -> JSONResponse:
+    view = job_view(job)
+    view["links"] = {"self": f"/v1/jobs/{job.id}", "stream": f"/v1/jobs/{job.id}/stream"}
+    return JSONResponse(view, status_code=202)
 
 
 async def _read_upload(file: UploadFile) -> bytes:

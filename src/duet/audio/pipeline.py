@@ -11,6 +11,7 @@ from duet.audio.analysis import estimate_key, estimate_tempo, quantize
 from duet.audio.io import DEFAULT_SR, load_audio
 from duet.audio.melody import PyinTranscriber
 from duet.audio.notes import NoteEvent, Transcriber
+from duet.progress import Progress, no_progress
 
 TICKS = 480
 
@@ -63,6 +64,7 @@ def transcribe_file(
     transcriber: Transcriber | None = None,
     route: str = "auto",
     full_mix=None,
+    progress: Progress = no_progress,
 ) -> Transcription:
     """Transcribe a file. ``route`` is "melody", "full" or "auto" (spec FR-A3).
 
@@ -71,24 +73,33 @@ def transcribe_file(
     """
     from duet.audio import fullmix
 
+    progress("decoding", 0.0)
     audio, sr = load_audio(path, DEFAULT_SR)
+    progress("analysing", 0.1)
     if route == "auto":
         polyphonic = fullmix.looks_polyphonic(audio, sr)
         available = full_mix is not None or fullmix.full_mix_available()
         route = "full" if polyphonic and available else "melody"
         if polyphonic and not available:
+            progress("transcribing:melody", 0.2)
             result = transcribe(audio, sr, transcriber)
             result.warnings.append(
                 "this sounds like more than one voice; "
                 "install the full-mix route for better results"
             )
+            progress("ready", 1.0)
             return result
     if route == "melody":
-        return transcribe(audio, sr, transcriber)
+        progress("transcribing:melody", 0.2)
+        result = transcribe(audio, sr, transcriber)
+        progress("ready", 1.0)
+        return result
     if route != "full":
         raise ValueError(f"unknown route: {route}")
     full_mix = full_mix or fullmix.default_full_mix()
+    progress("separating", 0.2)
     notes, stems = full_mix.transcribe_path(Path(path))
+    progress("rhythm", 0.9)
     result = Transcription(
         notes=notes,
         tempo_bpm=estimate_tempo(notes, audio, sr),
@@ -99,6 +110,7 @@ def transcribe_file(
     )
     if not notes:
         result.warnings.append("no notes found in any stem")
+    progress("ready", 1.0)
     return result
 
 

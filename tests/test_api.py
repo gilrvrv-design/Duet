@@ -97,3 +97,60 @@ def test_transcription_and_arrangement(client):
     junk = {"file": ("junk.mp3", b"not audio", "audio/mpeg")}
     bad = client.post("/v1/transcriptions", files=junk, data={"rights_confirmed": "true"})
     assert bad.status_code == 422 and bad.json()["code"] == "AUDIO_INVALID"
+
+
+def wait_for(client, job_id, timeout=30):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = client.get(f"/v1/jobs/{job_id}").json()
+        if job["state"] in ("succeeded", "failed"):
+            return job
+        time.sleep(0.02)
+    raise AssertionError("job did not finish")
+
+
+def test_background_composition_with_stream(client):
+    accepted = client.post(
+        "/v1/compositions?background=true", json={"prompt": "happy", "difficulty": 1, "bars": 2}
+    )
+    assert accepted.status_code == 202
+    job = accepted.json()
+    assert job["links"]["stream"] == f"/v1/jobs/{job['id']}/stream"
+    with client.websocket_connect(job["links"]["stream"]) as ws:
+        messages = []
+        while True:
+            message = ws.receive_json()
+            messages.append(message)
+            if "job" in message:
+                break
+    stages = [m["event"]["stage"] for m in messages if "event" in m]
+    assert stages[:2] == ["queued", "started"] and stages[-1] == "done"
+    assert "drafting" in stages and "checking" in stages and "ready" in stages
+    assert [m["event"]["seq"] for m in messages if "event" in m] == list(range(len(stages)))
+    final = messages[-1]["job"]
+    assert final["state"] == "succeeded" and final["progress"] == 1.0
+    duet_id = final["result"]["id"]
+    assert client.get(f"/v1/duets/{duet_id}").json()["robot_playable"]
+
+
+def test_background_transcription_and_failure(client):
+    buffer = io.BytesIO()
+    soundfile.write(buffer, synth([(72, 0, 0.4), (76, 0.5, 0.4)]), 22050, format="WAV")
+    files = {"file": ("two.wav", buffer.getvalue(), "audio/wav")}
+    data = {"rights_confirmed": "true", "route": "melody"}
+    job = client.post("/v1/transcriptions?background=true", files=files, data=data).json()
+    done = wait_for(client, job["id"])
+    assert done["state"] == "succeeded" and done["result"]["notes"] == 2
+
+    junk = {"file": ("junk.mp3", b"not audio", "audio/mpeg")}
+    job = client.post("/v1/transcriptions?background=true", files=junk, data=data).json()
+    failed = wait_for(client, job["id"])
+    assert failed["state"] == "failed" and failed["error"]["code"] == "AUDIO_INVALID"
+
+
+def test_unknown_job(client):
+    assert client.get("/v1/jobs/job_missing").status_code == 404
+    with client.websocket_connect("/v1/jobs/job_missing/stream") as ws:
+        assert ws.receive_json()["error"]["code"] == "NOT_FOUND"

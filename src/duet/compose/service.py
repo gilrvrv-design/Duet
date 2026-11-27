@@ -16,6 +16,7 @@ from duet.compose.prompts import feedback_message, request_message, system_promp
 from duet.difficulty import check_pianist, pianist_difficulty
 from duet.feasibility import check_robot
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
+from duet.progress import Progress, no_progress
 from duet.repair import Change, repair_robot
 from duet.score import DuetScore
 
@@ -64,6 +65,7 @@ def compose(
     robot: RobotProfile | None = None,
     keyboard: KeyboardProfile | None = None,
     max_rounds: int = MAX_FEEDBACK_ROUNDS,
+    progress: Progress = no_progress,
 ) -> CompositionResult:
     robot = robot or robot_profile()
     keyboard = keyboard or keyboard_profile()
@@ -85,7 +87,10 @@ def compose(
     best: tuple[DuetScore, str] | None = None
     history: list[list[str]] = []
     for round_no in range(1, max_rounds + 2):  # first draft plus feedback rounds
+        total = max_rounds + 1
+        progress("drafting" if round_no == 1 else f"revising:{round_no}", (round_no - 1) / total)
         text = composer.write(system, messages)
+        progress("checking", (round_no - 0.5) / total)
         messages.append({"role": "assistant", "content": text})
         try:
             score, explanation = draft_to_score(
@@ -101,6 +106,7 @@ def compose(
             problems = check_robot(score, robot).feedback().splitlines()
             problems += check_pianist(score, keyboard)
             if not problems:
+                progress("ready", 1.0)
                 return CompositionResult(score, explanation, round_no, history)
             messages[-1]["content"] = score_to_draft(score, explanation)
         history.append(problems)
@@ -110,7 +116,10 @@ def compose(
         raise CompositionError(
             "the composer never produced a valid score:\n" + "\n".join(history[-1])
         )
-    return _finish(best, robot, keyboard, rounds=max_rounds + 1, history=history)
+    progress("repairing", None)
+    result = _finish(best, robot, keyboard, rounds=max_rounds + 1, history=history)
+    progress("ready", 1.0)
+    return result
 
 
 def _finish(best, robot, keyboard, rounds, history) -> CompositionResult:
