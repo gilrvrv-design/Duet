@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from duet.listening import PlayedNote
+from duet.listening import PlayedNote, wait_for_pitches
 from duet.pitch import midi_to_hz
 from duet.profile import RobotProfile
 
@@ -24,6 +24,10 @@ HOP = 256
 ROBOT_WINDOW_US = 50_000  # an attack this close to a strike may be the bottle
 MIN_GAP_US = 80_000  # two attacks closer than this are one note
 MASK_SEMITONES = 0.6
+SETTLE_S = 0.04  # a note is named this long after its attack, once the hammer noise fades
+KEEP_S = 1.0  # audio kept behind the analysis point; older audio is dropped
+REANCHOR_US = 20_000  # a block this far from where it should start means audio was lost
+POLL_US = 10_000
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,7 @@ class MicListener:
     robot_sounds: list[RobotSound] = field(default_factory=list)
     _buffer: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
     _buffer_t0: int = 0
+    _dropped: int = 0  # samples trimmed from the front; all positions are absolute
     _prev_mag: np.ndarray | None = None
     _frame_index: int = 0
     _flux_peak: float = 1e-9
@@ -56,14 +61,14 @@ class MicListener:
     # streaming ----------------------------------------------------------------
     def feed(self, samples: np.ndarray, t0_us: int | None = None) -> list[PlayedNote]:
         """Add a block of mono samples starting at clock time ``t0_us``; return new notes."""
-        if self._buffer.size == 0 and t0_us is not None:
-            self._buffer_t0 = t0_us
+        if t0_us is not None:
+            self._anchor(t0_us)
         self._buffer = np.concatenate([self._buffer, samples.astype(np.float32)])
         notes = []
         window = np.hanning(ONSET_FRAME)
-        while (self._frame_index + 1) * HOP + ONSET_FRAME <= self._buffer.size:
+        while (self._frame_index + 1) * HOP + ONSET_FRAME <= self._end:
             start = self._frame_index * HOP
-            mag = np.abs(np.fft.rfft(self._buffer[start : start + ONSET_FRAME] * window))
+            mag = np.abs(np.fft.rfft(self._audio(start, start + ONSET_FRAME) * window))
             if self._prev_mag is not None:
                 flux = float(np.sum(np.maximum(0, np.log1p(mag) - np.log1p(self._prev_mag))))
                 energy = float(np.sum(mag**2))
@@ -87,13 +92,43 @@ class MicListener:
             self._prev_mag = mag
             self._frame_index += 1
             notes += self._resolve_pending()
+        self._trim()
         return notes
+
+    # buffer --------------------------------------------------------------------
+    @property
+    def _end(self) -> int:
+        """Absolute position just after the last sample received."""
+        return self._dropped + self._buffer.size
+
+    def _audio(self, start: int, stop: int) -> np.ndarray:
+        """Samples at absolute positions ``start``..``stop`` (what is still kept)."""
+        return self._buffer[max(0, start - self._dropped) : max(0, stop - self._dropped)]
+
+    def _anchor(self, t0_us: int) -> None:
+        """Pin the clock to a block's start time: at the first block, and again whenever
+        the source says a block starts somewhere else than where the audio got to (the
+        driver dropped samples), so timing does not slip for the rest of the session."""
+        if self._end == 0:
+            self._buffer_t0 = t0_us
+            return
+        slip = t0_us - self._time_of(self._end)
+        if abs(slip) > REANCHOR_US:
+            self._buffer_t0 += slip
+
+    def _trim(self) -> None:
+        """Drop audio nothing will read again, so a long session uses constant memory."""
+        keep = [self._frame_index * HOP - HOP] + [p - FRAME for p in self._pending]
+        cut = min(keep) - round(KEEP_S * self.sr)
+        if cut - self._dropped > 0:
+            self._buffer = self._buffer[cut - self._dropped :].copy()
+            self._dropped = cut
 
     def _attack_sample(self, frame_start: int) -> int:
         """Where in the window the attack really is: the first sample above half of the
         level the attack reaches (the window only says "somewhere in here")."""
         lo = max(0, frame_start - HOP)
-        region = np.abs(self._buffer[lo : frame_start + ONSET_FRAME + HOP])
+        region = np.abs(self._audio(lo, frame_start + ONSET_FRAME + HOP))
         if region.size == 0:
             return frame_start
         before = float(np.percentile(region[:HOP], 90)) if region.size > HOP else 0.0
@@ -107,9 +142,9 @@ class MicListener:
     def _resolve_pending(self) -> list[PlayedNote]:
         """Name each attack once 40 ms of audio after it has arrived."""
         out, keep = [], []
-        settle = int(0.04 * self.sr)
+        settle = int(SETTLE_S * self.sr)
         for start in self._pending:
-            if start + settle + FRAME > self._buffer.size:
+            if start + settle + FRAME > self._end:
                 keep.append(start)
                 continue
             note = self._name_note(start)
@@ -121,11 +156,11 @@ class MicListener:
     # pitch --------------------------------------------------------------------
     def _name_note(self, start: int) -> PlayedNote | None:
         t_us = self._time_of(start)  # ``start`` is the attack sample
-        settle = int(0.04 * self.sr)
-        segment = self._buffer[start + settle : start + settle + FRAME]
+        settle = int(SETTLE_S * self.sr)
+        segment = self._audio(start + settle, start + settle + FRAME)
         window = np.hanning(FRAME)
         after = np.abs(np.fft.rfft(segment * window, 4 * FRAME))
-        before_audio = self._buffer[max(0, start - FRAME) : start]
+        before_audio = self._audio(max(0, start - FRAME), start)
         before = np.zeros_like(after)
         if before_audio.size == FRAME:
             before = np.abs(np.fft.rfft(before_audio * window, 4 * FRAME))
@@ -198,6 +233,7 @@ class MicKeys:
 
     listener: MicListener
     source: object
+    timeout_s: float | None = None  # None: wait as long as it takes
     played: list[PlayedNote] = field(default_factory=list)
 
     def poll(self, clock) -> list[PlayedNote]:
@@ -211,18 +247,10 @@ class MicKeys:
         self.listener.robot_sounds.append(RobotSound(t_us, pitch))
 
     def next_event_us(self, clock) -> int:
-        return clock.now_us() + 10_000
+        return clock.now_us() + POLL_US
 
     def wait_for(self, pitches, since_us, clock) -> int:
-        while True:
-            self.poll(clock)
-            times = {}
-            for note in self.played:
-                if note.t_us >= since_us and note.pitch in pitches:
-                    times.setdefault(note.pitch, note.t_us)
-            if len(times) == len(pitches):
-                return max(times.values())
-            clock.sleep_until(clock.now_us() + 10_000)
+        return wait_for_pitches(self, pitches, since_us, clock, self.timeout_s, POLL_US)
 
 
 class SoundDeviceSource:
@@ -230,6 +258,8 @@ class SoundDeviceSource:
 
     Blocks are stamped with the Hub clock when they arrive, minus their length, which
     is accurate to the audio driver's latency (a few ms; calibrate it like the strikes).
+    Every read gives the first block's time, so the listener re-anchors after the driver
+    drops audio; ``overflows`` counts the blocks PortAudio flagged.
     """
 
     def __init__(self, sr: int = 22050, device=None, block: int = 512) -> None:
@@ -241,9 +271,11 @@ class SoundDeviceSource:
 
         self._queue: queue.Queue = queue.Queue()
         self._now = hub_now_us
-        self._first = True
+        self.overflows = 0
 
-        def callback(indata, frames, _time, _status):
+        def callback(indata, frames, _time, status):
+            if status:
+                self.overflows += 1
             self._queue.put((indata[:, 0].copy(), self._now() - round(frames / sr * 1e6)))
 
         self._stream = sounddevice.InputStream(
@@ -262,9 +294,7 @@ class SoundDeviceSource:
             blocks.append(self._queue.get_nowait())
         if not blocks:
             return np.zeros(0, np.float32), None
-        t0 = blocks[0][1] if self._first else None
-        self._first = False
-        return np.concatenate([b for b, _ in blocks]), t0
+        return np.concatenate([b for b, _ in blocks]), blocks[0][1]
 
     def close(self) -> None:
         self._stream.stop()

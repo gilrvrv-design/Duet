@@ -7,13 +7,14 @@ of time, so jitter on the link does not reach the music.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Protocol
 
 from duet.device.clock import hub_now_us
 from duet.listening import KeyInput
-from duet.plans import HOME_STEPS, LedCue, led_plan, robot_plan
+from duet.plans import HOME_STEPS, LedCue, RobotPlan, led_plan, robot_plan
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import Home, LedFrameAt, Message, MoveAt, StrikeAt, message_time_us
 from duet.score import DuetScore
@@ -106,13 +107,15 @@ def build_messages(
     start_us: int,
     start_steps: int = HOME_STEPS,
     count_in: bool = True,
+    plan: RobotPlan | None = None,
 ) -> tuple[list[Message], list[PlannedNote]]:
-    """All device messages for one performance, sorted by time."""
+    """All device messages for one performance, sorted by time. Pass ``plan`` when it
+    was already made from the same score, robot and start position."""
 
     def us(seconds: float) -> int:
         return start_us + round(seconds * 1_000_000)
 
-    plan = robot_plan(score, robot, start_steps)
+    plan = plan or robot_plan(score, robot, start_steps)
     kin = robot.kinematics
     spb = seconds_per_beat(score.meta.tempo_bpm)
     messages: list[Message] = []
@@ -181,19 +184,20 @@ def perform(
     perf.start_us = earliest if start_at_us is None else max(start_at_us, earliest)
     perf.end_steps = plan.commands[-1].target_steps if plan.commands else start_steps
     messages, perf.planned = build_messages(
-        score, robot, keyboard, perf.start_us, start_steps, count_in
+        score, robot, keyboard, perf.start_us, start_steps, count_in, plan
     )
 
     perf.states.append(State.COUNT_IN)
-    sender = _Sender(devices, keys, perf, robot)
+    sender = _Sender(devices, keys, perf, robot, start_steps)
     if keys is not None and mode == "follow":
         return _follow(perf, messages, score, robot, sender, clock, keys)
     gates = _gates(perf.planned) if keys is not None else []
     shifts: list[tuple[int, int]] = []  # (original gate time, total delay from then on)
     delay = 0
-    playing = False
     lookahead_us = round(lookahead_s * 1_000_000)
-    for msg in messages:
+
+    def wait_for_pianist(msg: Message) -> None:
+        nonlocal delay
         while gates and message_time_us(msg) >= gates[0][0]:
             # Nothing at or after the next pianist note is sent until it is played,
             # because its time is not known yet (wait mode, FR-P2).
@@ -205,13 +209,21 @@ def perform(
             delay += max(0, pressed - cue)
             shifts.append((gate_t, delay))
             perf.states.append(State.PLAYING)
-        t = message_time_us(msg) + delay
-        clock.sleep_until(t - lookahead_us)
-        if not playing and clock.now_us() >= perf.start_us - lookahead_us:
+
+    def send(msg: Message) -> None:
+        if State.PLAYING not in perf.states and clock.now_us() >= perf.start_us - lookahead_us:
             perf.states.append(State.PLAYING)
-            playing = True
-        sender.send(replace(msg, t_us=t) if delay else msg)
-    if not playing:
+        sender.send(msg)
+
+    stream(
+        messages,
+        clock,
+        lookahead_us,
+        send,
+        before=wait_for_pianist,
+        time_of=lambda m: message_time_us(m) + delay,
+    )
+    if State.PLAYING not in perf.states:
         perf.states.append(State.PLAYING)
     perf.waited_us = delay
     if keys is not None:
@@ -221,26 +233,53 @@ def perform(
     return perf
 
 
+def stream(
+    messages: list[Message],
+    clock: Clock,
+    lookahead_us: int,
+    send: Callable[[Message], None],
+    before: Callable[[Message], None] | None = None,
+    time_of: Callable[[Message], int] = message_time_us,
+) -> None:
+    """Send each message ``lookahead_us`` before its time. ``before`` runs first for each
+    message (wait mode blocks there for the pianist); ``time_of`` gives its final time."""
+    for msg in messages:
+        if before is not None:
+            before(msg)
+        t = time_of(msg)
+        clock.sleep_until(t - lookahead_us)
+        send(msg if t == message_time_us(msg) else replace(msg, t_us=t))
+
+
 class _Sender:
     """Sends to every device, and tells a listening key input when the robot will sound,
-    so a microphone can tell the bottles from the piano (FR-H2)."""
+    so a microphone can tell the bottles from the piano (FR-H2).
 
-    def __init__(self, devices, keys, perf: Performance, robot: RobotProfile) -> None:
+    A strike's pitch is the bottle the carriage was last sent to: what will really
+    sound, whatever order or timing the messages are sent in."""
+
+    def __init__(
+        self, devices, keys, perf: Performance, robot: RobotProfile, start_steps: int
+    ) -> None:
         self.devices = devices
         self.perf = perf
         self.hook = getattr(keys, "robot_strike", None)
-        self.pitches = [p.pitch for p in perf.planned if p.part == "robot"]
+        self.pitch_at = {
+            note.steps: pitch for pitch, note in zip(robot.pitches, robot.notes, strict=True)
+        }
+        self.position = start_steps
         self.latency_us = round(robot.striker.latency_ms * 1000)
-        self.strikes = 0
 
     def send(self, msg: Message) -> None:
         for device in self.devices:
             device.send(msg)
         self.perf.messages_sent += 1
-        if isinstance(msg, StrikeAt):
-            if self.hook is not None and self.strikes < len(self.pitches):
-                self.hook(msg.t_us + self.latency_us, self.pitches[self.strikes])
-            self.strikes += 1
+        if isinstance(msg, MoveAt):
+            self.position = msg.target_steps
+        elif isinstance(msg, StrikeAt) and self.hook is not None:
+            pitch = self.pitch_at.get(self.position)
+            if pitch is not None:
+                self.hook(msg.t_us + self.latency_us, pitch)
 
 
 EARLY_PRESS_US = 300_000  # a key pressed this soon before its cue still counts

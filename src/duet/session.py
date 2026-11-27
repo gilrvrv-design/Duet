@@ -18,6 +18,8 @@ from duet.respond import PhraseNote, Responder, capture, reply_score
 
 YOUR_TURN = (0, 40, 90)  # a soft blue over the whole strip
 OFF = (0, 0, 0)
+REPOSITION_LEAD_US = 20_000  # a move is sent this far ahead of when it should start
+REPLY_BUFFER_S = 0.05  # the answer starts this soon after the pianist's turn ends
 
 
 @dataclass
@@ -80,7 +82,7 @@ def call_and_response(
                 count_in=False,
                 start_steps=position,
                 start_at_us=end,
-                buffer_s=0.05,
+                buffer_s=REPLY_BUFFER_S,
             )
             position, reply_at = perf.end_steps, perf.start_us
         session.turns.append(Turn(phrase, kind, notes, start, end, reply_at))
@@ -105,7 +107,7 @@ def _listen_and_preposition(keys, clock, start, end, responder, robot, devices, 
         target = robot.notes[guess].steps
         if target == position:
             return
-        t = now + 20_000
+        t = now + REPOSITION_LEAD_US
         for device in devices:
             device.send(MoveAt(t, target, kin.v_max_mm_s, kin.a_max_mm_s2))
         busy_until = t + round(move_time_s(position, target, kin) * 1_000_000)

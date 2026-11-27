@@ -8,7 +8,6 @@ performance can be graded afterwards (FR-H4, FR-E4).
 from __future__ import annotations
 
 import statistics
-import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -85,21 +84,34 @@ class MidiKeys:
         return new
 
     def next_event_us(self, clock: Clock) -> int:
-        return clock.now_us() + 2000  # poll the keyboard every 2 ms
+        return clock.now_us() + MIDI_POLL_US
 
     def wait_for(self, pitches, since_us, clock) -> int:
-        deadline = None if self.timeout_s is None else clock.now_us() + self.timeout_s * 1e6
-        while True:
-            self.poll(clock)
-            times = {}
-            for note in self.played:
-                if note.t_us >= since_us and note.pitch in pitches:
-                    times.setdefault(note.pitch, note.t_us)
-            if len(times) == len(pitches):
-                return max(times.values())
-            if deadline is not None and clock.now_us() >= deadline:
-                return clock.now_us()  # give up on this note and play on
-            time.sleep(0.001)
+        return wait_for_pitches(self, pitches, since_us, clock, self.timeout_s, MIDI_POLL_US)
+
+
+MIDI_POLL_US = 2000
+
+
+def wait_for_pitches(keys, pitches, since_us: int, clock, timeout_s: float | None, poll_us: int):
+    """Poll ``keys`` until every pitch was played since ``since_us``; return when the last
+    of them was. After ``timeout_s`` give up on the note and return the time now, so the
+    music plays on. Waits on ``clock``, so a virtual clock never really sleeps."""
+    deadline = None if timeout_s is None else clock.now_us() + round(timeout_s * 1_000_000)
+    wanted = set(pitches)
+    while True:
+        keys.poll(clock)
+        times: dict[int, int] = {}
+        for note in keys.played:
+            if note.t_us >= since_us and note.pitch in wanted:
+                times.setdefault(note.pitch, note.t_us)
+        if len(times) == len(wanted):
+            return max(times.values())
+        now = clock.now_us()
+        if deadline is not None and now >= deadline:
+            return now
+        wake = now + poll_us
+        clock.sleep_until(wake if deadline is None else min(wake, deadline))
 
 
 # Grading --------------------------------------------------------------------

@@ -14,6 +14,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+MIN_DRIFT_SPAN_US = 200_000  # syncs closer together than this say nothing about drift
+DRIFT_SMOOTHING = 0.5  # weight of the previous drift estimate against the new one
+
 
 def hub_now_us() -> int:
     """The Hub clock: monotonic microseconds. Everything on the Hub uses this one."""
@@ -68,7 +71,8 @@ def best_sync(samples: list[SyncSample], previous: ClockSync | None = None) -> C
     best = min(samples, key=lambda s: s.delay_us)
     at = (best.t1 + best.t4) // 2
     drift = 0.0
-    if previous is not None and at - previous.at_hub_us > 200_000:
+    if previous is not None and at - previous.at_hub_us > MIN_DRIFT_SPAN_US:
         drift = (best.offset_us - previous.offset_us) / (at - previous.at_hub_us) * 1e6
-        drift = 0.5 * previous.drift_ppm + 0.5 * drift if previous.drift_ppm else drift
+        if previous.drift_ppm:
+            drift = DRIFT_SMOOTHING * previous.drift_ppm + (1 - DRIFT_SMOOTHING) * drift
     return ClockSync(round(best.offset_us), best.delay_us, len(samples), at, round(drift, 3))

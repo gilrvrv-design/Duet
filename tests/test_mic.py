@@ -137,3 +137,36 @@ def test_conductor_tells_the_microphone_about_every_strike():
     rig.run()
     told = [(s.t_us, s.pitch) for s in keys.listener.robot_sounds]
     assert told == [(s.t_us, s.pitch) for s in rig.sounds]
+
+
+def test_a_long_session_keeps_only_recent_audio():
+    listener = MicListener(SR)
+    audio = np.zeros(SR * 30, np.float32)
+    piano(audio, 64, 29.0)
+    notes = listen(audio, listener)
+    assert [n.pitch for n in notes] == [64]
+    assert abs(notes[0].t_us - 29_000_000) < 15_000
+    assert listener._buffer.size < 3 * SR  # not 30 s of audio
+
+
+def test_lost_audio_re_anchors_the_clock():
+    """The driver dropped half a second: the next block's time stamp says so."""
+    listener = MicListener(SR)
+    listener.feed(np.zeros(SR, np.float32), 0)
+    audio = np.zeros(SR, np.float32)
+    piano(audio, 67, 0.25)
+    notes = listener.feed(audio, 1_500_000) + listener.feed(np.zeros(FRAME_PAD, np.float32))
+    assert [n.pitch for n in notes] == [67]
+    assert abs(notes[0].t_us - 1_750_000) < 15_000
+
+
+def test_mic_keys_give_up_on_a_note_after_the_timeout():
+    from duet.conductor import VirtualClock
+
+    class Silent:
+        def read(self):
+            return np.zeros(0, np.float32), None
+
+    clock = VirtualClock(0)
+    keys = MicKeys(MicListener(SR), Silent(), timeout_s=0.5)
+    assert keys.wait_for(frozenset({60}), 0, clock) == 500_000  # no real waiting

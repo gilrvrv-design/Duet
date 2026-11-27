@@ -11,7 +11,7 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 
-from duet.conductor import Clock, Device, Performance, build_messages, home_all
+from duet.conductor import Clock, Device, Performance, build_messages, home_all, stream
 from duet.midi_io import TrackNote
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import message_time_us
@@ -161,41 +161,51 @@ def perform_ensemble(
     """Home every rig, start everyone at the same moment, and stream one time-ordered
     message list, each message to its own player's devices."""
     from duet.plans import robot_plan
+    from duet.protocol import LedFrameAt
 
     home_all([d for p in players for d in p.devices])
+    silent = _silent_robot(players)
+    plans = {p.instrument.name: robot_plan(p.score, p.instrument.robot or silent) for p in players}
     first = players[0].score
     count_in_s = first.meta.beats_per_bar * seconds_per_beat(first.meta.tempo_bpm)
     preroll = max(
-        (
-            robot_plan(p.score, p.instrument.robot).preroll_s
-            for p in players
-            if p.instrument.is_robot
-        ),
+        (plans[p.instrument.name].preroll_s for p in players if p.instrument.is_robot),
         default=0.0,
     )
     start = clock.now_us() + round((buffer_s + max(count_in_s, preroll)) * 1_000_000)
-    stream, results = [], {}
+    timeline, results, owner = [], {}, {}
     # The lights show the person's part and count everyone in, once.
     lights = next((p for p in players if not p.instrument.is_robot), None)
     for p in players:
-        profile = p.instrument.robot or _silent_robot(players)
         messages, planned = build_messages(
-            p.score, profile, keyboard, start, count_in=p is (lights or players[0])
+            p.score,
+            p.instrument.robot or silent,
+            keyboard,
+            start,
+            count_in=p is (lights or players[0]),
+            plan=plans[p.instrument.name],
         )
         if p.instrument.is_robot and lights is not None:
-            from duet.protocol import LedFrameAt
-
             messages = [m for m in messages if not isinstance(m, LedFrameAt)]
         results[p.instrument.name] = Performance(start_us=start, planned=planned)
-        stream += [(message_time_us(m), i, m, p) for i, m in enumerate(messages)]
-    for t, _, msg, player in sorted(stream, key=lambda s: (s[0], s[1])):
-        clock.sleep_until(t - round(lookahead_s * 1_000_000))
+        for i, m in enumerate(messages):
+            timeline.append((message_time_us(m), i, m))
+            owner[id(m)] = p
+    timeline.sort(key=lambda s: (s[0], s[1]))
+
+    def send(msg) -> None:
+        player = owner[id(msg)]
         for device in player.devices:
             device.send(msg)
         results[player.instrument.name].messages_sent += 1
+
+    stream([m for _, _, m in timeline], clock, round(lookahead_s * 1_000_000), send)
     return results
 
 
 def _silent_robot(players: list[Player]) -> RobotProfile:
     """A person's part has no robot notes, but planning needs a profile: any robot's."""
-    return next(p.instrument.robot for p in players if p.instrument.is_robot)
+    robot = next((p.instrument.robot for p in players if p.instrument.is_robot), None)
+    if robot is None:
+        raise ValueError("an ensemble needs at least one robot")
+    return robot
