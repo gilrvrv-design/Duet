@@ -41,24 +41,34 @@ tests/
 
 ## Deliveries
 
+| # | Delivery | Spec | Test that proves it | Status |
+|---|---|---|---|---|
+| 0 | Project skeleton: package, `make check`, lint, CI | — | `pytest` runs; CI green | Done |
+| 1 | Pitch utilities | §4.1 | Note names round-trip; A4 = 440 Hz | Done |
+| 2 | DuetScore model with validation | §4.1, FR-S1, FR-S2 | Valid JSON loads; bad bars, beats, pitches rejected | Done |
+| 3 | Timing: bar/beat → seconds | FR-S6 | Known events land at known times | Done |
+| 4 | Instrument profile + kinematics + reachability matrix | §5.3 FR-R1, §7.2 | Travel time matches hand-worked trapezoid maths | Done |
+| 5 | Robot feasibility checker | FR-S3 | Each rule triggers on a crafted score and passes on a good one | Done |
+| 6 | Deterministic repair | FR-S4 | Infeasible score becomes feasible; every change logged | Done |
+| 7 | Pianist difficulty score | FR-S5 | Harder parts score higher; range violations reported | Done |
+| 8 | MIDI export and import | FR-S6, FR-S7 | DuetScore → MIDI → DuetScore round-trip | Done |
+| 9 | Robot plan and LED plan | FR-S6, §5.3, §5.4 | Move starts before strikes; LED indices match keys | Done |
+| 10 | Simulated rig + fixed-tempo conductor + CLI (**tracer bullet**) | §5.5, §5.10 | `duet play song.mid --sim` performs; event log matches plan | Done |
+| 11 | Composition service with a fake LLM and the validate–repair loop | §5.1 | Fake LLM's bad draft gets repaired; feedback loop runs | Done |
+| 12 | Claude provider for composition | §5.1 FR-C3 | Unit test with a stubbed client; live test skipped without a key | Done |
+| 13 | Audio → MIDI, melody route (pYIN) with `Transcriber` interface | §5.14 FR-A3 | A synthesized tune is transcribed to the right notes | Done |
+| 14 | Arranger: transcription → playable DuetScore | §5.14.3 | Transcribed melody fits the bottles and passes feasibility | Done |
+| 15 | REST API for compositions, transcriptions and MIDI download | §6 | API tests with the test client | Done |
+| 16 | Full-mix route adapters (Demucs, Basic Pitch) as optional extras | §5.14 | Adapter tests skipped unless the extras are installed | Done |
+
+## Next deliveries
+
 | # | Delivery | Spec | Test that proves it |
 |---|---|---|---|
-| 0 | Project skeleton: package, `make check`, lint, CI | — | `pytest` runs; CI green |
-| 1 | Pitch utilities | §4.1 | Note names round-trip; A4 = 440 Hz |
-| 2 | DuetScore model with validation | §4.1, FR-S1, FR-S2 | Valid JSON loads; bad bars, beats, pitches rejected |
-| 3 | Timing: bar/beat → seconds | FR-S6 | Known events land at known times |
-| 4 | Instrument profile + kinematics + reachability matrix | §5.3 FR-R1, §7.2 | Travel time matches hand-worked trapezoid maths |
-| 5 | Robot feasibility checker | FR-S3 | Each rule triggers on a crafted score and passes on a good one |
-| 6 | Deterministic repair | FR-S4 | Infeasible score becomes feasible; every change logged |
-| 7 | Pianist difficulty score | FR-S5 | Harder parts score higher; range violations reported |
-| 8 | MIDI export and import | FR-S6, FR-S7 | DuetScore → MIDI → DuetScore round-trip |
-| 9 | Robot plan and LED plan | FR-S6, §5.3, §5.4 | Move starts before strikes; LED indices match keys |
-| 10 | Simulated rig + fixed-tempo conductor + CLI (**tracer bullet**) | §5.5, §5.10 | `duet play song.mid --sim` performs; event log matches plan |
-| 11 | Composition service with a fake LLM and the validate–repair loop | §5.1 | Fake LLM's bad draft gets repaired; feedback loop runs |
-| 12 | Claude provider for composition | §5.1 FR-C3 | Unit test with a stubbed client; live test skipped without a key |
-| 13 | Audio → MIDI, melody route (pYIN) with `Transcriber` interface | §5.14 FR-A3 | A synthesized tune is transcribed to the right notes |
-| 14 | Arranger: transcription → playable DuetScore | §5.14.3 | Transcribed melody fits the bottles and passes feasibility |
-| 15 | REST API for compositions, transcriptions and MIDI download | §6 | API tests with the test client |
-| 16 | Full-mix route adapters (Demucs, Basic Pitch) as optional extras | §5.14 | Adapter tests skipped unless the extras are installed |
-
-Later deliveries (device firmware, WebSocket gateway, listening engine, pedagogy) follow the phases in the spec.
+| 17 | Persistent store (SQLite/Postgres) behind the `MemoryStore` interface | §4.2 | API tests run against both stores |
+| 18 | Async jobs for composition and transcription, with progress streams | §6.2, FR-A5 | Job states and stream events in order |
+| 19 | WebSocket device gateway and clock sync with the simulated rig over a real socket | §5.10 | Sync error under 2 ms on localhost |
+| 20 | ESP32 firmware executor for `move_at` / `strike_at` / `led_frame_at` | §5.10 | Hardware-in-the-loop timing test |
+| 21 | Calibration: bottle positions, measured pitch, strike latency | §5.11 | Recorded strikes update the profile |
+| 22 | Listening engine: MIDI input, hit grading, wait mode | §5.6 | Recorded performance graded correctly |
+| 23 | Composition evaluation set and gate | §9.3 | Pass rate reported per prompt-pack change |

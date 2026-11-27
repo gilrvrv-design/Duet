@@ -4,12 +4,75 @@ Back end for **Duet**: you describe a song (or hand it an audio file), the syste
 a robot plays one part on eight tuned glass bottles, and you play the other on a piano by following a strip of lights.
 
 - Functional spec: [docs/backend-functional-spec.md](docs/backend-functional-spec.md)
-- Implementation plan: [docs/implementation-plan.md](docs/implementation-plan.md)
+- Implementation plan and status: [docs/implementation-plan.md](docs/implementation-plan.md)
 
-## Development
+## Setup
+
+Needs Python 3.12+, [uv](https://docs.astral.sh/uv/) and FFmpeg (for MP3, M4A and video files).
 
 ```bash
 make install
+```
+
+```bash
 source .venv/bin/activate
+```
+
+```bash
 make check
 ```
+
+## Command line
+
+Check whether the robot can play a score, and see the pianist's level:
+
+```bash
+duet check examples/rain-on-the-bottles.json
+```
+
+Perform it on the simulated rig:
+
+```bash
+duet play examples/rain-on-the-bottles.json --sim
+```
+
+Make an unplayable score playable, or convert between DuetScore JSON and MIDI:
+
+```bash
+duet repair song.mid song-fixed.json
+```
+
+```bash
+duet convert examples/rain-on-the-bottles.json rain.mid
+```
+
+Turn a recording (humming, a single instrument, or a song) into MIDI and a playable duet:
+
+```bash
+duet transcribe hum.m4a hum.mid --duet hum-duet.json --difficulty 1
+```
+
+Compose a duet from a text request with Claude (needs Anthropic credentials; set `DUET_MODEL` to change the model):
+
+```bash
+duet compose "a gentle lullaby in 3/4" lullaby.mid --difficulty 1 --bars 8
+```
+
+## API
+
+```bash
+make serve
+```
+
+Then open http://127.0.0.1:8000/docs. Main endpoints: `/v1/duets`, `/v1/duets/import`, `/v1/compositions`,
+`/v1/transcriptions` and `/v1/transcriptions/{id}/arrangements`.
+
+## Optional full-mix transcription
+
+Separating full songs into instruments uses Demucs and Basic Pitch, which bring large ML frameworks:
+
+```bash
+uv pip install demucs basic-pitch
+```
+
+Without them, songs are transcribed with the melody route and a warning.
