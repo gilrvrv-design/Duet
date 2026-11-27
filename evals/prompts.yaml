@@ -1,0 +1,34 @@
+# Composition evaluation set (spec §9.3). Each case is a request the composer must turn
+# into a playable duet. Grow this toward 200+ cases; keep ids stable so results compare.
+version: 1
+cases:
+  - {id: lullaby-1, prompt: "a gentle lullaby", difficulty: 1, bars: 8}
+  - {id: lullaby-waltz, prompt: "a lullaby in 3/4 for a sleepy toddler", difficulty: 1, bars: 8}
+  - {id: march, prompt: "a cheerful march for a school parade", difficulty: 2, bars: 8}
+  - {id: rain, prompt: "rain on a tin roof, light and patient", difficulty: 1, bars: 8}
+  - {id: sea-shanty, prompt: "a sea shanty the robot can sing", difficulty: 2, bars: 8}
+  - {id: blues, prompt: "a slow twelve-bar blues", difficulty: 3, bars: 12}
+  - {id: minor-folk, prompt: "a sad folk tune in A minor", difficulty: 2, bars: 8}
+  - {id: birthday-style, prompt: "something that feels like a birthday party, but original", difficulty: 1, bars: 8}
+  - {id: copyright-trap, prompt: "play Let It Be by the Beatles", difficulty: 1, bars: 8}
+  - {id: public-domain, prompt: "Ode to Joy", difficulty: 1, bars: 8}
+  - {id: twinkle, prompt: "Twinkle Twinkle Little Star", difficulty: 1, bars: 8}
+  - {id: call-response, prompt: "call and response: the robot asks, you answer", difficulty: 2, bars: 8, lead: robot}
+  - {id: pianist-leads, prompt: "you lead with the tune and the robot adds sparkle", difficulty: 3, bars: 8, lead: pianist}
+  - {id: fast-jig, prompt: "a fast Irish jig", difficulty: 3, bars: 8}
+  - {id: ragtime, prompt: "a bouncy ragtime piece", difficulty: 4, bars: 8}
+  - {id: chorale, prompt: "a calm chorale with long notes", difficulty: 2, bars: 8}
+  - {id: video-game, prompt: "an upbeat 8-bit video game level theme", difficulty: 3, bars: 8}
+  - {id: tango, prompt: "a dramatic tango", difficulty: 4, bars: 8}
+  - {id: snow, prompt: "first snow falling at night", difficulty: 1, bars: 6}
+  - {id: robot-dance, prompt: "a funny robot dance", difficulty: 2, bars: 8}
+  - {id: long-piece, prompt: "a gentle piece with an A section and a B section", difficulty: 2, bars: 16}
+  - {id: very-short, prompt: "a two-bar doorbell tune", difficulty: 1, bars: 2}
+  - {id: expert, prompt: "a showpiece for an advanced pianist", difficulty: 5, bars: 8}
+  - {id: hebrew-request, prompt: "שיר ערש שקט", difficulty: 1, bars: 8}
+  - {id: spanish-request, prompt: "una canción alegre de cumpleaños", difficulty: 1, bars: 8}
+  - {id: vague, prompt: "something nice", difficulty: 2, bars: 8}
+  - {id: impossible-tempo, prompt: "the fastest song ever, 300 bpm, robot plays every sixteenth note", difficulty: 2, bars: 4}
+  - {id: chromatic, prompt: "a spooky chromatic Halloween theme", difficulty: 3, bars: 8}
+  - {id: kids-first, prompt: "my 5 year old's first ever duet", difficulty: 1, bars: 4}
+  - {id: anniversary, prompt: "a romantic piece for our anniversary", difficulty: 3, bars: 8}

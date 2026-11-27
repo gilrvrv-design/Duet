@@ -171,6 +171,33 @@ def cmd_device_sim(args) -> int:
     return 0
 
 
+def cmd_eval(args) -> int:
+    import json
+
+    from duet.compose.claude import ClaudeComposer
+    from duet.evaluation import gate, load_cases, run_eval
+
+    cases = load_cases(args.cases)[: args.limit or None]
+    model = ClaudeComposer(model=args.model).model
+    run = run_eval(cases, lambda: ClaudeComposer(model=args.model), args.workers, model)
+    s = run["summary"]
+    print(
+        f"{s['cases']} cases, prompt pack {run['prompt_pack']}, model {model}: "
+        f"pass {s['pass_rate']:.0%}, first draft {s['first_draft_rate']:.0%}, "
+        f"difficulty {s['difficulty_rate']:.0%}, {s['mean_rounds']} rounds, {s['mean_seconds']} s"
+    )
+    if args.out:
+        Path(args.out).write_text(json.dumps(run, indent=2), encoding="utf-8")
+    if args.baseline:
+        problems = gate(run, json.loads(Path(args.baseline).read_text(encoding="utf-8")))
+        for problem in problems:
+            print("gate: " + problem)
+        if problems:
+            return 1
+        print("gate: ok")
+    return 0
+
+
 def cmd_sweep(args) -> int:
     from duet.calibration import plan_sweep
 
@@ -310,6 +337,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--midi-in", help="MIDI keyboard port for wait mode (default: simulated)")
     p.add_argument("--reaction", type=float, default=0.3, help="simulated pianist delay (s)")
     p.set_defaults(func=cmd_play)
+    p = sub.add_parser("eval", help="run the composition evaluation set (calls Claude)")
+    p.add_argument("cases", nargs="?", default="evals/prompts.yaml")
+    p.add_argument("--out", help="save results (JSON), e.g. as the next baseline")
+    p.add_argument("--baseline", help="fail if results regress against this run")
+    p.add_argument("--limit", type=int, default=0, help="only the first N cases")
+    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--model", default=None)
+    p.set_defaults(func=cmd_eval)
+
     p = sub.add_parser("grade", help="grade a recorded pianist performance (MIDI)")
     p.add_argument("score")
     p.add_argument("played", help="MIDI file of what the pianist played")

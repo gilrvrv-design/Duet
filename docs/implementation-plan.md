@@ -75,4 +75,4 @@ tests/
 | 22 | Listening engine: MIDI input, hit grading, wait mode | §5.6 | Recorded performance graded correctly | Done (MIDI path; real keyboard not tested here) |
 | 22b | Follow mode: score following and tempo coupling | FR-H3, FR-H5 | Robot follows a pianist who speeds up and slows down |
 | 22c | Microphone input with robot self-filtering | FR-H1, FR-H2 | Acoustic piano notes graded while bottles ring |
-| 23 | Composition evaluation set and gate | §9.3 | Pass rate reported per prompt-pack change |
+| 23 | Composition evaluation set and gate | §9.3 | Pass rate reported per prompt-pack change | Done (30 cases; not yet run against the live API) |

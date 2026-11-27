@@ -82,6 +82,17 @@ Compose a duet from a text request with Claude (needs Anthropic credentials; set
 duet compose "a gentle lullaby in 3/4" lullaby.mid --difficulty 1 --bars 8
 ```
 
+Measure composition quality (calls Claude for every case, so it costs money; `--limit` runs fewer).
+Save a run as the baseline, then gate prompt or model changes against it:
+
+```bash
+duet eval --out evals/baseline.json
+```
+
+```bash
+duet eval --baseline evals/baseline.json
+```
+
 ## API
 
 ```bash
