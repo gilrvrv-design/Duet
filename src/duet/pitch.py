@@ -72,3 +72,17 @@ def cents_between(hz_a: float, hz_b: float) -> float:
 
 def is_black_key(midi: int) -> bool:
     return midi % 12 in (1, 3, 6, 8, 10)
+
+
+def coverage(pitches: list[int], available: list[int]) -> float:
+    if not pitches:
+        return 1.0
+    return sum(p in available for p in pitches) / len(pitches)
+
+
+def best_transpose(pitches: list[int], available: list[int], max_shift: int = 24) -> int:
+    """Shift (semitones) that puts the most melody notes on the bottles; smaller shifts win ties."""
+    return max(
+        range(-max_shift, max_shift + 1),
+        key=lambda k: (coverage([p + k for p in pitches], available), -abs(k), k < 0),
+    )

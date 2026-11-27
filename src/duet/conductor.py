@@ -288,7 +288,8 @@ FOLLOW_LOOKAHEAD_US = 150_000  # short, so tempo changes reach the robot quickly
 
 def _follow(perf, messages, score, robot, sender, clock, keys) -> Performance:
     """Follow mode: every command is timed through the follower's current tempo map."""
-    from duet.follow import Follower, max_speed_up
+    from duet.feasibility import max_speed_up
+    from duet.follow import Follower
 
     follower = Follower(perf.expected_pianist(), min_rate=1 / max_speed_up(score, robot))
     begin = getattr(keys, "begin", None)

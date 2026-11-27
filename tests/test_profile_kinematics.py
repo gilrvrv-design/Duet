@@ -37,11 +37,20 @@ def test_bottle_lookup_uses_measured_pitch():
     assert bottles.bottle_index(72) == 0
     assert bottles.bottle_index(84) == 7
     assert bottles.bottle_index(73) is None  # C#5 is not a bottle
-    detuned = bottles.model_copy(
-        update={"notes": (bottles.notes[0].model_copy(update={"hz": 540.0}), *bottles.notes[1:])}
-    )
-    assert detuned.bottle_index(72) is None  # 55 cents sharp
-    assert detuned.bottle_index(72, tolerance_cents=60) == 0
+    slightly = bottles.notes[0].model_copy(update={"hz": 535.0})  # 38 cents sharp
+    shifted = bottles.model_copy(update={"notes": (slightly, *bottles.notes[1:])})
+    assert shifted.bottle_index(72) == 0
+    assert shifted.bottle_index(72, tolerance_cents=30) is None
+
+
+def test_a_bottle_far_from_its_name_is_rejected():
+    """Planning maps notes by name and plays by pitch: they must agree."""
+    data = robot_profile().model_dump(mode="json")
+    data["notes"][0]["hz"] = 540.0  # 55 cents sharp of C5
+    with pytest.raises(ValidationError, match="cents off its name"):
+        RobotProfile.model_validate(data)
+    data["tolerance_cents"] = 60
+    assert RobotProfile.model_validate(data).bottle_index(72) == 0
 
 
 def test_robot_profile_rejects_bad_positions():

@@ -16,12 +16,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from duet.feasibility import DEFAULT_MARGIN_S, Code, check_robot, robot_strikes
+from duet.feasibility import DEFAULT_MARGIN_S, Code, check_robot, robot_strikes, strike_gaps
 from duet.kinematics import reachability
 from duet.pitch import midi_to_name
 from duet.profile import RobotProfile
 from duet.score import DuetScore, Event
-from duet.timing import bar_and_beat, beat_index, seconds_per_beat
+from duet.timing import EPSILON, bar_and_beat, beat_index, seconds_per_beat
 
 GRID_BEATS = 0.25
 MAX_SHIFT_BEATS = 0.5
@@ -105,7 +105,7 @@ def _fold(events: list[Event], profile: RobotProfile, changes: list[Change]) -> 
                 f"{midi_to_name(event.pitch)} -> {midi_to_name(target)}",
             )
         )
-        out.append(event.model_copy(update={"pitch": target}))
+        out.append(event.revised({"pitch": target}))
     return out
 
 
@@ -135,13 +135,13 @@ def _fix_timing(
             prev = (strike.bottle, strike.time_s)
             continue
         earliest = prev[1] + matrix.min_interval(prev[0], strike.bottle) + margin_s
-        if strike.time_s >= earliest - 1e-9:
+        if strike.time_s >= earliest - EPSILON:
             prev = (strike.bottle, strike.time_s)
             continue
         start_beats = beat_index(event.bar, event.beat, per_bar)
-        new_beats = math.ceil(earliest / spb / GRID_BEATS - 1e-9) * GRID_BEATS
+        new_beats = math.ceil(earliest / spb / GRID_BEATS - EPSILON) * GRID_BEATS
         shift = new_beats - start_beats
-        if strike.time_s > prev[1] + 1e-9 and shift <= MAX_SHIFT_BEATS + 1e-9:
+        if strike.time_s > prev[1] + EPSILON and shift <= MAX_SHIFT_BEATS + EPSILON:
             bar, beat = bar_and_beat(new_beats, per_bar)
             dur = max(GRID_BEATS, event.dur - shift)
             changes.append(
@@ -152,10 +152,11 @@ def _fix_timing(
                     f"{midi_to_name(event.pitch)} moved {shift:g} beat later",
                 )
             )
-            events[strike.index] = event.model_copy(update={"bar": bar, "beat": beat, "dur": dur})
+            events[strike.index] = event.revised({"bar": bar, "beat": beat, "dur": dur})
             prev = (strike.bottle, new_beats * spb)
         else:
-            reason = "plays with another note" if strike.time_s <= prev[1] + 1e-9 else "too fast"
+            together = strike.time_s <= prev[1] + EPSILON
+            reason = "plays with another note" if together else "too fast"
             changes.append(
                 Change("drop", event.bar, event.beat, f"{midi_to_name(event.pitch)} {reason}")
             )
@@ -178,15 +179,17 @@ def _fix_duty(
 
 def _slower_tempo(score: DuetScore, profile: RobotProfile, margin_s: float) -> float | None:
     """Tempo at which every robot gap is wide enough, rounded down to a whole bpm."""
-    matrix = reachability(profile)
     strikes, _ = robot_strikes(score, profile)
-    factor = 1.0
-    for prev, cur in zip(strikes, strikes[1:], strict=False):
-        gap = cur.time_s - prev.time_s
-        if gap <= 1e-9:
-            continue  # simultaneous notes are dropped whatever the tempo
-        needed = matrix.min_interval(prev.bottle, cur.bottle) + margin_s
-        factor = max(factor, needed / gap)
+    factor = max(
+        # simultaneous notes are dropped whatever the tempo
+        (
+            g.needed_s / g.gap_s
+            for g in strike_gaps(strikes, profile, margin_s)
+            if not g.simultaneous
+        ),
+        default=1.0,
+    )
+    factor = max(factor, 1.0)
     if factor == 1.0:
         return None
     return max(MIN_TEMPO_BPM, math.floor(score.meta.tempo_bpm / factor))

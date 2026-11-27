@@ -11,8 +11,8 @@ from itertools import pairwise
 
 from duet.pitch import is_black_key, midi_to_name
 from duet.profile import KeyboardProfile
-from duet.score import DuetScore
-from duet.timing import timed_events
+from duet.score import MAX_LEVEL, MIN_LEVEL, DuetScore
+from duet.timing import EPSILON, onset_groups, polyphony, timed_events
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,17 @@ LEVELS = (
     LevelRules(4, 4.0, 12, 3, offbeats=True, black_keys=True),
     LevelRules(5, 1e9, 127, 10, offbeats=True, black_keys=True),
 )
+assert [r.level for r in LEVELS] == list(range(MIN_LEVEL, MAX_LEVEL + 1))
+
+
+def rules_for(level: int) -> LevelRules:
+    if not MIN_LEVEL <= level <= MAX_LEVEL:
+        raise ValueError(f"difficulty level {level} is outside {MIN_LEVEL}..{MAX_LEVEL}")
+    return LEVELS[level - MIN_LEVEL]
+
+
+def clamp_level(level: int) -> int:
+    return max(MIN_LEVEL, min(MAX_LEVEL, level))
 
 
 @dataclass(frozen=True)
@@ -50,21 +61,17 @@ def pianist_stats(score: DuetScore) -> PartStats:
     timed = timed_events(score, "pianist")
     if not timed:
         return PartStats(0, 0.0, 0, 0, False, False, None, None)
-    onsets: dict[float, list[int]] = {}
-    for t in timed:
-        onsets.setdefault(round(t.start_s, 6), []).append(t.event.pitch)
+    groups = onset_groups(timed)
     # Speed between notes: what makes a part hard. One note has no speed.
-    times = sorted(onsets)
-    span = times[-1] - times[0]
-    tops = [max(p) for _, p in sorted(onsets.items())]
-    polyphony = max(sum(1 for o in timed if o.start_s <= t.start_s + 1e-9 < o.end_s) for t in timed)
+    span = groups[-1][0].start_s - groups[0][0].start_s
+    tops = [max(t.event.pitch for t in group) for group in groups]
     pitches = [t.event.pitch for t in timed]
     return PartStats(
-        notes=len(onsets),
-        notes_per_s=(len(times) - 1) / span if span > 0 else 0.0,
+        notes=len(groups),
+        notes_per_s=(len(groups) - 1) / span if span > 0 else 0.0,
         max_jump=max((abs(b - a) for a, b in pairwise(tops)), default=0),
-        max_polyphony=polyphony,
-        has_offbeats=any(abs(t.event.beat - round(t.event.beat)) > 1e-9 for t in timed),
+        max_polyphony=polyphony(timed),
+        has_offbeats=any(abs(t.event.beat - round(t.event.beat)) > EPSILON for t in timed),
         has_black_keys=any(is_black_key(p) for p in pitches),
         low=min(pitches),
         high=max(pitches),
@@ -73,7 +80,7 @@ def pianist_stats(score: DuetScore) -> PartStats:
 
 def broken_rules(stats: PartStats, rules: LevelRules) -> list[str]:
     problems = []
-    if stats.notes_per_s > rules.max_notes_per_s + 1e-9:
+    if stats.notes_per_s > rules.max_notes_per_s + EPSILON:
         problems.append(f"{stats.notes_per_s:.1f} notes per second (max {rules.max_notes_per_s:g})")
     if stats.max_jump > rules.max_jump:
         problems.append(f"a jump of {stats.max_jump} semitones (max {rules.max_jump})")
@@ -88,7 +95,8 @@ def broken_rules(stats: PartStats, rules: LevelRules) -> list[str]:
 
 def pianist_difficulty(score: DuetScore) -> int:
     stats = pianist_stats(score)
-    return next(r.level for r in LEVELS if not broken_rules(stats, r))
+    # A part beyond even the top level's rules (say, 11 notes at once) is top level.
+    return next((r.level for r in LEVELS if not broken_rules(stats, r)), MAX_LEVEL)
 
 
 def check_pianist(
@@ -107,7 +115,7 @@ def check_pianist(
             problems.append(f"{where}: {midi_to_name(e.pitch)} is outside {low}-{high}")
     level = target_level or score.meta.difficulty_target
     if level:
-        rules = LEVELS[level - 1]
+        rules = rules_for(level)
         problems += [
             f"too hard for level {level}: {p}" for p in broken_rules(pianist_stats(score), rules)
         ]

@@ -16,7 +16,7 @@ from duet.difficulty import LEVELS
 from duet.listening import Report
 from duet.pitch import is_black_key
 from duet.score import DuetScore
-from duet.timing import timed_events
+from duet.timing import EPSILON, onset_groups, timed_events
 
 MASTERED = 0.8
 MIN_TRIES = 6
@@ -46,13 +46,14 @@ FEATURE_WORDS = {
 def note_features(score: DuetScore) -> list[set[str]]:
     """The features each pianist note exercises, in time order (matches grading order)."""
     timed = timed_events(score, "pianist")
+    size = {id(t): len(group) for group in onset_groups(timed) for t in group}
     features = []
     prev_pitch, prev_start = None, None
     for t in timed:
         e = t.event
-        together = sum(1 for o in timed if abs(o.start_s - t.start_s) < 1e-6)
+        together = size[id(t)]
         f = {"steps"}
-        if abs(e.beat - round(e.beat)) > 1e-9:
+        if abs(e.beat - round(e.beat)) > EPSILON:
             f.add("offbeats")
         if is_black_key(e.pitch):
             f.add("black_keys")

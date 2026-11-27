@@ -10,11 +10,9 @@ import math
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from duet.audio.arranger import best_transpose
-from duet.difficulty import LEVELS, pianist_difficulty, pianist_stats
-from duet.feasibility import check_robot
-from duet.follow import max_speed_up
-from duet.pitch import is_black_key
+from duet.difficulty import clamp_level, pianist_difficulty, pianist_stats, rules_for
+from duet.feasibility import check_robot, max_speed_up
+from duet.pitch import best_transpose, is_black_key
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.repair import repair_robot
 from duet.score import DuetScore, Event
@@ -53,7 +51,7 @@ def simplify_pianist(score: DuetScore, target_level: int, keyboard: KeyboardProf
     shrink to their top notes, offbeats move to the beat, black keys become the white key
     below, jumps shrink (nearest octave, then the nearest allowed key in the same
     direction, inside the part's range), and dense passages keep their strong beats."""
-    rules = LEVELS[target_level - 1]
+    rules = rules_for(target_level)
     low, high = score.parts["pianist"].range or BEGINNER_RANGE
     events = sorted(score.part_events("pianist"), key=lambda e: (e.bar, e.beat, -e.pitch))
     robot = [e for e in score.events if e.part == "robot"]
@@ -95,7 +93,7 @@ def _onto_beats(events: list[Event]) -> list[Event]:
         if (e.bar, beat) in taken:
             continue  # two notes would land on the same beat: keep the first
         taken.add((e.bar, beat))
-        out.append(e.model_copy(update={"beat": beat, "dur": max(1.0, e.dur)}))
+        out.append(e.revised({"beat": beat, "dur": max(1.0, e.dur)}))
     return out
 
 
@@ -132,7 +130,7 @@ def _shrink_jumps(events, max_jump: int, low: int, high: int, black_ok: bool) ->
             pitch = min(high, max(low, e.pitch + shift))
             if not black_ok and is_black_key(pitch):  # the white key on the side of the last note
                 pitch = pitch - 1 if prev_top is None or pitch > prev_top else pitch + 1
-            out.append(e.model_copy(update={"pitch": pitch}))
+            out.append(e.revised({"pitch": pitch}))
         prev_top = max(e.pitch for e in out[-len(group) :])
     return out
 
@@ -147,12 +145,8 @@ def swap_parts(score: DuetScore, robot: RobotProfile, keyboard: KeyboardProfile)
     middle = (low + high) / 2
     melody = [e.pitch for e in old_robot] or [middle]
     shift_piano = 12 * round((middle - sum(melody) / len(melody)) / 12)
-    events = [
-        e.model_copy(update={"part": "robot", "pitch": e.pitch + shift_robot}) for e in old_pianist
-    ]
-    events += [
-        e.model_copy(update={"part": "pianist", "pitch": e.pitch + shift_piano}) for e in old_robot
-    ]
+    events = [e.revised({"part": "robot", "pitch": e.pitch + shift_robot}) for e in old_pianist]
+    events += [e.revised({"part": "pianist", "pitch": e.pitch + shift_piano}) for e in old_robot]
     swapped = score.with_events(events)
     return repair_robot(swapped, robot).score
 
@@ -180,11 +174,9 @@ def vary(
         return new, f"tempo {score.meta.tempo_bpm:g} -> {new.meta.tempo_bpm:g} bpm"
     if word == "easier":
         before = pianist_difficulty(score)
-        target = max(1, before - 1)
+        target = clamp_level(before - 1)
         new = simplify_pianist(score, target, keyboard)
-        new = new.model_copy(
-            update={"meta": new.meta.model_copy(update={"difficulty_target": target})}
-        )
+        new = new.revised({"meta": new.meta.revised({"difficulty_target": target})})
         return new, f"pianist level {before} -> {pianist_difficulty(new)}"
     if word == "swap":
         return swap_parts(score, robot, keyboard), "robot and pianist swapped parts"
@@ -194,7 +186,7 @@ def vary(
         )
     target = None
     if word == "harder":
-        target = min(5, pianist_difficulty(score) + 1)
+        target = clamp_level(pianist_difficulty(score) + 1)
         instruction = f"make the pianist part a little harder (level {target})"
     result = edit(score, instruction, robot=robot, keyboard=keyboard, difficulty=target)
     if not check_robot(result.score, robot).ok:

@@ -10,33 +10,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from duet.feasibility import robot_strikes
-from duet.kinematics import reachability
+from duet.feasibility import MAX_SPEED_UP, max_speed_up
 from duet.listening import Expected, PlayedNote
-from duet.profile import RobotProfile
-from duet.score import DuetScore
 
 MATCH_WINDOW_US = 400_000  # a played note this close to the expected time can match
 SMOOTHING = 0.5  # weight of the newest tempo measurement
 MAX_SLOW_DOWN = 1.6  # rate = clock time per score time; > 1 is slower
 
 
-def max_speed_up(score: DuetScore, robot: RobotProfile, margin_s: float = 0.010) -> float:
-    """How much faster than written the robot part can go and still be playable."""
-    strikes, _ = robot_strikes(score, robot)
-    matrix = reachability(robot)
-    slack = float("inf")
-    for prev, cur in zip(strikes, strikes[1:], strict=False):
-        gap = cur.time_s - prev.time_s
-        if gap > 0:
-            slack = min(slack, gap / (matrix.min_interval(prev.bottle, cur.bottle) + margin_s))
-    return max(1.0, min(slack, 1.5))
-
-
 @dataclass
 class Follower:
     expected: list[Expected]  # in score time, sorted
-    min_rate: float = 1 / 1.5  # fastest allowed (set from max_speed_up)
+    min_rate: float = 1 / MAX_SPEED_UP  # fastest allowed (set from max_speed_up)
     max_rate: float = MAX_SLOW_DOWN
     rate: float = 1.0
     anchor_score_us: int = 0
@@ -107,3 +92,6 @@ class TempoPianist:
         self.schedule = self.schedule[len(due) :]
         self.played += due
         return due
+
+
+__all__ = ["Follower", "max_speed_up"]

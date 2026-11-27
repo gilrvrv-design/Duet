@@ -20,7 +20,7 @@ from duet.jobs import JobFailure
 from duet.midi_io import midi_to_score, score_to_midi_bytes
 from duet.profile import robot_profile
 from duet.repair import repair_robot
-from duet.score import DuetScore
+from duet.score import MAX_LEVEL, MIN_LEVEL, DuetScore
 from duet.variations import VariationError, is_built_in, vary
 
 router = APIRouter()
@@ -39,7 +39,7 @@ class PublishIn(BaseModel):
 def search_duets(
     ctx: Ctx,
     q: Annotated[str, Query(max_length=200)] = "",
-    difficulty: Annotated[int | None, Query(ge=1, le=5)] = None,
+    difficulty: Annotated[int | None, Query(ge=MIN_LEVEL, le=MAX_LEVEL)] = None,
     max_bars: Annotated[int | None, Query(ge=1)] = None,
     featured: bool | None = None,
     public: bool | None = None,

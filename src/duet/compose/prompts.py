@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from duet.difficulty import LEVELS
+from duet.difficulty import rules_for
 from duet.kinematics import reachability
 from duet.pitch import midi_to_name
 from duet.profile import RobotProfile
@@ -35,7 +35,7 @@ Answer with the JSON object only."""
 
 
 def difficulty_rules(level: int) -> str:
-    rules = LEVELS[level - 1]
+    rules = rules_for(level)
     parts = [
         f"at most {rules.max_notes_per_s:g} pianist notes per second"
         if rules.max_notes_per_s < 1e6

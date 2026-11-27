@@ -20,7 +20,7 @@ from duet.pitch import midi_to_name
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.progress import Progress, no_progress
 from duet.repair import Change, repair_robot
-from duet.score import DuetScore
+from duet.score import DuetScore, Level
 
 MAX_FEEDBACK_ROUNDS = 3
 
@@ -35,7 +35,7 @@ class CompositionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     prompt: str = Field(min_length=1, max_length=2000)
-    difficulty: int = Field(2, ge=1, le=5)
+    difficulty: Level = 2
     bars: int = Field(8, ge=1, le=64)
     lead: Literal["robot", "pianist"] = "robot"
     pianist_range: tuple[str, str] = ("C4", "C5")

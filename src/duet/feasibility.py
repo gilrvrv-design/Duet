@@ -14,9 +14,10 @@ from duet.kinematics import reachability
 from duet.pitch import midi_to_name
 from duet.profile import RobotProfile
 from duet.score import DuetScore
-from duet.timing import beat_index, seconds_per_beat
+from duet.timing import EPSILON, beat_index, seconds_per_beat
 
-DEFAULT_MARGIN_S = 0.010
+DEFAULT_MARGIN_S = 0.010  # spare time on top of the carriage's travel time
+MAX_SPEED_UP = 1.5  # follow mode never plays the robot part faster than this
 
 
 class Code(StrEnum):
@@ -69,7 +70,7 @@ class _Strike:
     vel: int
 
 
-def robot_strikes(score: DuetScore, profile: RobotProfile, tolerance_cents: float = 50.0):
+def robot_strikes(score: DuetScore, profile: RobotProfile, tolerance_cents: float | None = None):
     """Map robot events to bottles. Returns (strikes sorted by time, unmapped event indices)."""
     spb = seconds_per_beat(score.meta.tempo_bpm)
     per_bar = score.meta.beats_per_bar
@@ -87,11 +88,54 @@ def robot_strikes(score: DuetScore, profile: RobotProfile, tolerance_cents: floa
     return strikes, unmapped
 
 
+@dataclass(frozen=True)
+class StrikeGap:
+    """Two strikes in a row: how far apart they are and how far apart they must be."""
+
+    prev: _Strike
+    cur: _Strike
+    gap_s: float
+    needed_s: float  # carriage travel between the two bottles, plus the margin
+
+    @property
+    def simultaneous(self) -> bool:
+        return self.gap_s <= EPSILON
+
+
+def strike_gaps(
+    strikes: list[_Strike], profile: RobotProfile, margin_s: float = DEFAULT_MARGIN_S
+) -> list[StrikeGap]:
+    """The one rule for what the robot can play: every gap against its travel time."""
+    matrix = reachability(profile)
+    return [
+        StrikeGap(
+            prev,
+            cur,
+            cur.time_s - prev.time_s,
+            matrix.min_interval(prev.bottle, cur.bottle) + margin_s,
+        )
+        for prev, cur in zip(strikes, strikes[1:], strict=False)
+    ]
+
+
+def max_speed_up(
+    score: DuetScore, robot: RobotProfile, margin_s: float = DEFAULT_MARGIN_S
+) -> float:
+    """How much faster than written the robot part can go and still be playable
+    (1.0 to ``MAX_SPEED_UP``)."""
+    strikes, _ = robot_strikes(score, robot)
+    slack = min(
+        (g.gap_s / g.needed_s for g in strike_gaps(strikes, robot, margin_s) if not g.simultaneous),
+        default=float("inf"),
+    )
+    return max(1.0, min(slack, MAX_SPEED_UP))
+
+
 def check_robot(
     score: DuetScore,
     profile: RobotProfile,
     margin_s: float = DEFAULT_MARGIN_S,
-    tolerance_cents: float = 50.0,
+    tolerance_cents: float | None = None,
 ) -> Report:
     report = Report()
     strikes, unmapped = robot_strikes(score, profile, tolerance_cents)
@@ -109,11 +153,10 @@ def check_robot(
             )
         )
 
-    matrix = reachability(profile)
-    for prev, cur in zip(strikes, strikes[1:], strict=False):
-        gap = cur.time_s - prev.time_s
+    for gap in strike_gaps(strikes, profile, margin_s):
+        prev, cur, needed = gap.prev, gap.cur, gap.needed_s
         target = midi_to_name(profile.pitches[cur.bottle])
-        if gap <= 1e-9:
+        if gap.simultaneous:
             report.violations.append(
                 Violation(
                     Code.SIMULTANEOUS,
@@ -121,13 +164,12 @@ def check_robot(
                     cur.bar,
                     cur.beat,
                     f"robot can only play one note at a time; {target} starts with another note",
-                    needed_s=matrix.min_interval(prev.bottle, cur.bottle) + margin_s,
+                    needed_s=needed,
                     available_s=0.0,
                 )
             )
             continue
-        needed = matrix.min_interval(prev.bottle, cur.bottle) + margin_s
-        if gap < needed:
+        if gap.gap_s < needed:
             source = midi_to_name(profile.pitches[prev.bottle])
             report.violations.append(
                 Violation(
@@ -136,9 +178,9 @@ def check_robot(
                     cur.bar,
                     cur.beat,
                     f"robot needs {needed:.2f} s to go from {source} to {target} "
-                    f"but has {gap:.2f} s",
+                    f"but has {gap.gap_s:.2f} s",
                     needed_s=needed,
-                    available_s=gap,
+                    available_s=gap.gap_s,
                 )
             )
 

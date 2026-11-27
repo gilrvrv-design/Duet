@@ -1,3 +1,5 @@
+import pytest
+
 from duet.difficulty import check_pianist, pianist_difficulty, pianist_stats
 from duet.profile import keyboard_profile
 from duet.score import load_score
@@ -43,3 +45,12 @@ def test_check_pianist_range_and_level():
     assert "bar 1 beat 3: C9 is not on the keyboard" in problems
     assert any(p.startswith("too hard for level 1: a jump of") for p in problems)
     assert check_pianist(make_score(pianist=[(1, 1, 4, "C4")]), PIANO) == []
+
+
+def test_a_part_beyond_every_rule_is_top_level():
+    from duet.difficulty import MAX_LEVEL, rules_for
+
+    chord = [(1, 1, 1, p) for p in range(60, 71)]  # eleven notes at once
+    assert pianist_difficulty(make_score(pianist=chord)) == MAX_LEVEL
+    with pytest.raises(ValueError, match="outside 1..5"):
+        rules_for(6)

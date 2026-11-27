@@ -18,7 +18,7 @@ from duet.pitch import cents_between, hz_to_midi, midi_to_hz, midi_to_name
 from duet.profile import CalibrationInfo, RobotProfile
 
 DRIFT_WARNING_CENTS = 15.0
-RENAME_CENTS = 50.0
+RENAME_CENTS = 50.0  # keep at or below RobotProfile.tolerance_cents
 
 
 @dataclass(frozen=True)
@@ -167,17 +167,17 @@ def apply_measurements(
             warnings.append(
                 f"bottle {m.index + 1} ({m.name}) is {off_target:+.0f} cents off: {fix}"
             )
-        notes[m.index] = bottle.model_copy(update={"hz": m.hz, "name": name})
+        notes[m.index] = bottle.revised({"hz": m.hz, "name": name})
 
     heard = [m for m in bottles if m.heard]
     striker, sound = profile.striker, profile.sound
     if heard:
-        striker = striker.model_copy(
-            update={"latency_ms": round(statistics.median(m.latency_ms for m in heard), 1)}
+        striker = striker.revised(
+            {"latency_ms": round(statistics.median(m.latency_ms for m in heard), 1)}
         )
         decays = [m.decay_ms for m in heard if m.decay_ms]
         if decays:
-            sound = sound.model_copy(update={"decay_ms": round(statistics.median(decays))})
+            sound = sound.revised({"decay_ms": round(statistics.median(decays))})
     version = (profile.calibration.version + 1) if profile.calibration else 1
     info = CalibrationInfo(
         version=version, date=dt.datetime.now(dt.UTC).isoformat(timespec="seconds"), source=source
@@ -186,10 +186,10 @@ def apply_measurements(
     if len(set(names)) != len(names):
         warnings.append("two bottles now sound the same note; retune before playing")
         notes = list(profile.notes)  # keep the old pitches rather than an invalid profile
-    new = profile.model_copy(
-        update={"notes": tuple(notes), "striker": striker, "sound": sound, "calibration": info}
+    new = profile.revised(
+        {"notes": tuple(notes), "striker": striker, "sound": sound, "calibration": info}
     )
-    return CalibrationResult(RobotProfile.model_validate(new.model_dump()), bottles, warnings)
+    return CalibrationResult(new, bottles, warnings)
 
 
 def calibrate_from_sweep(
@@ -214,7 +214,6 @@ def best_strike_positions(
             report.append(f"bottle {i + 1}: no samples near {bottle.steps} steps; kept")
             continue
         steps = max(near, key=lambda sl: sl[1])[0]
-        notes.append(bottle.model_copy(update={"steps": steps}))
+        notes.append(bottle.revised({"steps": steps}))
         report.append(f"bottle {i + 1}: {bottle.steps} -> {steps} steps")
-    new = profile.model_copy(update={"notes": tuple(notes)})
-    return RobotProfile.model_validate(new.model_dump()), report
+    return profile.revised({"notes": tuple(notes)}), report

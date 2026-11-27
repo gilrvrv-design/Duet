@@ -91,3 +91,13 @@ def test_part_events_sorted_and_helpers():
 def test_bar_count_counts_ringing_notes():
     assert make_score(robot=[(1, 4, 1, "C5")]).bar_count == 1
     assert make_score(robot=[(1, 4, 1.5, "C5")]).bar_count == 2
+
+
+def test_changed_copies_are_validated():
+    score = make_score(robot=[(1, 1, 1, "C5")])
+    bad = score.events[0].revised({"beat": 1.0}).model_copy(update={"beat": 9.0})
+    with pytest.raises(ValidationError, match="outside a bar"):
+        score.with_events([bad])
+    with pytest.raises(ValidationError):
+        score.with_tempo(1000)
+    assert score.with_tempo(120).meta.tempo_bpm == 120

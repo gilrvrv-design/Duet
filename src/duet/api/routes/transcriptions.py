@@ -17,13 +17,14 @@ from duet.api.views import duet_view, transcription_view
 from duet.jobs import JobFailure
 from duet.library import add_duet
 from duet.progress import Progress
+from duet.score import Level
 
 router = APIRouter()
 Route = Literal["auto", "melody", "full"]
 
 
 class ArrangementOptions(BaseModel):
-    difficulty: int = Field(1, ge=1, le=5)
+    difficulty: Level = 1
     title: str | None = Field(None, max_length=200)
 
 

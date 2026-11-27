@@ -11,14 +11,12 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
 
-from duet.pitch import cents_between, midi_to_hz
-from duet.score import Pitch
+from duet.pitch import cents_between, midi_to_hz, midi_to_name
+from duet.score import FrozenModel, Pitch
 
-
-class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+_Model = FrozenModel
 
 
 class Bottle(_Model):
@@ -78,6 +76,9 @@ class RobotProfile(_Model):
     striker: Striker
     sound: Sound
     calibration: CalibrationInfo | None = None
+    # How far a bottle may sound from its name and still play that note. Calibration
+    # renames a bottle that drifts further (calibration.RENAME_CENTS).
+    tolerance_cents: float = Field(50.0, gt=0, le=100)
 
     @model_validator(mode="after")
     def _check_notes(self) -> RobotProfile:
@@ -88,14 +89,24 @@ class RobotProfile(_Model):
             raise ValueError("a bottle lies beyond the carriage travel")
         if len({b.midi for b in self.notes}) != len(self.notes):
             raise ValueError("two bottles share a pitch")
+        for b in self.notes:
+            off = cents_between(midi_to_hz(b.midi), b.hz)
+            if abs(off) > self.tolerance_cents:
+                raise ValueError(
+                    f"bottle {midi_to_name(b.midi)} sounds {b.hz:g} Hz, {off:+.0f} cents off "
+                    f"its name (tolerance {self.tolerance_cents:g}); rename or retune it"
+                )
         return self
 
     @property
     def pitches(self) -> list[int]:
         return [b.midi for b in self.notes]
 
-    def bottle_index(self, midi: int, tolerance_cents: float = 50.0) -> int | None:
-        """Index of the bottle that sounds ``midi`` within the tolerance, using measured pitch."""
+    def bottle_index(self, midi: int, tolerance_cents: float | None = None) -> int | None:
+        """Index of the bottle that sounds ``midi`` within the tolerance (the profile's
+        unless given), using measured pitch."""
+        if tolerance_cents is None:
+            tolerance_cents = self.tolerance_cents
         target = midi_to_hz(midi)
         best = min(
             range(len(self.notes)), key=lambda i: abs(cents_between(target, self.notes[i].hz))

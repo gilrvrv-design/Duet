@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -26,6 +26,8 @@ SCHEMA_ID = "duetscore/1"
 
 PartName = Literal["robot", "pianist"]
 PARTS: tuple[PartName, ...] = ("robot", "pianist")
+MIN_LEVEL, MAX_LEVEL = 1, 5  # pianist difficulty levels; the rules are in duet.difficulty
+Level = Annotated[int, Field(ge=MIN_LEVEL, le=MAX_LEVEL)]
 
 
 def _parse_pitch(value: object) -> int:
@@ -42,8 +44,19 @@ Pitch = Annotated[
 ]
 
 
-class _Model(BaseModel):
+class FrozenModel(BaseModel):
+    """Immutable, strict model. Change one with ``revised``, never ``model_copy``:
+    ``model_copy`` skips validation, so it can build a score or profile that breaks a
+    rule every other part of the system relies on."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    def revised(self, update: dict) -> Self:
+        """A validated copy with some fields changed."""
+        return type(self).model_validate({**dict(self), **update})
+
+
+_Model = FrozenModel
 
 
 class Meta(_Model):
@@ -53,7 +66,7 @@ class Meta(_Model):
     time_signature: tuple[int, int] = (4, 4)
     tempo_bpm: float = Field(100.0, gt=20, le=300)
     style_tags: tuple[str, ...] = ()
-    difficulty_target: int | None = Field(None, ge=1, le=5)
+    difficulty_target: Level | None = None
 
     @field_validator("time_signature")
     @classmethod
@@ -163,12 +176,10 @@ class DuetScore(_Model):
         return sorted((e for e in self.events if e.part == part), key=lambda e: (e.bar, e.beat))
 
     def with_events(self, events: list[Event] | tuple[Event, ...]) -> DuetScore:
-        return self.model_copy(update={"events": tuple(events)})
+        return self.revised({"events": tuple(events)})
 
     def with_tempo(self, tempo_bpm: float) -> DuetScore:
-        return self.model_copy(
-            update={"meta": self.meta.model_copy(update={"tempo_bpm": tempo_bpm})}
-        )
+        return self.revised({"meta": self.meta.revised({"tempo_bpm": tempo_bpm})})
 
     def to_dict(self) -> dict:
         return self.model_dump(mode="json", by_alias=True, exclude_none=True)

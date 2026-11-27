@@ -47,11 +47,6 @@ class TimedEvent:
         return self.end_s - self.start_s
 
 
-def event_start_s(event: Event, score: DuetScore) -> float:
-    spb = seconds_per_beat(score.meta.tempo_bpm)
-    return beat_index(event.bar, event.beat, score.meta.beats_per_bar) * spb
-
-
 def timed_events(score: DuetScore, part: PartName | None = None) -> list[TimedEvent]:
     """Events with absolute start and end times, sorted by start then pitch."""
     spb = seconds_per_beat(score.meta.tempo_bpm)
@@ -62,6 +57,25 @@ def timed_events(score: DuetScore, part: PartName | None = None) -> list[TimedEv
         start = beat_index(event.bar, event.beat, score.meta.beats_per_bar) * spb
         result.append(TimedEvent(event, start, start + event.dur * spb))
     return sorted(result, key=lambda t: (t.start_s, t.event.pitch))
+
+
+def onset_groups(timed: list[TimedEvent]) -> list[list[TimedEvent]]:
+    """Notes that start together (a chord, or one note), in time order."""
+    groups: list[list[TimedEvent]] = []
+    for t in sorted(timed, key=lambda t: (t.start_s, t.event.pitch)):
+        if groups and abs(t.start_s - groups[-1][0].start_s) <= EPSILON:
+            groups[-1].append(t)
+        else:
+            groups.append([t])
+    return groups
+
+
+def polyphony(timed: list[TimedEvent]) -> int:
+    """Most notes sounding at once (a note ending as another starts does not overlap)."""
+    return max(
+        (sum(1 for o in timed if o.start_s <= t.start_s + EPSILON < o.end_s) for t in timed),
+        default=0,
+    )
 
 
 def score_duration_s(score: DuetScore) -> float:

@@ -14,7 +14,14 @@ from dataclasses import dataclass, field
 from duet.audio.analysis import estimate_key, quantize
 from duet.audio.notes import NoteEvent
 from duet.audio.pipeline import Transcription
-from duet.pitch import cents_between, midi_to_hz, midi_to_name, name_to_midi
+from duet.pitch import (
+    best_transpose,
+    cents_between,
+    coverage,
+    midi_to_hz,
+    midi_to_name,
+    name_to_midi,
+)
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.repair import Change, repair_robot
 from duet.score import DuetScore
@@ -75,20 +82,6 @@ def melody_track(t: Transcription) -> list[NoteEvent]:
         )
     )
     return [n for n in t.notes if n.track == name]
-
-
-def coverage(pitches: list[int], available: list[int]) -> float:
-    if not pitches:
-        return 1.0
-    return sum(p in available for p in pitches) / len(pitches)
-
-
-def best_transpose(pitches: list[int], available: list[int], max_shift: int = 24) -> int:
-    """Shift (semitones) that puts the most melody notes on the bottles; smaller shifts win ties."""
-    return max(
-        range(-max_shift, max_shift + 1),
-        key=lambda k: (coverage([p + k for p in pitches], available), -abs(k), k < 0),
-    )
 
 
 def suggest_retuning(

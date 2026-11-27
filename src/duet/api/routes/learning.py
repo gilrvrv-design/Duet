@@ -12,7 +12,7 @@ from duet.api.views import lesson_view, skills_view
 from duet.compose import CompositionRequest
 from duet.learning import USER_PATTERN
 from duet.listening import PlayedNote, Report, grade_take
-from duet.score import DuetScore
+from duet.score import DuetScore, Level
 from duet.storage import Store
 
 router = APIRouter()
@@ -44,7 +44,7 @@ class NextRequest(BaseModel):
 
 
 class LessonOptions(BaseModel):
-    target_level: int = Field(3, ge=1, le=5)
+    target_level: Level = 3
     user: str | None = Field(None, pattern=USER_PATTERN)
 
 
