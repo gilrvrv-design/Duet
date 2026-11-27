@@ -119,7 +119,7 @@ void read_serial() {
 void setup() {
   Serial.begin(115200);
   hal.begin();
-  pinMode(PIN_ESTOP, INPUT_PULLUP);
+  pinMode(PIN_ESTOP, INPUT);  // GPIO 34-39 have no internal pull-up: fit 10 kOhm to 3.3 V
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);  // power saving adds tens of ms of latency
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1529 380" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<title>Which LEDs light above each key, one octave from C4 to C5</title>
+<rect width="1529" height="380" fill="#ffffff"/>
+<text x="764.5" y="26" text-anchor="middle" font-size="17" font-weight="bold" fill="#222">LED strip over the keys: C4 to C5 (144 LEDs per metre)</text>
+<rect x="61.0" y="60" width="46.6" height="16" rx="3" fill="#e5e7eb" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="109.6" y="60" width="46.6" height="16" rx="3" fill="#e5e7eb" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="158.2" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="206.8" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<text x="230.1" y="52" text-anchor="middle" fill="#666" font-size="10">80</text>
+<rect x="255.4" y="60" width="46.6" height="16" rx="3" fill="#a78bfa" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="304.1" y="60" width="46.6" height="16" rx="3" fill="#a78bfa" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="352.7" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="401.3" y="60" width="46.6" height="16" rx="3" fill="#a78bfa" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="449.9" y="60" width="46.6" height="16" rx="3" fill="#a78bfa" stroke="#9ca3af" stroke-width="0.5"/>
+<text x="473.2" y="52" text-anchor="middle" fill="#666" font-size="10">85</text>
+<rect x="498.5" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="547.1" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="595.7" y="60" width="46.6" height="16" rx="3" fill="#e5e7eb" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="644.3" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="692.9" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<text x="716.2" y="52" text-anchor="middle" fill="#666" font-size="10">90</text>
+<rect x="741.6" y="60" width="46.6" height="16" rx="3" fill="#a78bfa" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="790.2" y="60" width="46.6" height="16" rx="3" fill="#a78bfa" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="838.8" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="887.4" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="936.0" y="60" width="46.6" height="16" rx="3" fill="#a78bfa" stroke="#9ca3af" stroke-width="0.5"/>
+<text x="959.3" y="52" text-anchor="middle" fill="#666" font-size="10">95</text>
+<rect x="984.6" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="1033.2" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="1081.8" y="60" width="46.6" height="16" rx="3" fill="#a78bfa" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="1130.4" y="60" width="46.6" height="16" rx="3" fill="#a78bfa" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="1179.1" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<text x="1202.4" y="52" text-anchor="middle" fill="#666" font-size="10">100</text>
+<rect x="1227.7" y="60" width="46.6" height="16" rx="3" fill="#e5e7eb" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="1276.3" y="60" width="46.6" height="16" rx="3" fill="#e5e7eb" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="1324.9" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="1373.5" y="60" width="46.6" height="16" rx="3" fill="#facc15" stroke="#9ca3af" stroke-width="0.5"/>
+<rect x="1422.1" y="60" width="46.6" height="16" rx="3" fill="#e5e7eb" stroke="#9ca3af" stroke-width="0.5"/>
+<text x="1445.4" y="52" text-anchor="middle" fill="#666" font-size="10">105</text>
+<text x="52" y="73" text-anchor="end" fill="#222" font-size="12">LEDs</text>
+<rect x="100.4" y="110" width="164.5" height="200" fill="#ffffff" stroke="#111"/>
+<text x="182.7" y="300" text-anchor="middle" fill="#111" font-weight="bold">C4</text>
+<rect x="264.9" y="110" width="164.5" height="200" fill="#ffffff" stroke="#111"/>
+<text x="347.2" y="300" text-anchor="middle" fill="#111" font-weight="bold">D4</text>
+<rect x="429.4" y="110" width="164.5" height="200" fill="#ffffff" stroke="#111"/>
+<text x="511.7" y="300" text-anchor="middle" fill="#111" font-weight="bold">E4</text>
+<rect x="593.9" y="110" width="164.5" height="200" fill="#ffffff" stroke="#111"/>
+<text x="676.2" y="300" text-anchor="middle" fill="#111" font-weight="bold">F4</text>
+<rect x="758.4" y="110" width="164.5" height="200" fill="#ffffff" stroke="#111"/>
+<text x="840.7" y="300" text-anchor="middle" fill="#111" font-weight="bold">G4</text>
+<rect x="922.9" y="110" width="164.5" height="200" fill="#ffffff" stroke="#111"/>
+<text x="1005.2" y="300" text-anchor="middle" fill="#111" font-weight="bold">A4</text>
+<rect x="1087.4" y="110" width="164.5" height="200" fill="#ffffff" stroke="#111"/>
+<text x="1169.7" y="300" text-anchor="middle" fill="#111" font-weight="bold">B4</text>
+<rect x="1251.9" y="110" width="164.5" height="200" fill="#ffffff" stroke="#111"/>
+<text x="1334.2" y="300" text-anchor="middle" fill="#111" font-weight="bold">C5</text>
+<rect x="217.2" y="110" width="95.4" height="125" fill="#111"/>
+<text x="264.9" y="228" text-anchor="middle" fill="#fff" font-size="10">C#4</text>
+<rect x="381.7" y="110" width="95.4" height="125" fill="#111"/>
+<text x="429.4" y="228" text-anchor="middle" fill="#fff" font-size="10">D#4</text>
+<rect x="710.7" y="110" width="95.4" height="125" fill="#111"/>
+<text x="758.4" y="228" text-anchor="middle" fill="#fff" font-size="10">F#4</text>
+<rect x="875.2" y="110" width="95.4" height="125" fill="#111"/>
+<text x="922.9" y="228" text-anchor="middle" fill="#fff" font-size="10">G#4</text>
+<rect x="1039.7" y="110" width="95.4" height="125" fill="#111"/>
+<text x="1087.4" y="228" text-anchor="middle" fill="#fff" font-size="10">A#4</text>
+<path d="M157.2,78 L254.4,78 L208.8,120 L202.8,120 z" fill="#eab308" opacity="0.35"/>
+<path d="M254.4,78 L351.7,78 L306.1,105 L300.1,105 z" fill="#a78bfa" opacity="0.35"/>
+<path d="M303.1,78 L400.3,78 L354.7,120 L348.7,120 z" fill="#eab308" opacity="0.35"/>
+<path d="M400.3,78 L497.5,78 L451.9,105 L445.9,105 z" fill="#a78bfa" opacity="0.35"/>
+<path d="M497.5,78 L594.7,78 L549.1,120 L543.1,120 z" fill="#eab308" opacity="0.35"/>
+<path d="M643.3,78 L740.6,78 L694.9,120 L688.9,120 z" fill="#eab308" opacity="0.35"/>
+<path d="M740.6,78 L837.8,78 L792.2,105 L786.2,105 z" fill="#a78bfa" opacity="0.35"/>
+<path d="M837.8,78 L935.0,78 L889.4,120 L883.4,120 z" fill="#eab308" opacity="0.35"/>
+<path d="M886.4,78 L983.6,78 L938.0,105 L932.0,105 z" fill="#a78bfa" opacity="0.35"/>
+<path d="M983.6,78 L1080.8,78 L1035.2,120 L1029.2,120 z" fill="#eab308" opacity="0.35"/>
+<path d="M1080.8,78 L1178.1,78 L1132.4,105 L1126.4,105 z" fill="#a78bfa" opacity="0.35"/>
+<path d="M1129.4,78 L1226.7,78 L1181.1,120 L1175.1,120 z" fill="#eab308" opacity="0.35"/>
+<path d="M1323.9,78 L1421.1,78 L1375.5,120 L1369.5,120 z" fill="#eab308" opacity="0.35"/>
+<text x="764.5" y="340" text-anchor="middle" fill="#444">Each key lights the ~2 LEDs centred over it (1/12 of an octave). C4 = LEDs 79–80, E4 = 86–87, C5 = 103–104.</text>
+<text x="764.5" y="362" text-anchor="middle" fill="#666" font-size="12">White key 23.5 mm · LED pitch 6.94 mm · yellow: white keys · violet: black keys · from plans.led_span()</text>
+</svg>

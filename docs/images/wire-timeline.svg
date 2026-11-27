@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 340" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>What is on the wire around one strike: commands sent 500 ms ahead, queued on the device, heartbeats every 250 ms</title>
+  <rect width="1000" height="340" fill="#ffffff"/>
+  <text x="500" y="26" text-anchor="middle" font-size="17" font-weight="bold" fill="#222">Around one strike at T = 2000 ms (C5 → G5, lookahead 500 ms)</text>
+  <!-- scale: x = 140 + (ms - 600) * 0.55 -->
+  <g stroke="#e5e7eb">
+    <line x1="140" y1="50" x2="140" y2="280"/><line x1="250" y1="50" x2="250" y2="280"/><line x1="360" y1="50" x2="360" y2="280"/>
+    <line x1="470" y1="50" x2="470" y2="280"/><line x1="580" y1="50" x2="580" y2="280"/><line x1="690" y1="50" x2="690" y2="280"/>
+    <line x1="800" y1="50" x2="800" y2="280"/><line x1="910" y1="50" x2="910" y2="280"/>
+  </g>
+  <g fill="#666" font-size="11" text-anchor="middle">
+    <text x="140" y="298">600</text><text x="250" y="298">800</text><text x="360" y="298">1000</text><text x="470" y="298">1200</text>
+    <text x="580" y="298">1400</text><text x="690" y="298">1600</text><text x="800" y="298">1800</text><text x="910" y="298">2000 ms</text>
+  </g>
+
+  <text x="20" y="80" font-weight="bold" fill="#222">Hub sends</text>
+  <text x="20" y="140" font-weight="bold" fill="#222">Device queue</text>
+  <text x="20" y="200" font-weight="bold" fill="#222">Device runs</text>
+  <text x="20" y="255" font-weight="bold" fill="#222">Heartbeats</text>
+
+  <!-- sends: move_at at 745, strike_at at 1488 -->
+  <path d="M 213.15 66 l 8 14 l -16 0 z" fill="#2563eb"/>
+  <text x="213.15" y="60" text-anchor="middle" fill="#1d4ed8" font-size="12">move_at sent (733)</text>
+  <path d="M 628.4 66 l 8 14 l -16 0 z" fill="#d97706"/>
+  <text x="628.4" y="60" text-anchor="middle" fill="#b45309" font-size="12">strike_at sent (1488)</text>
+
+  <!-- queue -->
+  <rect x="213.15" y="122" width="275" height="14" rx="3" fill="#bfdbfe"/>
+  <text x="357" y="133" text-anchor="middle" fill="#1e3a8a" font-size="11">move_at waits in the queue</text>
+  <rect x="628.4" y="142" width="275" height="14" rx="3" fill="#fde68a"/>
+  <text x="766" y="153" text-anchor="middle" fill="#92400e" font-size="11">strike_at waits in the queue</text>
+
+  <!-- runs: travel 1245..2000, pulse 1988..2010 -->
+  <rect x="488.15" y="185" width="415.25" height="22" rx="3" fill="#2563eb"/>
+  <text x="696" y="200" text-anchor="middle" fill="#fff" font-size="12">carriage travels C5 → G5 from 1233 (755 ms incl. settle)</text>
+  <rect x="903.4" y="180" width="12.1" height="32" fill="#dc2626"/>
+  <text x="890" y="226" text-anchor="end" fill="#b91c1c" font-size="11">pulse fires at 1988 (12 ms latency)</text>
+
+  <!-- heartbeats every 250 -->
+  <g fill="#16a34a">
+    <circle cx="223" cy="250" r="5"/><circle cx="360" cy="250" r="5"/><circle cx="497.5" cy="250" r="5"/>
+    <circle cx="635" cy="250" r="5"/><circle cx="772.5" cy="250" r="5"/><circle cx="910" cy="250" r="5"/>
+  </g>
+  <text x="560" y="272" text-anchor="middle" fill="#15803d" font-size="11">every 250 ms, never more than 1 s apart, so the watchdog stays quiet during long moves</text>
+
+  <!-- the beat -->
+  <line x1="910" y1="44" x2="910" y2="282" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="918" y="100" fill="#dc2626" font-weight="bold">sound on</text>
+  <text x="918" y="115" fill="#dc2626" font-weight="bold">the beat</text>
+
+  <text x="500" y="325" text-anchor="middle" fill="#666" font-size="12">Each command leaves the Hub 500 ms before it is due, is acknowledged on arrival, and runs at its own t_us on the device clock.</text>
+</svg>

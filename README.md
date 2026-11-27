@@ -3,8 +3,16 @@
 Back end for **Duet**: you describe a song (or hand it an audio file), the system writes it as a duet,
 a robot plays one part on eight tuned glass bottles, and you play the other on a piano by following a strip of lights.
 
-- Functional spec: [docs/backend-functional-spec.md](docs/backend-functional-spec.md)
-- Implementation plan and status: [docs/implementation-plan.md](docs/implementation-plan.md)
+## Documentation
+
+| Read this | When you want to |
+|---|---|
+| [Architecture](docs/architecture.md) | understand how the code fits together, with diagrams |
+| [Device protocol](docs/device-protocol.md) | know exactly what the Hub and the rig say to each other |
+| [Rig guide](docs/rig-guide.md) | wire, flash, test, calibrate and troubleshoot the rig |
+| [Functional spec](docs/backend-functional-spec.md) | see what the system is meant to become |
+| [Implementation plan](docs/implementation-plan.md) | see what has been built, in which order, and what is next |
+| [Firmware README](firmware/README.md) | build the firmware and its native tests |
 
 ## Setup
 
