@@ -19,9 +19,16 @@ from duet.protocol import TIMED, Ack, Hello, Message, TimePing, TimePong, parse_
 
 
 class DeviceGateway:
-    def __init__(self, url: str, sync_samples: int = 16, timeout_s: float = 5.0) -> None:
+    def __init__(
+        self,
+        url: str,
+        sync_samples: int = 16,
+        timeout_s: float = 5.0,
+        resync_every_s: float | None = 2.0,
+    ) -> None:
         self.url = url
         self.sync_samples = sync_samples
+        self.resync_every_s = resync_every_s
         self.timeout_s = timeout_s
         self.hello: Hello | None = None
         self.sync: ClockSync | None = None
@@ -31,6 +38,8 @@ class DeviceGateway:
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
         self._ws: ClientConnection | None = None
         self._reader_task: asyncio.Task | None = None
+        self._resync_task: asyncio.Task | None = None
+        self._sync_lock: asyncio.Lock | None = None
         self._pongs: asyncio.Queue[tuple[TimePong, int]] | None = None
         self._sent: set[int] = set()
         self._next_seq = 1_000_000  # gateway's own messages (pings) stay clear of plan seqs
@@ -40,6 +49,10 @@ class DeviceGateway:
         self._thread.start()
         self._call(self._connect())
         self.resync()
+        if self.resync_every_s:
+            self._resync_task = asyncio.run_coroutine_threadsafe(
+                self._start_resync(), self._loop
+            ).result(self.timeout_s)
         return self
 
     def close(self) -> None:
@@ -50,8 +63,9 @@ class DeviceGateway:
         self._loop.close()
 
     async def _shutdown(self) -> None:
-        if self._reader_task is not None:
-            self._reader_task.cancel()
+        for task in (self._resync_task, self._reader_task):
+            if task is not None:
+                task.cancel()
         if self._ws is not None:
             await self._ws.close()
 
@@ -67,6 +81,7 @@ class DeviceGateway:
     async def _connect(self) -> None:
         self._ws = await connect(self.url)
         self._pongs = asyncio.Queue()
+        self._sync_lock = asyncio.Lock()
         first = parse_message(await self._ws.recv())
         if not isinstance(first, Hello):
             raise ConnectionError(f"device did not say hello: {first}")
@@ -91,13 +106,23 @@ class DeviceGateway:
         return self.sync
 
     async def _sync(self) -> ClockSync:
-        samples = []
-        for _ in range(self.sync_samples):
-            self._next_seq += 1
-            await self._ws.send(TimePing(hub_now_us(), seq=self._next_seq).to_json())
-            pong, t4 = await asyncio.wait_for(self._pongs.get(), self.timeout_s)
-            samples.append(SyncSample(pong.t1, pong.t2, pong.t3, t4))
-        return best_sync(samples)
+        async with self._sync_lock:  # one exchange at a time, so pongs match pings
+            samples = []
+            for _ in range(self.sync_samples):
+                self._next_seq += 1
+                await self._ws.send(TimePing(hub_now_us(), seq=self._next_seq).to_json())
+                pong, t4 = await asyncio.wait_for(self._pongs.get(), self.timeout_s)
+                samples.append(SyncSample(pong.t1, pong.t2, pong.t3, t4))
+            return best_sync(samples, previous=self.sync)
+
+    async def _start_resync(self) -> asyncio.Task:
+        return asyncio.create_task(self._resync_forever())
+
+    async def _resync_forever(self) -> None:
+        """Keep the offset and drift fresh during long sessions (FR-D2)."""
+        while True:
+            await asyncio.sleep(self.resync_every_s)
+            self.sync = await self._sync()
 
     # sending -----------------------------------------------------------------
     def send(self, msg: Message) -> None:

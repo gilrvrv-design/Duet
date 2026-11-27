@@ -62,8 +62,9 @@ def test_unknown_message():
 
 
 @pytest.fixture
-def device():
-    sim = SimulatedDevice(clock_offset_us=987_654_321)
+def device(request):
+    drift = getattr(request, "param", 0.0)
+    sim = SimulatedDevice(clock_offset_us=987_654_321, drift_ppm=drift)
     loop = asyncio.new_event_loop()
     ready = threading.Event()
     port = {}
@@ -124,3 +125,26 @@ def test_cli_play_on_device(device, capsys):
     assert main(["play", str(score), "--device", url]) == 0
     out = capsys.readouterr().out
     assert "connected to sim-1" in out and "errors: 0" in out
+
+
+def test_drift_estimate_maths():
+    first = best_sync([SyncSample(0, 1000, 1000, 0)])
+    # One second later the device is 1000 us further ahead: 1000 ppm fast.
+    second = best_sync([SyncSample(1_000_000, 1_002_000, 1_002_000, 1_000_000)], previous=first)
+    assert second.drift_ppm == pytest.approx(1000)
+    assert second.to_device(2_000_000) == 2_000_000 + 2000 + 1000
+
+
+@pytest.mark.parametrize("device", [2000.0], indirect=True)
+def test_periodic_resync_tracks_a_drifting_clock(device):
+    import time
+
+    sim, url = device
+    with DeviceGateway(url, resync_every_s=0.25) as gateway:
+        time.sleep(1.2)
+        sync = gateway.sync
+        assert sync.drift_ppm == pytest.approx(2000, rel=0.25)
+        target = hub_now_us() + 1_000_000  # predict one second ahead
+        error = abs(sync.to_device(target) - sim.true_device_time(target))
+        # Without drift compensation the error here would be over 3 ms.
+        assert error < 1000, f"prediction error {error:.0f} us"

@@ -38,24 +38,37 @@ class SyncSample:
 
 @dataclass(frozen=True)
 class ClockSync:
+    """Offset of a device clock at Hub time ``at_hub_us``, plus how fast it drifts."""
+
     offset_us: int
     delay_us: int
     samples: int
+    at_hub_us: int = 0
+    drift_ppm: float = 0.0
 
     @property
     def error_bound_us(self) -> float:
         """The true offset is within this of ``offset_us`` (half the best round trip)."""
         return self.delay_us / 2
 
+    def offset_at(self, hub_us: int) -> float:
+        return self.offset_us + self.drift_ppm * (hub_us - self.at_hub_us) / 1e6
+
     def to_device(self, hub_us: int) -> int:
-        return hub_us + self.offset_us
+        return round(hub_us + self.offset_at(hub_us))
 
     def to_hub(self, device_us: int) -> int:
-        return device_us - self.offset_us
+        return round(device_us - self.offset_at(device_us - self.offset_us))
 
 
-def best_sync(samples: list[SyncSample]) -> ClockSync:
+def best_sync(samples: list[SyncSample], previous: ClockSync | None = None) -> ClockSync:
+    """Pick the lowest-delay sample. With a previous sync, also estimate drift."""
     if not samples:
         raise ValueError("no clock sync samples")
     best = min(samples, key=lambda s: s.delay_us)
-    return ClockSync(round(best.offset_us), best.delay_us, len(samples))
+    at = (best.t1 + best.t4) // 2
+    drift = 0.0
+    if previous is not None and at - previous.at_hub_us > 200_000:
+        drift = (best.offset_us - previous.offset_us) / (at - previous.at_hub_us) * 1e6
+        drift = 0.5 * previous.drift_ppm + 0.5 * drift if previous.drift_ppm else drift
+    return ClockSync(round(best.offset_us), best.delay_us, len(samples), at, round(drift, 3))

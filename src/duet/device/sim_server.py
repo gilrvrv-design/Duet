@@ -22,15 +22,21 @@ from duet.sim import SimulatedRig
 class SimulatedDevice:
     profile: RobotProfile = field(default_factory=robot_profile)
     clock_offset_us: int = 987_654_321
+    drift_ppm: float = 0.0  # a real crystal is off by tens of ppm
     device_id: str = "sim-1"
     rig: SimulatedRig = field(init=False)
     commands: int = 0
 
     def __post_init__(self) -> None:
         self.rig = SimulatedRig(self.profile)
+        self._start = hub_now_us()
 
     def now_us(self) -> int:
-        return hub_now_us() + self.clock_offset_us
+        return round(self.true_device_time(hub_now_us()))
+
+    def true_device_time(self, hub_us: int) -> float:
+        """The device clock at a Hub time: what sync tries to learn."""
+        return hub_us + self.clock_offset_us + self.drift_ppm * (hub_us - self._start) / 1e6
 
     def handle(self, msg: Message) -> Message | None:
         if isinstance(msg, TimePing):
