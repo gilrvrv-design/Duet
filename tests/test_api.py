@@ -5,6 +5,7 @@ import soundfile
 from fastapi.testclient import TestClient
 
 from duet.api import create_app
+from duet.api.store import MemoryStore, SqliteStore
 from duet.audio.fullmix import full_mix_available
 from duet.midi_io import midi_to_score, score_to_midi_bytes
 from helpers import ROOT, make_score, synth
@@ -13,9 +14,10 @@ from test_compose import GOOD, ScriptedComposer
 EXAMPLE = (ROOT / "examples" / "rain-on-the-bottles.json").read_text()
 
 
-@pytest.fixture
-def client():
-    return TestClient(create_app(composer_factory=lambda: ScriptedComposer(GOOD)))
+@pytest.fixture(params=["memory", "sqlite"])
+def client(request, tmp_path):
+    store = MemoryStore() if request.param == "memory" else SqliteStore(tmp_path / "duet.db")
+    return TestClient(create_app(composer_factory=lambda: ScriptedComposer(GOOD), store=store))
 
 
 def test_health_and_reachability(client):

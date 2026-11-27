@@ -65,7 +65,7 @@ tests/
 
 | # | Delivery | Spec | Test that proves it |
 |---|---|---|---|
-| 17 | Persistent store (SQLite/Postgres) behind the `MemoryStore` interface | §4.2 | API tests run against both stores |
+| 17 | Persistent store (SQLite/Postgres) behind the `MemoryStore` interface | §4.2 | API tests run against both stores | Done (SQLite) |
 | 18 | Async jobs for composition and transcription, with progress streams | §6.2, FR-A5 | Job states and stream events in order |
 | 19 | WebSocket device gateway and clock sync with the simulated rig over a real socket | §5.10 | Sync error under 2 ms on localhost |
 | 20 | ESP32 firmware executor for `move_at` / `strike_at` / `led_frame_at` | §5.10 | Hardware-in-the-loop timing test |

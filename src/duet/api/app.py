@@ -5,6 +5,7 @@ Errors use RFC 9457 problem details with stable codes (spec §6.3).
 
 from __future__ import annotations
 
+import os
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -15,7 +16,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from duet import __version__
-from duet.api.store import MemoryStore, NotFound
+from duet.api.store import NotFound, Store, store_from_env
 from duet.compose import CompositionRequest, compose
 from duet.compose.service import Composer, CompositionError
 from duet.difficulty import check_pianist, pianist_difficulty
@@ -58,10 +59,10 @@ def duet_view(record) -> dict:
 
 
 def create_app(
-    composer_factory: Callable[[], Composer] | None = None, store: MemoryStore | None = None
+    composer_factory: Callable[[], Composer] | None = None, store: Store | None = None
 ) -> FastAPI:
     app = FastAPI(title="Duet", version=__version__)
-    store = store or MemoryStore()
+    store = store or store_from_env(os.environ.get("DUET_DB"))
     app.state.store = store
 
     def get_composer() -> Composer:

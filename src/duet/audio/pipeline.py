@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import mido
@@ -27,6 +27,13 @@ class Transcription:
 
     def tracks(self) -> list[str]:
         return sorted({n.track for n in self.notes})
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Transcription:
+        return cls(**{**data, "notes": [NoteEvent(**n) for n in data["notes"]]})
 
 
 def transcribe(

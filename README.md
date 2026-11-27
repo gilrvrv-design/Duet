@@ -64,7 +64,7 @@ duet compose "a gentle lullaby in 3/4" lullaby.mid --difficulty 1 --bars 8
 make serve
 ```
 
-Then open http://127.0.0.1:8000/docs. Main endpoints: `/v1/duets`, `/v1/duets/import`, `/v1/compositions`,
+Set `DUET_DB=duet.db` to keep data in SQLite (default: in memory). Then open http://127.0.0.1:8000/docs. Main endpoints: `/v1/duets`, `/v1/duets/import`, `/v1/compositions`,
 `/v1/transcriptions` and `/v1/transcriptions/{id}/arrangements`.
 
 ## Optional full-mix transcription
