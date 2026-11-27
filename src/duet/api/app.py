@@ -24,7 +24,9 @@ from duet.difficulty import check_pianist, pianist_difficulty
 from duet.feasibility import check_robot
 from duet.jobs import TERMINAL, JobFailure, JobRunner, job_view
 from duet.kinematics import reachability
+from duet.listening import PlayedNote, grade_take
 from duet.midi_io import midi_to_score, score_to_midi_bytes
+from duet.pedagogy import PASS_ACCURACY, SkillModel, teach_song
 from duet.profile import keyboard_profile, robot_profile
 from duet.progress import Progress, no_progress
 from duet.repair import repair_robot
@@ -43,6 +45,33 @@ class Problem(Exception):
 class ArrangementOptions(BaseModel):
     difficulty: int = Field(1, ge=1, le=5)
     title: str | None = None
+
+
+class PlayedIn(BaseModel):
+    t_ms: float
+    pitch: int = Field(ge=0, le=127)
+    velocity: int = Field(80, ge=1, le=127)
+
+
+class Take(BaseModel):
+    """What the pianist played, e.g. recorded by the app from a MIDI keyboard."""
+
+    played: list[PlayedIn]
+    user: str | None = None
+
+
+class PerformanceIn(Take):
+    duet_id: str
+
+
+class NextRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=2000)
+    bars: int = Field(8, ge=1, le=64)
+
+
+class LessonOptions(BaseModel):
+    target_level: int = Field(3, ge=1, le=5)
+    user: str | None = None
 
 
 def duet_view(record) -> dict:
@@ -210,6 +239,95 @@ def create_app(
             return _accepted(jobs.submit("transcription", work))
         return _sync(lambda: work(no_progress))
 
+    # Learning (spec §5.8) --------------------------------------------------
+    def skill_model(user: str) -> SkillModel:
+        try:
+            return store.get("skills", user).data
+        except NotFound:
+            return SkillModel()
+
+    def learn(user: str | None, score: DuetScore, report) -> dict:
+        if user is None:
+            return {}
+        model = skill_model(user)
+        newly = model.update(score, report)
+        store.put("skills", user, model)
+        return {"newly_mastered": newly, **skills_view(model)}
+
+    def graded(score: DuetScore, take: Take):
+        played = [PlayedNote(round(p.t_ms * 1000), p.pitch, p.velocity) for p in take.played]
+        report = grade_take(score, played)
+        return report, {
+            "accuracy": round(report.accuracy, 3),
+            "results": [g.result for g in report.grades],
+            "hardest_bars": report.hardest_bars(),
+            "feedback": report.feedback(),
+        }
+
+    @app.post("/v1/users/{user}/performances", status_code=201)
+    def add_performance(user: str, body: PerformanceIn):
+        score = store.get("duet", body.duet_id).data
+        report, view = graded(score, body)
+        return {**view, **learn(user, score, report)}
+
+    @app.get("/v1/users/{user}/skills")
+    def get_skills(user: str):
+        return skills_view(skill_model(user))
+
+    @app.post("/v1/users/{user}/compositions", status_code=201)
+    def compose_next(user: str, body: NextRequest, background: bool = False):
+        difficulty, focus = skill_model(user).next_request()
+        request = CompositionRequest(
+            prompt=body.prompt, bars=body.bars, difficulty=difficulty, focus=focus
+        )
+        if background:
+            return _accepted(jobs.submit("composition", lambda p: run_composition(request, p)))
+        return _sync(lambda: run_composition(request, no_progress))
+
+    @app.post("/v1/transcriptions/{tid}/lessons", status_code=201)
+    def create_lesson(tid: str, options: LessonOptions | None = None):
+        options = options or LessonOptions()
+        record = store.get("transcription", tid)
+        title = Path(record.meta.get("filename") or "Your song").stem
+        path = teach_song(record.data, options.target_level, title)
+        steps = []
+        for step in path.steps:
+            duet = store.add("duet", step.score, source="lesson", transcription=tid)
+            steps.append(
+                {
+                    "title": step.title,
+                    "difficulty": step.difficulty,
+                    "tempo_factor": step.tempo_factor,
+                    "duet_id": duet.id,
+                    "passed": False,
+                }
+            )
+        lesson = store.add("lesson", {"title": title, "user": options.user, "steps": steps})
+        return lesson_view(lesson)
+
+    @app.get("/v1/lessons/{lesson_id}")
+    def get_lesson(lesson_id: str):
+        return lesson_view(store.get("lesson", lesson_id))
+
+    @app.post("/v1/lessons/{lesson_id}/steps/{n}/attempts", status_code=201)
+    def attempt_step(lesson_id: str, n: int, take: Take):
+        record = store.get("lesson", lesson_id)
+        lesson = record.data
+        if not 0 <= n < len(lesson["steps"]):
+            raise Problem(404, "NOT_FOUND", f"lesson {lesson_id} has no step {n}")
+        step = lesson["steps"][n]
+        score = store.get("duet", step["duet_id"]).data
+        report, view = graded(score, take)
+        step["passed"] = step["passed"] or report.accuracy >= PASS_ACCURACY
+        store.put("lesson", lesson_id, lesson)
+        user = take.user or lesson.get("user")
+        return {
+            **view,
+            "passed": step["passed"],
+            "lesson": lesson_view(store.get("lesson", lesson_id)),
+            **learn(user, score, report),
+        }
+
     # Jobs --------------------------------------------------------------------
     @app.get("/v1/jobs/{job_id}")
     def get_job(job_id: str):
@@ -301,6 +419,25 @@ async def _read_upload(file: UploadFile) -> bytes:
     if not data:
         raise Problem(422, "FILE_EMPTY", "the uploaded file is empty")
     return data
+
+
+def skills_view(model: SkillModel) -> dict:
+    difficulty, focus = model.next_request()
+    return {
+        "level": model.level,
+        "performances": model.performances,
+        "skills": {
+            name: {"mastery": round(s.mastery, 3), "tries": s.tries, "known": s.known}
+            for name, s in sorted(model.skills.items())
+        },
+        "next": {"difficulty": difficulty, "focus": focus},
+    }
+
+
+def lesson_view(record) -> dict:
+    lesson = record.data
+    current = next((i for i, s in enumerate(lesson["steps"]) if not s["passed"]), None)
+    return {"id": record.id, **lesson, "current_step": current, "done": current is None}
 
 
 def _transcription_view(record) -> dict:

@@ -154,3 +154,67 @@ def test_unknown_job(client):
     assert client.get("/v1/jobs/job_missing").status_code == 404
     with client.websocket_connect("/v1/jobs/job_missing/stream") as ws:
         assert ws.receive_json()["error"]["code"] == "NOT_FOUND"
+
+
+def take_for(score_dict, results_ok=True, user=None):
+    """Play every pianist note on time (or a wrong key each time)."""
+    from duet.score import load_score
+    from duet.timing import timed_events
+
+    score = load_score(score_dict)
+    played = [
+        {
+            "t_ms": t.start_s * 1000 + 500,
+            "pitch": t.event.pitch if results_ok else t.event.pitch + 1,
+        }
+        for t in timed_events(score, "pianist")
+    ]
+    return {"played": played, **({"user": user} if user else {})}
+
+
+def test_learning_endpoints(client):
+    duet = client.post(
+        "/v1/duets", content=EXAMPLE, headers={"content-type": "application/json"}
+    ).json()
+    assert client.get("/v1/users/ana/skills").json()["level"] == 1
+    for _ in range(2):
+        body = {"duet_id": duet["id"], **take_for(duet["score"])}
+        result = client.post("/v1/users/ana/performances", json=body).json()
+    assert result["accuracy"] == 1.0 and result["feedback"].startswith("You played 4 of 4")
+    skills = client.get("/v1/users/ana/skills").json()
+    assert skills["performances"] == 2 and skills["skills"]["steps"]["known"]
+    assert skills["next"]["difficulty"] == 2
+    composed = client.post("/v1/users/ana/compositions", json={"prompt": "happy", "bars": 2})
+    assert composed.status_code == 201
+
+
+def test_lessons_from_a_transcription(client):
+    buffer = io.BytesIO()
+    tune = [(p, i * 0.5, 0.45) for i, p in enumerate([60, 64, 67, 72, 67, 64, 60, 62])]
+    soundfile.write(buffer, synth(tune), 22050, format="WAV")
+    files = {"file": ("song.wav", buffer.getvalue(), "audio/wav")}
+    t = client.post("/v1/transcriptions", files=files, data={"rights_confirmed": "true"}).json()
+    lesson = client.post(
+        f"/v1/transcriptions/{t['id']}/lessons", json={"target_level": 2, "user": "ben"}
+    ).json()
+    assert [s["title"] for s in lesson["steps"]] == [
+        "Level 1 slowly",
+        "Level 1 at full speed",
+        "Level 2 slowly",
+        "Level 2 at full speed",
+    ]
+    assert lesson["current_step"] == 0
+    step = client.get(f"/v1/duets/{lesson['steps'][0]['duet_id']}").json()
+    bad = client.post(
+        f"/v1/lessons/{lesson['id']}/steps/0/attempts", json=take_for(step["score"], False)
+    ).json()
+    assert not bad["passed"] and bad["lesson"]["current_step"] == 0
+    good = client.post(
+        f"/v1/lessons/{lesson['id']}/steps/0/attempts", json=take_for(step["score"])
+    ).json()
+    assert good["passed"] and good["lesson"]["current_step"] == 1
+    assert good["performances"] == 2  # the lesson's user learned from both attempts
+    assert (
+        client.post(f"/v1/lessons/{lesson['id']}/steps/9/attempts", json={"played": []}).status_code
+        == 404
+    )

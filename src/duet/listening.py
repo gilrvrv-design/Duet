@@ -208,3 +208,18 @@ def grade(
         else:
             grades.append(Grade(exp, "missed"))
     return Report(grades, unused)
+
+
+def grade_take(score, played: list[PlayedNote]) -> Report:
+    """Grade a recorded take of the pianist part at the score's tempo. Recordings start
+    at any moment, so the first played note is lined up with the first expected one."""
+    from duet.timing import timed_events
+
+    expected = [
+        Expected(round(t.start_s * 1e6), t.event.pitch, t.event.bar)
+        for t in timed_events(score, "pianist")
+    ]
+    if played and expected:
+        shift = expected[0].t_us - min(p.t_us for p in played)
+        played = [PlayedNote(p.t_us + shift, p.pitch, p.velocity) for p in played]
+    return grade(expected, played)

@@ -138,6 +138,23 @@ DEMO_PHRASES = [
 ]
 
 
+def cmd_teach(args) -> int:
+    """ "Teach me this song": a lesson path of duets from an audio recording."""
+    from duet.audio.pipeline import transcribe_file
+    from duet.pedagogy import teach_song
+
+    title = Path(args.audio).stem
+    path = teach_song(transcribe_file(args.audio), args.target, title)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    for i, step in enumerate(path.steps, start=1):
+        file = out / f"{i:02d}-level{step.difficulty}-{round(step.tempo_factor * 100)}pct.json"
+        write_score(step.score, str(file))
+        print(f"step {i}: {step.title} ({step.score.meta.tempo_bpm:g} bpm) -> {file}")
+    print("play each step with --wait until you get 90% right, then move on")
+    return 0
+
+
 def cmd_jam(args) -> int:
     """Call and response: you play a phrase, the robot answers."""
     from duet.device.clock import hub_now_us
@@ -171,25 +188,17 @@ def cmd_jam(args) -> int:
 
 def cmd_grade(args) -> int:
     """Grade a recorded MIDI performance of the pianist part against the score."""
-    from duet.listening import Expected, PlayedNote, grade
-    from duet.timing import timed_events
-
-    score = read_score(args.score)
-    expected = [
-        Expected(round(t.start_s * 1e6), t.event.pitch, t.event.bar)
-        for t in timed_events(score, "pianist")
-    ]
     import mido
 
+    from duet.listening import PlayedNote, grade_take
+
+    score = read_score(args.score)
     now, played = 0.0, []
     for msg in mido.MidiFile(args.played):  # iterating gives times in seconds
         now += msg.time
         if msg.type == "note_on" and msg.velocity > 0:
             played.append(PlayedNote(round(now * 1e6), msg.note, msg.velocity))
-    if played and expected:  # line up the first notes: recordings start at any time
-        shift = expected[0].t_us - played[0].t_us
-        played = [PlayedNote(p.t_us + shift, p.pitch, p.velocity) for p in played]
-    report = grade(expected, played)
+    report = grade_take(score, played)
     for g in report.grades:
         if g.result != "hit":
             print(f"bar {g.expected.bar}: {g.result}")
@@ -403,6 +412,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--model", default=None)
     p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser("teach", help="teach me this song: lesson steps from a recording")
+    p.add_argument("audio")
+    p.add_argument("--target", type=int, default=3, help="the level to reach")
+    p.add_argument("--out", default="lesson")
+    p.set_defaults(func=cmd_teach)
 
     p = sub.add_parser("jam", help="call and response: you play, the robot answers")
     p.add_argument("--turns", type=int, default=4)

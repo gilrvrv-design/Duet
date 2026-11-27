@@ -55,6 +55,12 @@ With an acoustic piano, add `--mic` (needs `pip install sounddevice`); the liste
 duet play examples/rain-on-the-bottles.json --sim --wait --mic
 ```
 
+Teach me this song: lesson steps from a recording, from the easiest part slowly up to your target level:
+
+```bash
+duet teach my-song.m4a --target 3 --out lesson
+```
+
 Jam in call and response: you play a two-bar phrase, the robot answers with a variation of it
 (`--midi-in` or `--mic` for a real piano; without them a simulated pianist plays):
 

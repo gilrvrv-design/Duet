@@ -57,6 +57,7 @@ def request_message(
     pianist_range: tuple[str, str],
     tempo_bpm: float | None,
     time_signature: tuple[int, int] | None,
+    focus: str | None = None,
 ) -> str:
     lines = [
         f"Request: {prompt}",
@@ -69,6 +70,11 @@ def request_message(
         lines.append(f"Tempo: {tempo_bpm:g} bpm.")
     if time_signature:
         lines.append(f"Time signature: {time_signature[0]}/{time_signature[1]}.")
+    if focus:
+        lines.append(
+            f"Practice focus: include a few {focus} in the pianist part, but keep most of it "
+            "comfortable (about 85% familiar, 15% new)."
+        )
     return "\n".join(lines)
 
 

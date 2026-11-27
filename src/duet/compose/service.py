@@ -39,6 +39,7 @@ class CompositionRequest(BaseModel):
     pianist_range: tuple[str, str] = ("C4", "C5")
     tempo_bpm: float | None = Field(None, gt=20, le=300)
     time_signature: tuple[int, int] | None = None
+    focus: str | None = Field(None, max_length=200)  # what the pianist should practise
 
 
 @dataclass
@@ -81,6 +82,7 @@ def compose(
                 pianist_range=request.pianist_range,
                 tempo_bpm=request.tempo_bpm,
                 time_signature=request.time_signature,
+                focus=request.focus,
             ),
         }
     ]

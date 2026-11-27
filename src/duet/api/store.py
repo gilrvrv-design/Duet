@@ -33,6 +33,7 @@ class NotFound(KeyError):
 
 class Store(Protocol):
     def add(self, kind: str, data: Any, **meta) -> Record: ...
+    def put(self, kind: str, record_id: str, data: Any, **meta) -> Record: ...
     def get(self, kind: str, record_id: str) -> Record: ...
     def delete(self, kind: str, record_id: str) -> None: ...
     def update_meta(self, kind: str, record_id: str, **meta) -> Record: ...
@@ -51,6 +52,13 @@ class MemoryStore:
         record = Record(_new_id(kind), kind, data, meta)
         with self._lock:
             self._items[record.id] = record
+        return record
+
+    def put(self, kind: str, record_id: str, data: Any, **meta) -> Record:
+        """Create or replace a record with a known id (for example one per user)."""
+        record = Record(record_id, kind, data, meta)
+        with self._lock:
+            self._items[record_id] = record
         return record
 
     def get(self, kind: str, record_id: str) -> Record:
@@ -86,7 +94,15 @@ def default_codecs() -> dict[str, Codec]:
         "duet": (lambda s: s.to_dict(), DuetScore.model_validate),
         "transcription": (lambda t: t.to_dict(), transcription_decode),
         "job": (lambda j: j, lambda j: j),
+        "skills": (lambda m: m.model_dump(mode="json"), _skills_decode),
+        "lesson": (lambda d: d, lambda d: d),
     }
+
+
+def _skills_decode(data):
+    from duet.pedagogy import SkillModel
+
+    return SkillModel.model_validate(data)
 
 
 class SqliteStore:
@@ -118,6 +134,17 @@ class SqliteStore:
             self._db.execute(
                 "INSERT INTO records VALUES (?, ?, ?, ?, ?)",
                 (record.id, kind, encoded, json.dumps(meta), record.created_at),
+            )
+        return record
+
+    def put(self, kind: str, record_id: str, data: Any, **meta) -> Record:
+        """Create or replace a record with a known id (for example one per user)."""
+        record = Record(record_id, kind, data, meta)
+        encoded = json.dumps(self._codec(kind)[0](data))
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO records VALUES (?, ?, ?, ?, ?)",
+                (record_id, kind, encoded, json.dumps(meta), record.created_at),
             )
         return record
 
