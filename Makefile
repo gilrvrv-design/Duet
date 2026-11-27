@@ -1,4 +1,4 @@
-.PHONY: install check test lint format serve
+.PHONY: install check test lint format serve firmware
 
 install:
 	uv venv -q .venv
@@ -15,7 +15,10 @@ format:
 test:
 	pytest
 
-check: lint test
+check: lint test firmware
+
+firmware:
+	$(MAKE) -s -C firmware test
 
 serve:
 	uvicorn --factory duet.api:create_app --reload

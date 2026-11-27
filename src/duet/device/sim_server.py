@@ -14,7 +14,7 @@ from websockets.asyncio.server import ServerConnection, serve
 
 from duet.device.clock import hub_now_us
 from duet.profile import RobotProfile, robot_profile
-from duet.protocol import Ack, Hello, Message, TimePing, TimePong, parse_message
+from duet.protocol import Ack, Heartbeat, Hello, Message, TimePing, TimePong, parse_message
 from duet.sim import SimulatedRig
 
 
@@ -26,6 +26,7 @@ class SimulatedDevice:
     device_id: str = "sim-1"
     rig: SimulatedRig = field(init=False)
     commands: int = 0
+    heartbeats: int = 0
 
     def __post_init__(self) -> None:
         self.rig = SimulatedRig(self.profile)
@@ -42,6 +43,9 @@ class SimulatedDevice:
         if isinstance(msg, TimePing):
             arrived = self.now_us()
             return TimePong(msg.t1, arrived, self.now_us(), seq=msg.seq)
+        if isinstance(msg, Heartbeat):
+            self.heartbeats += 1
+            return None
         self.rig.send(msg)
         self.commands += 1
         return Ack(seq=msg.seq)

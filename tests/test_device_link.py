@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import time
 
 import pytest
 
@@ -12,6 +13,7 @@ from duet.protocol import (
     Ack,
     Estop,
     Fault,
+    Heartbeat,
     Hello,
     Home,
     LedFrameAt,
@@ -50,6 +52,7 @@ def test_offset_and_delay_maths():
         TimePong(5, 6, 7),
         Ack(seq=9, status="ok"),
         Fault(code="STALL", detail="lost steps"),
+        Heartbeat(),
     ],
 )
 def test_messages_round_trip(msg):
@@ -96,6 +99,8 @@ def test_clock_sync_over_a_real_socket(device):
         error = abs(gateway.sync.offset_us - sim.clock_offset_us)
         assert error < 2000, f"sync error {error} us"  # spec target: under 2 ms
         assert gateway.sync.samples == 16
+        time.sleep(0.6)
+        assert sim.heartbeats >= 2
 
 
 def test_performance_over_the_socket_lands_on_time(device):
@@ -137,8 +142,6 @@ def test_drift_estimate_maths():
 
 @pytest.mark.parametrize("device", [2000.0], indirect=True)
 def test_periodic_resync_tracks_a_drifting_clock(device):
-    import time
-
     sim, url = device
     with DeviceGateway(url, resync_every_s=0.25) as gateway:
         time.sleep(1.2)

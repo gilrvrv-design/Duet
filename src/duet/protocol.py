@@ -60,6 +60,14 @@ class Estop(Message):
 
 
 @dataclass(frozen=True)
+class Heartbeat(Message):
+    """Proof of life from the Hub. Devices stop moving if they hear nothing for 1 s
+    (FR-D6), so the gateway sends one every 250 ms. Not acknowledged."""
+
+    type: ClassVar[str] = "heartbeat"
+
+
+@dataclass(frozen=True)
 class Hello(Message):
     type: ClassVar[str] = "hello"
     protocol: int = 1
@@ -97,7 +105,19 @@ class Fault(Message):
 TIMED = (MoveAt, StrikeAt, LedFrameAt)
 MESSAGE_TYPES = {
     cls.type: cls
-    for cls in (Home, MoveAt, StrikeAt, LedFrameAt, Estop, Hello, TimePing, TimePong, Ack, Fault)
+    for cls in (
+        Home,
+        MoveAt,
+        StrikeAt,
+        LedFrameAt,
+        Estop,
+        Heartbeat,
+        Hello,
+        TimePing,
+        TimePong,
+        Ack,
+        Fault,
+    )
 }
 
 

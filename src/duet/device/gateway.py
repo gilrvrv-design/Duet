@@ -15,7 +15,7 @@ import time
 from websockets.asyncio.client import ClientConnection, connect
 
 from duet.device.clock import ClockSync, SyncSample, best_sync, hub_now_us
-from duet.protocol import TIMED, Ack, Hello, Message, TimePing, TimePong, parse_message
+from duet.protocol import TIMED, Ack, Heartbeat, Hello, Message, TimePing, TimePong, parse_message
 
 
 class DeviceGateway:
@@ -25,10 +25,12 @@ class DeviceGateway:
         sync_samples: int = 16,
         timeout_s: float = 5.0,
         resync_every_s: float | None = 2.0,
+        heartbeat_every_s: float = 0.25,
     ) -> None:
         self.url = url
         self.sync_samples = sync_samples
         self.resync_every_s = resync_every_s
+        self.heartbeat_every_s = heartbeat_every_s
         self.timeout_s = timeout_s
         self.hello: Hello | None = None
         self.sync: ClockSync | None = None
@@ -39,6 +41,7 @@ class DeviceGateway:
         self._ws: ClientConnection | None = None
         self._reader_task: asyncio.Task | None = None
         self._resync_task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task | None = None
         self._sync_lock: asyncio.Lock | None = None
         self._pongs: asyncio.Queue[tuple[TimePong, int]] | None = None
         self._sent: set[int] = set()
@@ -50,10 +53,15 @@ class DeviceGateway:
         self._call(self._connect())
         self.resync()
         if self.resync_every_s:
-            self._resync_task = asyncio.run_coroutine_threadsafe(
-                self._start_resync(), self._loop
-            ).result(self.timeout_s)
+            self._resync_task = self._start(self._resync_forever())
+        self._heartbeat_task = self._start(self._heartbeat_forever())
         return self
+
+    def _start(self, coro) -> asyncio.Task:
+        async def create():
+            return asyncio.create_task(coro)
+
+        return asyncio.run_coroutine_threadsafe(create(), self._loop).result(self.timeout_s)
 
     def close(self) -> None:
         if self._thread.is_alive():
@@ -63,7 +71,7 @@ class DeviceGateway:
         self._loop.close()
 
     async def _shutdown(self) -> None:
-        for task in (self._resync_task, self._reader_task):
+        for task in (self._heartbeat_task, self._resync_task, self._reader_task):
             if task is not None:
                 task.cancel()
         if self._ws is not None:
@@ -115,14 +123,18 @@ class DeviceGateway:
                 samples.append(SyncSample(pong.t1, pong.t2, pong.t3, t4))
             return best_sync(samples, previous=self.sync)
 
-    async def _start_resync(self) -> asyncio.Task:
-        return asyncio.create_task(self._resync_forever())
-
     async def _resync_forever(self) -> None:
         """Keep the offset and drift fresh during long sessions (FR-D2)."""
         while True:
             await asyncio.sleep(self.resync_every_s)
             self.sync = await self._sync()
+
+    async def _heartbeat_forever(self) -> None:
+        """Never let the device go a whole watchdog period without hearing from us."""
+        beat = Heartbeat().to_json()
+        while True:
+            await self._ws.send(beat)
+            await asyncio.sleep(self.heartbeat_every_s)
 
     # sending -----------------------------------------------------------------
     def send(self, msg: Message) -> None:
