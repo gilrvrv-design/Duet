@@ -61,17 +61,21 @@ def _fold(bpm: float) -> float:
 
 
 def quantize(
-    notes: Sequence[NoteEvent], tempo_bpm: float, grid_beats: float = 0.25, strength: float = 1.0
+    notes: Sequence[NoteEvent],
+    tempo_bpm: float,
+    grid_beats: float = 0.25,
+    strength: float = 1.0,
+    origin_s: float | None = None,
 ) -> list[tuple[float, float, NoteEvent]]:
     """(start beat, duration in beats, note) with starts pulled toward the grid.
 
     ``strength`` 0 keeps the played timing, 1 snaps fully (spec FR-A6 quantise strength).
-    The first note becomes beat 0.
+    Beat 0 is ``origin_s`` (default: the first note).
     """
     if not notes:
         return []
     beat_s = 60.0 / tempo_bpm
-    origin = min(n.start_s for n in notes)
+    origin = min(n.start_s for n in notes) if origin_s is None else origin_s
     result = []
     for n in sorted(notes, key=lambda n: (n.start_s, n.pitch)):
         start = (n.start_s - origin) / beat_s

@@ -95,7 +95,7 @@ def cmd_compose(args) -> int:
 def cmd_transcribe(args) -> int:
     from duet.audio.pipeline import transcribe_file, transcription_to_midi
 
-    result = transcribe_file(args.audio)
+    result = transcribe_file(args.audio, route=args.route)
     transcription_to_midi(result, strength=args.quantize).save(args.out)
     print(
         f"{len(result.notes)} notes, {result.tempo_bpm:g} bpm, {result.key}, "
@@ -151,6 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("audio")
     p.add_argument("out", help="output .mid")
     p.add_argument("--quantize", type=float, default=1.0, help="0 = as played, 1 = on the grid")
+    p.add_argument("--route", choices=["auto", "melody", "full"], default="auto")
     p.add_argument("--duet", help="also arrange a playable duet into this .json or .mid file")
     p.add_argument("--difficulty", type=int, default=1, help="pianist level for --duet")
     p.set_defaults(func=cmd_transcribe)

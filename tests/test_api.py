@@ -5,6 +5,7 @@ import soundfile
 from fastapi.testclient import TestClient
 
 from duet.api import create_app
+from duet.audio.fullmix import full_mix_available
 from duet.midi_io import midi_to_score, score_to_midi_bytes
 from helpers import ROOT, make_score, synth
 from test_compose import GOOD, ScriptedComposer
@@ -85,6 +86,11 @@ def test_transcription_and_arrangement(client):
     duet = client.post(f"/v1/transcriptions/{t['id']}/arrangements", json={"difficulty": 2}).json()
     assert duet["robot_playable"] and duet["coverage_after"] == 1.0
     assert duet["score"]["meta"]["title"] == "hum"
+
+    if not full_mix_available():
+        data = {"rights_confirmed": "true", "route": "full"}
+        unavailable = client.post("/v1/transcriptions", files=files, data=data)
+        assert unavailable.json()["code"] == "ROUTE_UNAVAILABLE"
 
     junk = {"file": ("junk.mp3", b"not audio", "audio/mpeg")}
     bad = client.post("/v1/transcriptions", files=junk, data={"rights_confirmed": "true"})

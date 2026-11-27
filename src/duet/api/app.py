@@ -166,7 +166,7 @@ def create_app(
     async def create_transcription(
         file: Annotated[UploadFile, File()],
         rights_confirmed: Annotated[bool, Form()],
-        route: Annotated[Literal["auto", "melody"], Form()] = "auto",
+        route: Annotated[Literal["auto", "melody", "full"], Form()] = "auto",
     ):
         if not rights_confirmed:
             raise Problem(
@@ -181,9 +181,11 @@ def create_app(
             tmp.write(data)
             tmp.flush()
             try:
-                result = transcribe_file(tmp.name)
+                result = transcribe_file(tmp.name, route=route)
             except AudioError as exc:
                 raise Problem(422, "AUDIO_INVALID", str(exc)) from exc
+            except RuntimeError as exc:
+                raise Problem(422, "ROUTE_UNAVAILABLE", str(exc)) from exc
         record = store.add("transcription", result, filename=file.filename)
         return _transcription_view(record)
 

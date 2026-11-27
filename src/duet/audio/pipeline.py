@@ -51,9 +51,48 @@ def transcribe(
     )
 
 
-def transcribe_file(path: str | Path, transcriber: Transcriber | None = None) -> Transcription:
+def transcribe_file(
+    path: str | Path,
+    transcriber: Transcriber | None = None,
+    route: str = "auto",
+    full_mix=None,
+) -> Transcription:
+    """Transcribe a file. ``route`` is "melody", "full" or "auto" (spec FR-A3).
+
+    "auto" picks the full-mix route for chords or bands when it is installed, else the
+    melody route with a warning.
+    """
+    from duet.audio import fullmix
+
     audio, sr = load_audio(path, DEFAULT_SR)
-    return transcribe(audio, sr, transcriber)
+    if route == "auto":
+        polyphonic = fullmix.looks_polyphonic(audio, sr)
+        available = full_mix is not None or fullmix.full_mix_available()
+        route = "full" if polyphonic and available else "melody"
+        if polyphonic and not available:
+            result = transcribe(audio, sr, transcriber)
+            result.warnings.append(
+                "this sounds like more than one voice; "
+                "install the full-mix route for better results"
+            )
+            return result
+    if route == "melody":
+        return transcribe(audio, sr, transcriber)
+    if route != "full":
+        raise ValueError(f"unknown route: {route}")
+    full_mix = full_mix or fullmix.default_full_mix()
+    notes, stems = full_mix.transcribe_path(Path(path))
+    result = Transcription(
+        notes=notes,
+        tempo_bpm=estimate_tempo(notes, audio, sr),
+        key=estimate_key(notes)[0],
+        duration_s=round(audio.size / sr, 3),
+        model=", ".join(stems) or full_mix.name,
+        route="full",
+    )
+    if not notes:
+        result.warnings.append("no notes found in any stem")
+    return result
 
 
 def transcription_to_midi(

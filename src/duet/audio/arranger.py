@@ -172,7 +172,15 @@ def arrange(
     ]
     after = coverage([n.pitch for n in moved], robot.pitches)
 
-    placed = quantize(moved, t.tempo_bpm)
+    melody_name = melody[0].track if melody else "melody"
+    backing = [
+        NoteEvent(n.start_s, n.end_s, n.pitch + shift, n.velocity, n.confidence, n.track)
+        for n in t.notes
+        if n.track != melody_name
+    ]
+    origin = min((n.start_s for n in moved), default=0.0)
+    placed = quantize(moved, t.tempo_bpm, origin_s=origin)
+    harmony = quantize(moved + backing, t.tempo_bpm, origin_s=origin)
     events = []
     for start, dur, n in placed:
         bar, beat = int(start // BEATS_PER_BAR) + 1, start % BEATS_PER_BAR + 1
@@ -189,12 +197,12 @@ def arrange(
         )
     bars = max((e["bar"] for e in events), default=1)
 
-    _, tonic, mode = estimate_key(moved)
-    chords = _bar_chords(placed, tonic, mode, bars)
+    _, tonic, mode = estimate_key(moved + backing)
+    chords = _bar_chords(harmony, tonic, mode, bars)
     low, high = (name_to_midi(p) for p in pianist_range)
     events += _pianist_part(chords, difficulty, low, high)
 
-    key_name = estimate_key(moved)[0]
+    key_name = estimate_key(moved + backing)[0]
     score = DuetScore.model_validate(
         {
             "meta": {
