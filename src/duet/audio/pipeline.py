@@ -15,6 +15,8 @@ from duet.progress import Progress, no_progress
 
 TICKS = 480
 
+LOW_CONFIDENCE = 0.6  # notes below this are flagged to the user
+
 
 @dataclass
 class Transcription:
@@ -45,7 +47,7 @@ def transcribe(
     warnings = []
     if not notes:
         warnings.append("no notes found; is the recording silent or very noisy?")
-    low = [n for n in notes if n.confidence < 0.6]
+    low = [n for n in notes if n.confidence < LOW_CONFIDENCE]
     if low:
         warnings.append(f"{len(low)} note(s) have low confidence")
     return Transcription(

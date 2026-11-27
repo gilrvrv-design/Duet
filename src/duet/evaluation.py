@@ -24,6 +24,7 @@ from duet.compose.prompts import feedback_message, request_message, system_promp
 from duet.compose.service import Composer
 from duet.difficulty import pianist_difficulty
 from duet.profile import RobotProfile, robot_profile
+from duet.score import MAX_LEVEL, MIN_LEVEL
 
 
 def load_cases(path: str | Path) -> list[dict]:
@@ -33,19 +34,24 @@ def load_cases(path: str | Path) -> list[dict]:
 def prompt_pack_id(robot: RobotProfile | None = None) -> str:
     """Hash of everything that shapes the composer's answer except the request itself."""
     robot = robot or robot_profile()
-    sample = request_message(
-        "x",
-        difficulty=1,
-        bars=1,
-        lead="robot",
-        pianist_range=("C4", "C5"),
-        tempo_bpm=None,
-        time_signature=None,
-    )
+    # Every level's rules and the practice-focus wording are part of the prompts too.
+    samples = [
+        request_message(
+            "x",
+            difficulty=level,
+            bars=1,
+            lead="robot",
+            pianist_range=("C4", "C5"),
+            tempo_bpm=100,
+            time_signature=(3, 4),
+            focus="x" if level == MIN_LEVEL else None,
+        )
+        for level in range(MIN_LEVEL, MAX_LEVEL + 1)
+    ]
     material = "\n".join(
         [
             system_prompt(robot),
-            sample,
+            *samples,
             feedback_message(["x"]),
             json.dumps(DRAFT_SCHEMA, sort_keys=True),
         ]

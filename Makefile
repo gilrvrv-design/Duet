@@ -1,8 +1,7 @@
 .PHONY: install check test lint format serve firmware
 
-install:
-	uv venv -q .venv
-	uv pip install -q -e ".[dev,llm,audio,api]"
+install:  # exactly the versions in uv.lock; run `uv lock` after changing dependencies
+	uv sync -q --frozen --extra dev --extra llm --extra audio --extra api
 
 lint:
 	ruff check src tests tools

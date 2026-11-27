@@ -5,8 +5,7 @@ import pytest
 from duet.compose import CompositionRequest, compose
 from duet.compose.service import CompositionError
 from duet.copyright import CopyrightGuard, longest_run, melody_line
-from helpers import make_score
-from test_compose import ScriptedComposer, draft
+from helpers import ScriptedComposer, draft, make_score
 
 # An invented "protected" melody for the tests (no real copyrighted tune is stored).
 PROTECTED = {

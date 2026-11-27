@@ -2,48 +2,13 @@ import json
 
 import pytest
 
-from duet.compose import CompositionRequest, compose
+from duet.compose import compose
 from duet.compose.draft import DRAFT_SCHEMA, DraftError, draft_to_score, score_to_draft
 from duet.compose.prompts import difficulty_rules, system_prompt
 from duet.compose.service import CompositionError
 from duet.feasibility import check_robot
 from duet.profile import robot_profile
-
-
-def draft(robot, pianist, **meta):
-    note = lambda b, bt, d, p: {"bar": b, "beat": bt, "dur": d, "pitch": p, "vel": 80}  # noqa: E731
-    return json.dumps(
-        {
-            "title": "Test",
-            "key": "C major",
-            "beats_per_bar": 4,
-            "beat_unit": 4,
-            "tempo_bpm": 100,
-            "robot": [note(*n) for n in robot],
-            "pianist": [note(*n) for n in pianist],
-            "explanation": "The robot sings, you hold the bass.",
-            **meta,
-        }
-    )
-
-
-GOOD = draft(
-    [(1, 1, 2, "E5"), (1, 3, 2, "G5"), (2, 1, 4, "C6")], [(1, 1, 4, "C4"), (2, 1, 4, "E4")]
-)
-TOO_FAST = draft([(1, 1, 0.5, "C5"), (1, 1.5, 0.5, "C6")], [(1, 1, 4, "C4")])
-
-
-class ScriptedComposer:
-    def __init__(self, *answers):
-        self.answers = list(answers)
-        self.calls = []
-
-    def write(self, system, messages):
-        self.calls.append((system, [dict(m) for m in messages]))
-        return self.answers.pop(0)
-
-
-REQUEST = CompositionRequest(prompt="a happy tune", difficulty=1, bars=2)
+from helpers import GOOD, REQUEST, TOO_FAST, ScriptedComposer, draft
 
 
 def test_good_first_draft():
@@ -106,6 +71,29 @@ def test_draft_round_trip_and_errors():
         draft_to_score(
             draft([(1, 9, 1, "C5")], []), prompt="p", difficulty=1, pianist_range=("C4", "C5")
         )
+    wrong_shapes = [
+        ({"robot": "C5 D5"}, "robot must be a list"),
+        ({"pianist": ["C4"]}, r"pianist\[0\] must be a note object"),
+    ]
+    for change, message in wrong_shapes:
+        text = json.dumps({**json.loads(GOOD), **change})
+        with pytest.raises(DraftError, match=message):
+            draft_to_score(text, prompt="p", difficulty=1, pianist_range=("C4", "C5"))
+    with pytest.raises(DraftError, match="JSON object"):
+        draft_to_score("[]", prompt="p", difficulty=1, pianist_range=("C4", "C5"))
+
+
+def test_drafts_name_the_profiles_they_were_composed_for():
+    score, _ = draft_to_score(
+        GOOD,
+        prompt="p",
+        difficulty=1,
+        pianist_range=("C4", "C5"),
+        robot_profile_id="glock-v1",
+        keyboard_profile_id="piano-61",
+    )
+    assert score.parts["robot"].instrument_profile == "glock-v1"
+    assert score.parts["pianist"].instrument_profile == "piano-61"
 
 
 def test_schema_is_strict_friendly():

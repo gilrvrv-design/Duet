@@ -10,8 +10,7 @@ from duet.api.codecs import default_codecs
 from duet.audio.fullmix import full_mix_available
 from duet.midi_io import midi_to_score, score_to_midi_bytes
 from duet.storage import MemoryStore, SqliteStore
-from helpers import ROOT, make_score, synth
-from test_compose import GOOD, ScriptedComposer
+from helpers import GOOD, ROOT, ScriptedComposer, make_score, synth
 
 EXAMPLE = (ROOT / "examples" / "rain-on-the-bottles.json").read_text()
 
@@ -311,3 +310,58 @@ def test_publishing_and_copyright(tmp_path):
     assert (
         client.post(f"/v1/duets/{arranged['id']}/publish").json()["code"] == "RIGHTS_NOT_CONFIRMED"
     )
+
+
+class FailingComposer:
+    def __init__(self, error):
+        self.error = error
+
+    def write(self, system, messages):
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        ("api", "LLM_ERROR"),
+        ("refused", "LLM_ERROR"),
+        ("bad drafts", "COMPOSITION_FAILED"),
+    ],
+)
+def test_composer_failures_are_problems_not_crashes(error, code):
+    from duet.compose.claude import ComposerRefused
+    from duet.compose.service import ComposerError
+
+    if error == "bad drafts":
+        factory = lambda: ScriptedComposer(*["not json"] * 10)  # noqa: E731
+    else:
+        exc = ComposerRefused("no") if error == "refused" else ComposerError("API down")
+        factory = lambda: FailingComposer(exc)  # noqa: E731
+    client = TestClient(create_app(composer_factory=factory, store=MemoryStore()))
+    answer = client.post("/v1/compositions", json={"prompt": "x", "bars": 2})
+    assert answer.status_code == 502 and answer.json()["code"] == code
+
+
+def test_every_error_code_has_a_status():
+    from duet.api.errors import STATUS, Problem
+
+    assert all(400 <= status < 600 for status in STATUS.values())
+    with pytest.raises(ValueError, match="unknown error code"):
+        Problem("TYPO", "x")
+
+
+def test_inputs_are_bounded(client):
+    assert client.get("/v1/users/bad%20id/skills").status_code == 422
+    assert client.get("/v1/duets?limit=1000").status_code == 422
+    duet = client.get("/v1/duets?featured=true").json()[0]
+    too_many = {"duet_id": duet["id"], "played": [{"t_ms": 0, "pitch": 60}] * 20_001}
+    assert client.post("/v1/users/u1/performances", json=too_many).status_code == 422
+    negative = {"duet_id": duet["id"], "played": [{"t_ms": -5, "pitch": 60}]}
+    assert client.post("/v1/users/u1/performances", json=negative).status_code == 422
+
+
+def test_a_user_named_like_a_duet_cannot_overwrite_it(client):
+    duet = client.get("/v1/duets?featured=true").json()[0]
+    take = {"duet_id": duet["id"], "played": [{"t_ms": 0, "pitch": 60}]}
+    assert client.post(f"/v1/users/{duet['id']}/performances", json=take).status_code == 201
+    assert client.get(f"/v1/duets/{duet['id']}").json()["score"]["meta"]["title"]

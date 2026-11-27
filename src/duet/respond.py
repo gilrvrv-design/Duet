@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from duet.listening import PlayedNote
 from duet.profile import RobotProfile
 from duet.repair import repair_robot
-from duet.score import DuetScore
+from duet.score import COMMON_TIME, DuetScore
 
 GRID_BEATS = 0.5
 VARIATIONS = ("echo", "answer", "sequence", "retrograde")
@@ -120,7 +120,10 @@ class Responder:
 
 
 def reply_score(
-    notes: list[PhraseNote], tempo_bpm: float, robot: RobotProfile, beats_per_bar: int = 4
+    notes: list[PhraseNote],
+    tempo_bpm: float,
+    robot: RobotProfile,
+    beats_per_bar: int = COMMON_TIME[0],
 ) -> DuetScore:
     """A robot-only score for the answer, made playable by repair."""
     events = [

@@ -26,6 +26,7 @@ SCHEMA_ID = "duetscore/1"
 
 PartName = Literal["robot", "pianist"]
 PARTS: tuple[PartName, ...] = ("robot", "pianist")
+COMMON_TIME = (4, 4)
 MIN_LEVEL, MAX_LEVEL = 1, 5  # pianist difficulty levels; the rules are in duet.difficulty
 Level = Annotated[int, Field(ge=MIN_LEVEL, le=MAX_LEVEL)]
 MIN_TEMPO_BPM, MAX_TEMPO_BPM = 20.0, 300.0  # exclusive, inclusive
@@ -70,7 +71,7 @@ class Meta(_Model):
     title: str = "Untitled duet"
     prompt: str | None = None
     key: str = "C major"
-    time_signature: tuple[int, int] = (4, 4)
+    time_signature: tuple[int, int] = COMMON_TIME
     tempo_bpm: Tempo = 100.0
     style_tags: tuple[str, ...] = ()
     difficulty_target: Level | None = None

@@ -84,6 +84,18 @@ def test_prompt_pack_changes_when_prompts_change(monkeypatch):
     assert prompt_pack_id() != before
 
 
+def test_prompt_pack_covers_every_level(monkeypatch):
+    """Changing the rules of level 4 changes what the composer is told."""
+    from duet.compose import prompts
+
+    before = prompt_pack_id()
+    real = prompts.difficulty_rules
+    monkeypatch.setattr(
+        prompts, "difficulty_rules", lambda level: real(level) + ("!" if level == 4 else "")
+    )
+    assert prompt_pack_id() != before
+
+
 def test_cli_eval_with_baseline(tmp_path, monkeypatch, capsys):
     from duet import cli
     from duet.compose import claude

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import mido
 
-from duet.score import DuetScore, Event, PartName, clamp_tempo
+from duet.score import COMMON_TIME, DuetScore, Event, PartName, clamp_tempo
 from duet.timing import bar_and_beat, beat_index
 
 TICKS_PER_QUARTER = 480
@@ -123,7 +123,7 @@ def _read_notes(midi: mido.MidiFile, warnings: list[str] | None = None):
     warnings = [] if warnings is None else warnings
     notes: list[_Note] = []
     names: dict[int, str] = {}
-    tempo, signature = DEFAULT_TEMPO_US, (4, 4)
+    tempo, signature = DEFAULT_TEMPO_US, COMMON_TIME
     seen_tempo = seen_sig = False
     tempo_changes = signature_changes = unreleased = 0
     for t, track in enumerate(midi.tracks):

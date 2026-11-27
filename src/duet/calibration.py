@@ -18,6 +18,7 @@ from duet.pitch import cents_between, hz_to_midi, midi_to_hz, midi_to_name
 from duet.profile import CalibrationInfo, RobotProfile
 
 DRIFT_WARNING_CENTS = 15.0
+SWEEP_INTERVAL_S = 1.0  # time between strikes in a sweep: long enough for a bottle to ring
 RENAME_CENTS = 50.0  # keep at or below RobotProfile.tolerance_cents
 
 
@@ -42,7 +43,9 @@ class CalibrationResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def plan_sweep(profile: RobotProfile, interval_s: float = 1.0) -> list[tuple[float, int]]:
+def plan_sweep(
+    profile: RobotProfile, interval_s: float = SWEEP_INTERVAL_S
+) -> list[tuple[float, int]]:
     """(time from the start of the sweep, bottle index): every bottle once, in order."""
     return [(i * interval_s, i) for i in range(len(profile.notes))]
 
@@ -109,7 +112,7 @@ def measure_sweep(
     sr: int,
     profile: RobotProfile,
     first_s: float,
-    interval_s: float = 1.0,
+    interval_s: float = SWEEP_INTERVAL_S,
 ) -> list[BottleMeasurement]:
     """Measure every bottle in a sweep recording (one window per strike)."""
     results = []
@@ -193,7 +196,11 @@ def apply_measurements(
 
 
 def calibrate_from_sweep(
-    audio: np.ndarray, sr: int, profile: RobotProfile, first_s: float, interval_s: float = 1.0
+    audio: np.ndarray,
+    sr: int,
+    profile: RobotProfile,
+    first_s: float,
+    interval_s: float = SWEEP_INTERVAL_S,
 ) -> CalibrationResult:
     return apply_measurements(profile, measure_sweep(audio, sr, profile, first_s, interval_s))
 

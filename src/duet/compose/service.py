@@ -146,6 +146,8 @@ def _converse(request, first_message, composer, robot, keyboard, max_rounds, pro
                 prompt=request.prompt,
                 difficulty=request.difficulty,
                 pianist_range=request.pianist_range,
+                robot_profile_id=robot.id,
+                keyboard_profile_id=keyboard.id,
             )
         except DraftError as exc:
             problems = [str(exc)]

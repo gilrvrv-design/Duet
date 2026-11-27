@@ -11,7 +11,7 @@ import json
 
 from pydantic import ValidationError
 
-from duet.score import DuetScore
+from duet.score import PARTS, DuetScore
 
 NOTE_SCHEMA = {
     "type": "object",
@@ -56,8 +56,17 @@ class DraftError(ValueError):
     """The composer's output could not be turned into a score. The message is feedback."""
 
 
-def draft_to_score(text: str, *, prompt: str, difficulty: int, pianist_range: tuple[str, str]):
-    """Parse the composer's JSON text into (DuetScore, explanation)."""
+def draft_to_score(
+    text: str,
+    *,
+    prompt: str,
+    difficulty: int,
+    pianist_range: tuple[str, str],
+    robot_profile_id: str = "bottles-v1",
+    keyboard_profile_id: str = "piano-88",
+):
+    """Parse the composer's JSON text into (DuetScore, explanation). The score names
+    the profiles it was composed for."""
     try:
         draft = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -67,12 +76,15 @@ def draft_to_score(text: str, *, prompt: str, difficulty: int, pianist_range: tu
     missing = [k for k in DRAFT_SCHEMA["required"] if k not in draft]
     if missing:
         raise DraftError(f"missing fields: {', '.join(missing)}")
-    events = [
-        {**note, "part": part}
-        for part in ("robot", "pianist")
-        for note in draft[part]
-        if isinstance(note, dict)
-    ]
+    events = []
+    for part in PARTS:
+        notes = draft[part]
+        if not isinstance(notes, list):
+            raise DraftError(f"{part} must be a list of notes")
+        for i, note in enumerate(notes):
+            if not isinstance(note, dict):
+                raise DraftError(f'{part}[{i}] must be a note object like {{"bar": 1, ...}}')
+            events.append({**note, "part": part})
     data = {
         "meta": {
             "title": draft["title"],
@@ -83,9 +95,9 @@ def draft_to_score(text: str, *, prompt: str, difficulty: int, pianist_range: tu
             "difficulty_target": difficulty,
         },
         "parts": {
-            "robot": {"instrument_profile": "bottles-v1", "role": "melody"},
+            "robot": {"instrument_profile": robot_profile_id, "role": "melody"},
             "pianist": {
-                "instrument_profile": "piano-88",
+                "instrument_profile": keyboard_profile_id,
                 "role": "accompaniment",
                 "hand": "right",
                 "range": list(pianist_range),

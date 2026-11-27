@@ -48,8 +48,7 @@ def test_job_failures_are_recorded(runner, capsys):
 def test_compose_and_transcribe_report_stages():
     from duet.audio.pipeline import transcribe_file
     from duet.compose import compose
-    from helpers import synth
-    from test_compose import GOOD, REQUEST, ScriptedComposer
+    from helpers import GOOD, REQUEST, ScriptedComposer, synth
 
     stages = []
     compose(REQUEST, ScriptedComposer(GOOD), progress=lambda s, f=None: stages.append(s))

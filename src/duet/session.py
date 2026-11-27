@@ -15,6 +15,7 @@ from duet.plans import HOME_STEPS, led_count
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import LedFrameAt, MoveAt
 from duet.respond import PhraseNote, Responder, capture, reply_score
+from duet.score import COMMON_TIME
 
 YOUR_TURN = (0, 40, 90)  # a soft blue over the whole strip
 OFF = (0, 0, 0)
@@ -47,7 +48,7 @@ def call_and_response(
     tempo_bpm: float = 90,
     bars_per_turn: int = 2,
     turns: int = 4,
-    beats_per_bar: int = 4,
+    beats_per_bar: int = COMMON_TIME[0],
 ) -> Session:
     home_all(devices)
     spb_us = round(60 / tempo_bpm * 1_000_000)

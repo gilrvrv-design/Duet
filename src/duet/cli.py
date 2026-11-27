@@ -7,6 +7,7 @@ import contextlib
 import sys
 from pathlib import Path
 
+from duet.calibration import SWEEP_INTERVAL_S
 from duet.conductor import RealClock, VirtualClock, perform
 from duet.difficulty import pianist_difficulty
 from duet.feasibility import check_robot
@@ -509,7 +510,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("recording")
     p.add_argument("--out", default="calibrated.yaml")
     p.add_argument("--first", type=float, help="seconds into the recording of the first strike")
-    p.add_argument("--interval", type=float, default=1.0)
+    p.add_argument("--interval", type=float, default=SWEEP_INTERVAL_S)
     p.set_defaults(func=cmd_calibrate)
 
     p = sub.add_parser("device-sim", help="run a simulated rig device on a WebSocket")
