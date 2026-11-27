@@ -96,6 +96,16 @@ class Ack(Message):
 
 
 @dataclass(frozen=True)
+class Telemetry(Message):
+    """Device state, sent when homing ends and whenever position trust changes."""
+
+    type: ClassVar[str] = "telemetry"
+    homed: bool = False
+    position: int = 0
+    queued: int = 0
+
+
+@dataclass(frozen=True)
 class Fault(Message):
     type: ClassVar[str] = "fault"
     code: str = ""
@@ -103,22 +113,7 @@ class Fault(Message):
 
 
 TIMED = (MoveAt, StrikeAt, LedFrameAt)
-MESSAGE_TYPES = {
-    cls.type: cls
-    for cls in (
-        Home,
-        MoveAt,
-        StrikeAt,
-        LedFrameAt,
-        Estop,
-        Heartbeat,
-        Hello,
-        TimePing,
-        TimePong,
-        Ack,
-        Fault,
-    )
-}
+MESSAGE_TYPES = {cls.type: cls for cls in Message.__subclasses__()}  # every message, by name
 
 
 def parse_message(data: dict | str) -> Message:

@@ -43,5 +43,6 @@ int write_hello(char* buf, size_t n, const char* device_id, const char* profile)
 int write_ack(char* buf, size_t n, int64_t seq, const char* status);
 int write_pong(char* buf, size_t n, int64_t seq, int64_t t1, int64_t t2, int64_t t3);
 int write_fault(char* buf, size_t n, const char* code, const char* detail);
+int write_telemetry(char* buf, size_t n, bool homed, int32_t position, size_t queued);
 
 }  // namespace duet

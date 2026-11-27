@@ -21,6 +21,21 @@ void Executor::fault(const char* code, const char* detail) {
   ++stats_.faults;
 }
 
+void Executor::report() {
+  char buf[128];
+  write_telemetry(buf, sizeof buf, homed_, hal_.position(), queue_.size());
+  sink_.send(buf);
+}
+
+void Executor::finish_homing() {
+  hal_.stop();
+  hal_.set_position(0);
+  homing_ = false;
+  homed_ = true;
+  target_steps_ = 0;
+  report();
+}
+
 void Executor::on_message(const char* json, int64_t now_us) {
   last_message_us_ = now_us;
   Command c;
@@ -56,15 +71,13 @@ void Executor::on_message(const char* json, int64_t now_us) {
     homed_ = false;
     homing_ = true;
     homing_started_us_ = now_us;
-    if (hal_.home_sensor()) {
-      hal_.set_position(0);
-      homing_ = false;
-      homed_ = true;
-      target_steps_ = 0;
-    } else {
-      hal_.move_to(-cfg_.travel_steps * 2, cfg_.homing_speed_steps_s, cfg_.homing_speed_steps_s * 4.0f);
-    }
     ack(c.seq, "ok");
+    if (hal_.home_sensor()) {
+      finish_homing();
+    } else {
+      hal_.move_to(-cfg_.travel_steps * 2, cfg_.homing_speed_steps_s,
+                   cfg_.homing_speed_steps_s * 4.0f);
+    }
     return;
   }
   if (!queue_.push(c)) {
@@ -82,11 +95,7 @@ void Executor::poll(int64_t now_us) {
   if (estopped_) return;
   if (homing_) {
     if (hal_.home_sensor()) {
-      hal_.stop();
-      hal_.set_position(0);
-      homing_ = false;
-      homed_ = true;
-      target_steps_ = 0;
+      finish_homing();
     } else if (now_us - homing_started_us_ > cfg_.homing_timeout_us) {
       hal_.stop();
       homing_ = false;
@@ -99,6 +108,7 @@ void Executor::poll(int64_t now_us) {
     queue_.clear();
     homed_ = false;  // position is no longer trusted
     fault("WATCHDOG", "hub silent while moving");
+    report();
     return;
   }
   while (!queue_.empty() && queue_.top().t_us <= now_us) {

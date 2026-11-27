@@ -80,6 +80,7 @@ static void test_home_move_strike() {
   CHECK(!ex.homed());
   run_until(ex, hal, 3000000);
   CHECK(ex.homed() && hal.position() == 0);
+  CHECK(out.has(R"({"type":"telemetry","seq":0,"homed":true,"position":0,"queued":0})"));
   int64_t t0 = hal.now_us;
   char msg[200];
   std::snprintf(msg, sizeof msg, R"({"type":"move_at","seq":2,"t_us":%lld,"target_steps":6400,"v_max_mm_s":500,"a_max_mm_s2":5000})", (long long)(t0 + 1000));

@@ -123,12 +123,17 @@ def perform(
     clock: Clock,
     lookahead_s: float = 0.5,
     buffer_s: float = 0.3,
+    homing_timeout_s: float = 30.0,
 ) -> Performance:
     """Play a score: home, count in, then stream messages ``lookahead_s`` ahead of time."""
     perf = Performance()
     perf.states.append(State.PREPARING)
     for device in devices:
         device.send(Home())
+    for device in devices:  # a real carriage takes time to find home (FR-R5)
+        wait_ready = getattr(device, "wait_ready", None)
+        if wait_ready is not None:
+            wait_ready(homing_timeout_s)
     count_in_s = score.meta.beats_per_bar * seconds_per_beat(score.meta.tempo_bpm)
     preroll = robot_plan(score, robot).preroll_s
     perf.start_us = clock.now_us() + round((buffer_s + max(count_in_s, preroll)) * 1_000_000)

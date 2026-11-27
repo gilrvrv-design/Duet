@@ -14,7 +14,18 @@ from websockets.asyncio.server import ServerConnection, serve
 
 from duet.device.clock import hub_now_us
 from duet.profile import RobotProfile, robot_profile
-from duet.protocol import Ack, Heartbeat, Hello, Message, TimePing, TimePong, parse_message
+from duet.protocol import (
+    TIMED,
+    Ack,
+    Heartbeat,
+    Hello,
+    Home,
+    Message,
+    Telemetry,
+    TimePing,
+    TimePong,
+    parse_message,
+)
 from duet.sim import SimulatedRig
 
 
@@ -27,6 +38,9 @@ class SimulatedDevice:
     rig: SimulatedRig = field(init=False)
     commands: int = 0
     heartbeats: int = 0
+    homing_s: float = 0.0  # how long the simulated carriage takes to find home
+    homed_at_us: int | None = None  # device time homing finished
+    early_commands: int = 0  # timed commands scheduled before homing finished
 
     def __post_init__(self) -> None:
         self.rig = SimulatedRig(self.profile)
@@ -39,26 +53,39 @@ class SimulatedDevice:
         """The device clock at a Hub time: what sync tries to learn."""
         return hub_us + self.clock_offset_us + self.drift_ppm * (hub_us - self._start) / 1e6
 
-    def handle(self, msg: Message) -> Message | None:
+    def handle(self, msg: Message) -> list[tuple[float, Message]]:
+        """Replies to one message, each with a delay in seconds."""
         if isinstance(msg, TimePing):
             arrived = self.now_us()
-            return TimePong(msg.t1, arrived, self.now_us(), seq=msg.seq)
+            return [(0.0, TimePong(msg.t1, arrived, self.now_us(), seq=msg.seq))]
         if isinstance(msg, Heartbeat):
             self.heartbeats += 1
-            return None
+            return []
+        if isinstance(msg, Home):
+            self.homed_at_us = self.now_us() + round(self.homing_s * 1_000_000)
+        elif isinstance(msg, TIMED) and (self.homed_at_us is None or msg.t_us < self.homed_at_us):
+            self.early_commands += 1
         self.rig.send(msg)
         self.commands += 1
-        return Ack(seq=msg.seq)
+        replies = [(0.0, Ack(seq=msg.seq))]
+        if isinstance(msg, Home):
+            replies.append((self.homing_s, Telemetry(homed=True, position=0)))
+        return replies
 
     async def _session(self, ws: ServerConnection) -> None:
         await ws.send(Hello(device_id=self.device_id, profile=self.profile.id).to_json())
         async for text in ws:
             try:
-                reply = self.handle(parse_message(text))
+                replies = self.handle(parse_message(text))
             except (ValueError, TypeError) as exc:
-                reply = Ack(status=f"error: {exc}")
-            if reply is not None:
-                await ws.send(reply.to_json())
+                replies = [(0.0, Ack(status=f"error: {exc}"))]
+            for delay, reply in replies:
+                if delay:
+                    asyncio.get_running_loop().call_later(
+                        delay, lambda r=reply: asyncio.ensure_future(ws.send(r.to_json()))
+                    )
+                else:
+                    await ws.send(reply.to_json())
 
     async def serve(self, host: str = "127.0.0.1", port: int = 8765, ready=None) -> None:
         async with serve(self._session, host, port) as server:

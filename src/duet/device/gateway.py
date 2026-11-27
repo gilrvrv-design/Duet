@@ -15,7 +15,19 @@ import time
 from websockets.asyncio.client import ClientConnection, connect
 
 from duet.device.clock import ClockSync, SyncSample, best_sync, hub_now_us
-from duet.protocol import TIMED, Ack, Heartbeat, Hello, Message, TimePing, TimePong, parse_message
+from duet.protocol import (
+    TIMED,
+    Ack,
+    Fault,
+    Heartbeat,
+    Hello,
+    Home,
+    Message,
+    Telemetry,
+    TimePing,
+    TimePong,
+    parse_message,
+)
 
 
 class DeviceGateway:
@@ -36,6 +48,9 @@ class DeviceGateway:
         self.sync: ClockSync | None = None
         self.acked: set[int] = set()
         self.errors: list[str] = []
+        self.faults: list[Fault] = []
+        self.telemetry: Telemetry | None = None
+        self._ready = threading.Event()
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
         self._ws: ClientConnection | None = None
@@ -102,6 +117,14 @@ class DeviceGateway:
             msg = parse_message(text)
             if isinstance(msg, TimePong):
                 await self._pongs.put((msg, received))
+            elif isinstance(msg, Telemetry):
+                self.telemetry = msg
+                if msg.homed:
+                    self._ready.set()
+                else:
+                    self._ready.clear()
+            elif isinstance(msg, Fault):
+                self.faults.append(msg)
             elif isinstance(msg, Ack):
                 if msg.status == "ok":
                     self.acked.add(msg.seq)
@@ -142,8 +165,16 @@ class DeviceGateway:
             raise RuntimeError("connect() before sending")
         if isinstance(msg, TIMED):
             msg = dataclasses.replace(msg, t_us=self.sync.to_device(msg.t_us))
+        elif isinstance(msg, Home):
+            self._ready.clear()
         self._sent.add(msg.seq)
         self._call(self._ws.send(msg.to_json()))
+
+    def wait_ready(self, timeout_s: float) -> Telemetry:
+        """Block until the device reports it is homed."""
+        if not self._ready.wait(timeout_s):
+            raise TimeoutError("device did not report homed")
+        return self.telemetry
 
     def wait_acked(self) -> None:
         """Block until the device acknowledged everything sent (FR-D4)."""

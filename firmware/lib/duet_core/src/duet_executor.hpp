@@ -47,6 +47,8 @@ class Executor {
   bool duty_allows(int32_t pulse_us, int64_t now_us);
   void fault(const char* code, const char* detail);
   void ack(int64_t seq, const char* status);
+  void report();  // telemetry: homed, position, queue depth
+  void finish_homing();
 
   Hal& hal_;
   Sink& sink_;

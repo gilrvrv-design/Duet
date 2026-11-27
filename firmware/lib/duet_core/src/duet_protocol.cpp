@@ -122,4 +122,12 @@ int write_fault(char* buf, size_t n, const char* code, const char* detail) {
                        detail);
 }
 
+int write_telemetry(char* buf, size_t n, bool homed, int32_t position, size_t queued) {
+  return std::snprintf(buf, n,
+                       "{\"type\":\"telemetry\",\"seq\":0,\"homed\":%s,\"position\":%d,"
+                       "\"queued\":%u}",
+                       homed ? "true" : "false", static_cast<int>(position),
+                       static_cast<unsigned>(queued));
+}
+
 }  // namespace duet
