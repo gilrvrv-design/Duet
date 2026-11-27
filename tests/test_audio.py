@@ -101,3 +101,7 @@ def test_cli_transcribe(tmp_path, capsys):
     out = tmp_path / "hum.mid"
     assert main(["transcribe", str(wav), str(out)]) == 0
     assert out.exists() and "4 notes" in capsys.readouterr().out
+    duet = tmp_path / "hum.json"
+    assert main(["transcribe", str(wav), str(out), "--duet", str(duet)]) == 0
+    assert "melody on bottles 100% -> 100%" in capsys.readouterr().out
+    assert main(["play", str(duet), "--sim"]) == 0

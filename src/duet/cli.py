@@ -103,6 +103,18 @@ def cmd_transcribe(args) -> int:
     )
     for warning in result.warnings:
         print("warning: " + warning)
+    if args.duet:
+        from duet.audio.arranger import arrange
+
+        arrangement = arrange(result, difficulty=args.difficulty, title=Path(args.audio).stem)
+        write_score(arrangement.score, args.duet)
+        print(
+            f"duet: transposed {arrangement.transpose:+d}, melody on bottles "
+            f"{arrangement.coverage_before:.0%} -> {arrangement.coverage_after:.0%}, "
+            f"chords {' '.join(arrangement.chords)}, {len(arrangement.repairs)} repair(s)"
+        )
+        for tip in arrangement.retuning:
+            print("tip: " + tip.advice())
     return 0
 
 
@@ -139,6 +151,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("audio")
     p.add_argument("out", help="output .mid")
     p.add_argument("--quantize", type=float, default=1.0, help="0 = as played, 1 = on the grid")
+    p.add_argument("--duet", help="also arrange a playable duet into this .json or .mid file")
+    p.add_argument("--difficulty", type=int, default=1, help="pianist level for --duet")
     p.set_defaults(func=cmd_transcribe)
 
     p = sub.add_parser("play", help="perform a score")
