@@ -36,6 +36,19 @@ Perform it on the simulated rig:
 duet play examples/rain-on-the-bottles.json --sim
 ```
 
+Practise in wait mode: the robot pauses at each of your notes until you play it, then grades you.
+Use `--midi-in "<port name>"` with a MIDI keyboard; without it a simulated pianist plays:
+
+```bash
+duet play examples/rain-on-the-bottles.json --sim --wait
+```
+
+Grade a MIDI recording of the pianist part:
+
+```bash
+duet grade examples/rain-on-the-bottles.json my-take.mid
+```
+
 Make an unplayable score playable, or convert between DuetScore JSON and MIDI:
 
 ```bash

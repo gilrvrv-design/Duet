@@ -83,9 +83,15 @@ def cmd_play(args) -> int:
         print("choose --sim or --device ws://host:port", file=sys.stderr)
         return 2
     rig = SimulatedRig(robot)
-    clock = RealClock() if args.realtime else VirtualClock()
-    perf = perform(score, robot, keyboard_profile(args.piano), [rig], clock)
+    keys = _keys(args)
+    clock = RealClock() if args.realtime or args.midi_in else VirtualClock()
+    perf = perform(score, robot, keyboard_profile(args.piano), [rig], clock, keys=keys)
     rig.run()
+    if keys is not None:
+        from duet.listening import grade
+
+        print(f"waited {perf.waited_us / 1e6:.1f} s for the pianist")
+        print(grade(perf.expected_pianist(), perf.played).feedback())
     planned = [p for p in perf.planned if p.part == "robot"]
     errors = [abs(s.t_us - p.t_us) for s, p in zip(rig.sounds, planned, strict=False)]
     print(f"robot notes: {len(rig.sounds)}/{len(planned)}, LED frames: {len(rig.led_frames)}")
@@ -93,6 +99,49 @@ def cmd_play(args) -> int:
     for fault in rig.faults:
         print("  " + fault)
     return 0 if not rig.faults and len(rig.sounds) == len(planned) else 1
+
+
+def _keys(args):
+    """Wait mode needs someone at the keys: a MIDI keyboard or a simulated pianist."""
+    if args.midi_in:
+        import mido
+
+        from duet.listening import MidiKeys
+
+        return MidiKeys(mido.open_input(args.midi_in))
+    if args.wait:
+        from duet.listening import SimulatedPianist
+
+        return SimulatedPianist(reaction_s=args.reaction)
+    return None
+
+
+def cmd_grade(args) -> int:
+    """Grade a recorded MIDI performance of the pianist part against the score."""
+    from duet.listening import Expected, PlayedNote, grade
+    from duet.timing import timed_events
+
+    score = read_score(args.score)
+    expected = [
+        Expected(round(t.start_s * 1e6), t.event.pitch, t.event.bar)
+        for t in timed_events(score, "pianist")
+    ]
+    import mido
+
+    now, played = 0.0, []
+    for msg in mido.MidiFile(args.played):  # iterating gives times in seconds
+        now += msg.time
+        if msg.type == "note_on" and msg.velocity > 0:
+            played.append(PlayedNote(round(now * 1e6), msg.note, msg.velocity))
+    if played and expected:  # line up the first notes: recordings start at any time
+        shift = expected[0].t_us - played[0].t_us
+        played = [PlayedNote(p.t_us + shift, p.pitch, p.velocity) for p in played]
+    report = grade(expected, played)
+    for g in report.grades:
+        if g.result != "hit":
+            print(f"bar {g.expected.bar}: {g.result}")
+    print(report.feedback())
+    return 0
 
 
 def _play_on_device(score, robot, keyboard, url: str) -> int:
@@ -257,7 +306,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sim", action="store_true", help="use the simulated rig")
     p.add_argument("--realtime", action="store_true", help="run the clock in real time")
     p.add_argument("--device", help="play on a device at this WebSocket URL")
+    p.add_argument("--wait", action="store_true", help="wait mode: pause for each pianist note")
+    p.add_argument("--midi-in", help="MIDI keyboard port for wait mode (default: simulated)")
+    p.add_argument("--reaction", type=float, default=0.3, help="simulated pianist delay (s)")
     p.set_defaults(func=cmd_play)
+    p = sub.add_parser("grade", help="grade a recorded pianist performance (MIDI)")
+    p.add_argument("score")
+    p.add_argument("played", help="MIDI file of what the pianist played")
+    p.set_defaults(func=cmd_grade)
+
     p = sub.add_parser("sweep", help="write the calibration sweep score")
     p.add_argument("out")
     p.set_defaults(func=cmd_sweep)

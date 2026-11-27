@@ -72,5 +72,7 @@ tests/
 | 20 | ESP32 firmware executor for `move_at` / `strike_at` / `led_frame_at` | §5.10 | Hardware-in-the-loop timing test | Core done and contract-tested; ESP32 glue written, not yet compiled or run on hardware |
 | 20b | Conductor waits for "homed" telemetry before the count-in; device reports position and homing state | FR-R5, FR-D3 | Slow homing on the simulated device delays the start instead of faulting | Done |
 | 21 | Calibration: bottle positions, measured pitch, strike latency | §5.11 | Recorded strikes update the profile | Done (tested on synthesized recordings) |
-| 22 | Listening engine: MIDI input, hit grading, wait mode | §5.6 | Recorded performance graded correctly |
+| 22 | Listening engine: MIDI input, hit grading, wait mode | §5.6 | Recorded performance graded correctly | Done (MIDI path; real keyboard not tested here) |
+| 22b | Follow mode: score following and tempo coupling | FR-H3, FR-H5 | Robot follows a pianist who speeds up and slows down |
+| 22c | Microphone input with robot self-filtering | FR-H1, FR-H2 | Acoustic piano notes graded while bottles ring |
 | 23 | Composition evaluation set and gate | §9.3 | Pass rate reported per prompt-pack change |
