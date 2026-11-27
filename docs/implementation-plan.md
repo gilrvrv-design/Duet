@@ -35,7 +35,7 @@ src/duet/
   audio/            audio -> MIDI transcription and arranger (spec §5.14)
   api/              REST API (spec §6)
   cli.py            command line entry point
-profiles/           instrument profile YAML files
+  profiles/         instrument profile YAML files (shipped with the package)
 tests/
 ```
 

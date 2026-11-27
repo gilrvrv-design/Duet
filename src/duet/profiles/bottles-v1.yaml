@@ -1,0 +1,16 @@
+# Eight tuned glass bottles, one diatonic octave (spec A1). Pitches and positions are
+# placeholders until the calibration wizard measures the real rig.
+id: bottles-v1
+kind: robot.mallet.monophonic
+notes:
+  - { name: C5, hz: 523.25, steps: 1200 }
+  - { name: D5, hz: 587.33, steps: 7600 }
+  - { name: E5, hz: 659.26, steps: 14000 }
+  - { name: F5, hz: 698.46, steps: 20400 }
+  - { name: G5, hz: 783.99, steps: 26800 }
+  - { name: A5, hz: 880.00, steps: 33200 }
+  - { name: B5, hz: 987.77, steps: 39600 }
+  - { name: C6, hz: 1046.50, steps: 46000 }
+kinematics: { steps_per_mm: 80, v_max_mm_s: 500, a_max_mm_s2: 5000, settle_ms: 15, travel_steps: 48000 }
+striker: { pulse_us: [15000, 30000], recovery_ms: 60, latency_ms: 12, duty_limit: 0.2 }
+sound: { decay_ms: 1800 }
