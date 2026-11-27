@@ -92,6 +92,20 @@ def cmd_compose(args) -> int:
     return 0
 
 
+def cmd_transcribe(args) -> int:
+    from duet.audio.pipeline import transcribe_file, transcription_to_midi
+
+    result = transcribe_file(args.audio)
+    transcription_to_midi(result, strength=args.quantize).save(args.out)
+    print(
+        f"{len(result.notes)} notes, {result.tempo_bpm:g} bpm, {result.key}, "
+        f"{result.duration_s:g} s ({result.model})"
+    )
+    for warning in result.warnings:
+        print("warning: " + warning)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="duet", description=__doc__)
     parser.add_argument("--robot", default="bottles-v1", help="robot instrument profile")
@@ -120,6 +134,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lead", choices=["robot", "pianist"], default="robot")
     p.add_argument("--model", default=None, help="Claude model id (default: DUET_MODEL or Opus)")
     p.set_defaults(func=cmd_compose)
+
+    p = sub.add_parser("transcribe", help="audio file (wav, mp3, m4a, video...) to MIDI")
+    p.add_argument("audio")
+    p.add_argument("out", help="output .mid")
+    p.add_argument("--quantize", type=float, default=1.0, help="0 = as played, 1 = on the grid")
+    p.set_defaults(func=cmd_transcribe)
 
     p = sub.add_parser("play", help="perform a score")
     p.add_argument("score")

@@ -2,7 +2,7 @@
 
 install:
 	uv venv -q .venv
-	uv pip install -q -e ".[dev]"
+	uv pip install -q -e ".[dev,llm,audio]"
 
 lint:
 	ruff check src tests
@@ -16,6 +16,3 @@ test:
 	pytest
 
 check: lint test
-
-install-llm:
-	uv pip install -q -e ".[dev,llm]"
