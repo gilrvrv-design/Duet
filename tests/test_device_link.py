@@ -68,7 +68,8 @@ def test_unknown_message():
 
 @pytest.fixture
 def device(request):
-    options = getattr(request, "param", {})
+    options = dict(getattr(request, "param", {}))
+    lines = options.pop("_lines", False)
     sim = SimulatedDevice(clock_offset_us=987_654_321, **options)
     loop = asyncio.new_event_loop()
     ready = threading.Event()
@@ -78,11 +79,12 @@ def device(request):
         port["value"] = p
         ready.set()
 
-    task = loop.create_task(sim.serve(port=0, ready=started))
+    serve = sim.serve_lines if lines else sim.serve
+    task = loop.create_task(serve(port=0, ready=started))
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
     assert ready.wait(5)
-    yield sim, f"ws://127.0.0.1:{port['value']}"
+    yield sim, f"{'tcp' if lines else 'ws'}://127.0.0.1:{port['value']}"
 
     async def stop():
         task.cancel()
@@ -237,3 +239,28 @@ def test_the_simulated_device_reports_the_firmware_limits():
 
     hello = SimulatedDevice().hello()
     assert mismatches(DeviceLimits.from_hello(hello), robot_profile()) == []
+
+
+@pytest.mark.parametrize("device", [{"_lines": True}], indirect=True)
+def test_a_serial_line_link_plays_like_the_websocket(device):
+    """tcp:// is a serial port as lines (QEMU, ser2net); boot noise goes to the console."""
+    sim, url = device
+    score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
+    with DeviceGateway(url, profile=robot_profile()) as gateway:
+        assert gateway.hello.device_id == "sim-1"
+        assert abs(gateway.sync.offset_us - sim.clock_offset_us) < 2000
+        perform(score, robot_profile(), keyboard_profile(), [gateway], VirtualClock(hub_now_us()))
+        gateway.wait_acked()
+        assert gateway.errors == []
+        assert any("POWERON_RESET" in line for line in gateway.console)
+    sim.rig.run()
+    assert sim.rig.faults == [] and len(sim.rig.sounds) == 9
+
+
+def test_line_links_need_a_host_and_port():
+    import asyncio
+
+    from duet.device.lines import LineLink
+
+    with pytest.raises(ValueError, match="tcp://host:port"):
+        asyncio.run(LineLink.open("tcp://nohost"))

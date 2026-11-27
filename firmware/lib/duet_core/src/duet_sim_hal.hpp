@@ -1,4 +1,5 @@
-// A simulated carriage, solenoid and LED strip for native tests. Motion uses the same
+// A simulated carriage, solenoid and LED strip: for the native tests, and as the hardware
+// of the QEMU build (src/main_qemu.cpp). Motion uses the same
 // trapezoidal model as the Hub (duet.kinematics), so both sides agree on timing.
 #pragma once
 #include <cmath>
@@ -41,7 +42,7 @@ class SimHal : public Hal {
     return from_ + static_cast<int32_t>((to_ - from_) * f);
   }
   void set_position(int32_t s) override { from_ = to_ = s; }
-  bool home_sensor() const override { return position() <= 0; }
+  bool home_sensor() const override { return position() <= 0; }  // the motor end
   void solenoid(bool on) override {
     if (on) events.push_back({"strike", now_us, position(), 0});
   }

@@ -15,6 +15,7 @@ from websockets.asyncio.server import ServerConnection, serve
 
 from duet.device.clock import hub_now_us
 from duet.device.limits import DeviceLimits
+from duet.device.lines import LineLink
 from duet.profile import RobotProfile, robot_profile
 from duet.protocol import (
     TIMED,
@@ -101,7 +102,22 @@ class SimulatedDevice:
             max_pulse_us=limits.max_pulse_us,
         )
 
-    async def _session(self, ws: ServerConnection) -> None:
+    async def serve_lines(self, host: str = "127.0.0.1", port: int = 5555, ready=None) -> None:
+        """The same device on a serial-style line link (``tcp://``), like the QEMU build.
+        It prints a boot line first, as a real ESP32 does."""
+
+        async def session(reader, writer):
+            link = LineLink(reader, writer)
+            writer.write(b"ets Jun  8 2016 00:22:57 rst:0x1 (POWERON_RESET),boot:0x13\n")
+            await self._session(link)
+
+        server = await asyncio.start_server(session, host, port)
+        async with server:
+            if ready is not None:
+                ready(server.sockets[0].getsockname()[1])
+            await asyncio.Future()
+
+    async def _session(self, ws: ServerConnection | LineLink) -> None:
         await ws.send(self.hello().to_json())
         async for text in ws:
             try:
@@ -114,7 +130,7 @@ class SimulatedDevice:
                 else:
                     await ws.send(reply.to_json())
 
-    def _send_later(self, ws: ServerConnection, reply: Message) -> None:
+    def _send_later(self, ws: ServerConnection | LineLink, reply: Message) -> None:
         task = asyncio.ensure_future(ws.send(reply.to_json()))
         task.add_done_callback(_log_failure)
 

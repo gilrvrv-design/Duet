@@ -7,7 +7,7 @@
 #include "duet_executor.hpp"
 #include "duet_protocol.hpp"
 #include "duet_queue.hpp"
-#include "sim_hal.hpp"
+#include "duet_sim_hal.hpp"
 
 using namespace duet;
 

@@ -11,6 +11,7 @@
 
 #include "board.h"
 #include "duet_executor.hpp"
+#include "serial_link.h"
 #ifdef DUET_WOKWI
 #include "wokwi.h"  // simulator build: Wokwi's open Wi-Fi and a virtual home sensor
 #else
@@ -120,31 +121,6 @@ void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
-void read_serial() {
-  static char line[duet::kMaxMessage + 1];
-  static size_t len = 0;
-  static bool too_long = false;
-  while (Serial.available()) {
-    char c = static_cast<char>(Serial.read());
-    if (c == '\n') {
-      line[len] = '\0';
-      if (too_long) {
-        executor.on_oversize(now_us());
-      } else if (len) {
-        executor.on_message(line, now_us());
-      }
-      len = 0;
-      too_long = false;
-    } else if (c == '\r' || too_long) {
-      continue;
-    } else if (len == duet::kMaxMessage) {
-      too_long = true;  // keep reading to the end of the line, then reject it whole
-    } else {
-      line[len++] = c;
-    }
-  }
-}
-
 }  // namespace
 
 void setup() {
@@ -168,7 +144,7 @@ void setup() {
 
 void loop() {
   server.loop();
-  read_serial();
+  read_serial(executor, now_us());
   if (digitalRead(PIN_ESTOP) == LOW && !executor.estopped()) {
     executor.on_message("{\"type\":\"estop\",\"seq\":0}", now_us());
   }

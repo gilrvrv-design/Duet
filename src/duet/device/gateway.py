@@ -1,8 +1,10 @@
 """The Hub side of the device link (spec §5.10).
 
 ``DeviceGateway`` is a blocking ``send(msg)`` device for the conductor. A background
-thread runs the WebSocket. Timed commands are converted from Hub time to device time
-using the measured clock offset.
+thread runs the link: a WebSocket (``ws://``, the rig over Wi-Fi) or a serial port
+reached over TCP (``tcp://``, e.g. the firmware in QEMU; see ``duet.device.lines``).
+Timed commands are converted from Hub time to device time using the measured clock
+offset.
 
 Every message gets a wire ``seq`` of the gateway's own, so two performances that both
 number their plan from 1 can never confuse acknowledgements. Anything that means the
@@ -23,6 +25,7 @@ from websockets.asyncio.client import ClientConnection, connect
 
 from duet.device.clock import ClockSync, SyncSample, best_sync, hub_now_us
 from duet.device.limits import DeviceLimits, mismatches
+from duet.device.lines import LineLink
 from duet.profile import RobotProfile
 from duet.protocol import (
     TIMED,
@@ -85,7 +88,7 @@ class DeviceGateway:
         self._wire_seq = 0
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
-        self._ws: ClientConnection | None = None
+        self._ws: ClientConnection | LineLink | None = None
         self._tasks: list[asyncio.Task] = []
         self._sync_lock: asyncio.Lock | None = None
         self._pongs: asyncio.Queue[tuple[TimePong, int]] | None = None
@@ -154,7 +157,10 @@ class DeviceGateway:
             self._state.notify_all()
 
     async def _connect(self) -> None:
-        self._ws = await connect(self.url)
+        if self.url.startswith("tcp://"):
+            self._ws = await LineLink.open(self.url)  # a serial port over TCP (e.g. QEMU)
+        else:
+            self._ws = await connect(self.url)
         self._pongs = asyncio.Queue()
         self._sync_lock = asyncio.Lock()
         first = parse_message(await self._ws.recv())
@@ -207,6 +213,11 @@ class DeviceGateway:
         """Raise if the performance cannot go on. Call with ``_state`` held."""
         if self._failure is not None:
             raise DeviceFault(self._failure)
+
+    @property
+    def console(self) -> list[str]:
+        """Non-message lines from a serial link (boot log, QEMU hardware reports)."""
+        return list(self._ws.console) if isinstance(self._ws, LineLink) else []
 
     # clock sync --------------------------------------------------------------
     def resync(self) -> ClockSync:

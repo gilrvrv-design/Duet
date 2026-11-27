@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "duet_executor.hpp"
-#include "sim_hal.hpp"
+#include "duet_sim_hal.hpp"
 
 using namespace duet;
 
