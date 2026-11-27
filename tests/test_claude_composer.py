@@ -6,6 +6,7 @@ import pytest
 from duet.compose import CompositionRequest, compose
 from duet.compose.claude import DEFAULT_MODEL, ClaudeComposer, ComposerRefused
 from duet.compose.draft import DRAFT_SCHEMA
+from duet.compose.service import ComposerError
 
 
 class FakeStream:
@@ -61,9 +62,9 @@ def test_refusal_and_truncation():
         ClaudeComposer(
             client=FakeClient(response(stop_reason="refusal", explanation="nope"))
         ).write("s", [])
-    with pytest.raises(RuntimeError, match="cut off"):
+    with pytest.raises(ComposerError, match="cut off"):
         ClaudeComposer(client=FakeClient(response("{", stop_reason="max_tokens"))).write("s", [])
-    with pytest.raises(RuntimeError, match="no text"):
+    with pytest.raises(ComposerError, match="no text"):
         ClaudeComposer(client=FakeClient(response())).write("s", [])
 
 

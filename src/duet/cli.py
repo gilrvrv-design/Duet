@@ -139,14 +139,18 @@ DEMO_PHRASES = [
 
 
 def cmd_vary(args) -> int:
-    from duet.variations import BUILT_IN, vary
+    from functools import partial
 
-    composer = None
-    if args.instruction.strip().lower() not in BUILT_IN:
+    from duet.variations import is_built_in, vary
+
+    edit = None
+    if not is_built_in(args.instruction):
         from duet.compose.claude import ClaudeComposer
+        from duet.compose.service import revise
+        from duet.copyright import CopyrightGuard
 
-        composer = ClaudeComposer()
-    score, note = vary(read_score(args.score), args.instruction, composer, _robot(args))
+        edit = partial(revise, composer=ClaudeComposer(), guard=CopyrightGuard.load())
+    score, note = vary(read_score(args.score), args.instruction, edit, _robot(args))
     write_score(score, args.out)
     print(note)
     return 0
@@ -259,7 +263,7 @@ def cmd_grade(args) -> int:
 def _play_on_device(score, robot, keyboard, url: str) -> int:
     from duet.device.gateway import DeviceGateway
 
-    with DeviceGateway(url) as gateway:
+    with DeviceGateway(url, profile=robot) as gateway:
         sync = gateway.sync
         print(
             f"connected to {gateway.hello.device_id}: clock offset {sync.offset_us} us "

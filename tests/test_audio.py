@@ -93,6 +93,18 @@ def test_bad_files(tmp_path):
         load_audio(broken)
 
 
+def test_long_files_are_refused_without_decoding_them_whole(tmp_path):
+    wav = tmp_path / "long.wav"
+    soundfile.write(wav, np.zeros(SR * 3, dtype=np.float32), SR)
+    with pytest.raises(AudioError, match="longer than"):
+        load_audio(wav, max_seconds=2)
+    mp3 = tmp_path / "long.mp3"
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(wav), str(mp3)], check=True)
+    with pytest.raises(AudioError, match="longer than"):
+        load_audio(mp3, max_seconds=1)
+    assert load_audio(mp3, max_seconds=5)[0].size > 0
+
+
 def test_cli_transcribe(tmp_path, capsys):
     from duet.cli import main
 

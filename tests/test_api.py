@@ -6,9 +6,10 @@ import soundfile
 from fastapi.testclient import TestClient
 
 from duet.api import create_app
-from duet.api.store import MemoryStore, SqliteStore
+from duet.api.codecs import default_codecs
 from duet.audio.fullmix import full_mix_available
 from duet.midi_io import midi_to_score, score_to_midi_bytes
+from duet.storage import MemoryStore, SqliteStore
 from helpers import ROOT, make_score, synth
 from test_compose import GOOD, ScriptedComposer
 
@@ -17,8 +18,21 @@ EXAMPLE = (ROOT / "examples" / "rain-on-the-bottles.json").read_text()
 
 @pytest.fixture(params=["memory", "sqlite"])
 def client(request, tmp_path):
-    store = MemoryStore() if request.param == "memory" else SqliteStore(tmp_path / "duet.db")
-    return TestClient(create_app(composer_factory=lambda: ScriptedComposer(GOOD), store=store))
+    if request.param == "memory":
+        store = MemoryStore()
+    else:
+        store = SqliteStore(tmp_path / "duet.db", default_codecs())
+    return make_client(store)
+
+
+def make_client(store, guard=None):
+    app = create_app(
+        composer_factory=lambda: ScriptedComposer(GOOD),
+        store=store,
+        guard=guard,
+        examples_dir=ROOT / "examples",
+    )
+    return TestClient(app)
 
 
 def test_health_and_reachability(client):
@@ -265,14 +279,13 @@ def test_variation_through_the_composer_and_errors(client):
     )
 
 
-def test_publishing_and_copyright(client, tmp_path, monkeypatch):
-    from duet.api import app as app_module
+def test_publishing_and_copyright(tmp_path):
     from duet.copyright import CopyrightGuard
 
     protected = tmp_path / "p.yaml"
     notes = ["E5", "G5", "E5", "D5", "C5", "E5", "F5", "G5", "C6"]  # the example's robot tune
     protected.write_text(json.dumps({"melodies": [{"title": "Invented Hit", "notes": notes}]}))
-    monkeypatch.setattr(app_module, "GUARD", CopyrightGuard.load(protected))
+    client = make_client(MemoryStore(), guard=CopyrightGuard.load(protected))
 
     duet = client.get("/v1/duets?featured=true").json()[0]
     assert client.get(f"/v1/duets/{duet['id']}").json()["copyright"] == "protected"

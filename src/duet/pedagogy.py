@@ -136,6 +136,16 @@ class SkillModel(BaseModel):
 PASS_ACCURACY = 0.9
 
 
+def step_passes(report: Report) -> bool:
+    """A lesson step passes at 90% right or better (FR-E3)."""
+    return report.accuracy >= PASS_ACCURACY
+
+
+def current_step(passed: list[bool]) -> int | None:
+    """The first step not yet passed, or None when the lesson is done."""
+    return next((i for i, done in enumerate(passed) if not done), None)
+
+
 @dataclass
 class Step:
     title: str
@@ -152,12 +162,10 @@ class LessonPath:
 
     @property
     def current(self) -> int | None:
-        return next((i for i, s in enumerate(self.steps) if not s.passed), None)
+        return current_step([s.passed for s in self.steps])
 
     def record(self, step: int, report: Report) -> bool:
-        """A step passes at 90% right or better (FR-E3)."""
-        if report.accuracy >= PASS_ACCURACY:
-            self.steps[step].passed = True
+        self.steps[step].passed = self.steps[step].passed or step_passes(report)
         return self.steps[step].passed
 
 

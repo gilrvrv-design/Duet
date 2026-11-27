@@ -1,7 +1,7 @@
 import pytest
 
-from duet.api.store import MemoryStore
 from duet.jobs import JobFailure, JobRunner, job_view
+from duet.storage import MemoryStore
 
 
 @pytest.fixture

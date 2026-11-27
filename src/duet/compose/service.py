@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from duet.compose.draft import DraftError, draft_to_score, score_to_draft
 from duet.compose.prompts import feedback_message, request_message, system_prompt
+from duet.copyright import CopyrightGuard
 from duet.difficulty import check_pianist, pianist_difficulty
 from duet.feasibility import check_robot
 from duet.pitch import midi_to_name
@@ -57,8 +58,12 @@ class CompositionResult:
         return pianist_difficulty(self.score)
 
 
-class CompositionError(RuntimeError):
-    pass
+class CompositionError(Exception):
+    """The composer answered, but no acceptable duet came out of it."""
+
+
+class ComposerError(Exception):
+    """The composer itself failed: unreachable, refused, or answered badly."""
 
 
 def compose(
@@ -68,7 +73,7 @@ def compose(
     keyboard: KeyboardProfile | None = None,
     max_rounds: int = MAX_FEEDBACK_ROUNDS,
     progress: Progress = no_progress,
-    guard=None,
+    guard: CopyrightGuard | None = None,
 ) -> CompositionResult:
     """``guard``: an optional copyright guard; its problems are fed back too (FR-C5)."""
     robot = robot or robot_profile()
@@ -100,6 +105,7 @@ def revise(
     difficulty: int | None = None,
     max_rounds: int = MAX_FEEDBACK_ROUNDS,
     progress: Progress = no_progress,
+    guard: CopyrightGuard | None = None,
 ) -> CompositionResult:
     """Change an existing duet as asked (spec FR-C8): the composer edits the current
     draft instead of starting again, and the result is checked like a new composition."""
@@ -119,7 +125,7 @@ def revise(
         f"Change it: {instruction}. Keep everything you are not asked to change. "
         "Answer with the full JSON object."
     )
-    return _converse(request, text, composer, robot, keyboard, max_rounds, progress)
+    return _converse(request, text, composer, robot, keyboard, max_rounds, progress, guard)
 
 
 def _converse(request, first_message, composer, robot, keyboard, max_rounds, progress, guard=None):

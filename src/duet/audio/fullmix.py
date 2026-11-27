@@ -25,6 +25,14 @@ from duet.audio.notes import NoteEvent, Transcriber
 PITCHED_STEMS = ("vocals", "bass", "piano", "guitar", "other")
 
 
+class RouteUnavailable(Exception):
+    """The full-mix route's tools (Demucs, Basic Pitch, FFmpeg) are not installed."""
+
+
+class SeparationFailed(Exception):
+    """Demucs ran but failed."""
+
+
 class Separator(Protocol):
     name: str
 
@@ -72,7 +80,7 @@ class DemucsSeparator:
             cmd = [sys.executable, "-m", "demucs", "-n", self.model, "-o", out, str(path)]
             result = subprocess.run(cmd, capture_output=True, check=False)
             if result.returncode != 0:
-                raise RuntimeError(
+                raise SeparationFailed(
                     f"demucs failed: {result.stderr.decode(errors='replace')[-500:]}"
                 )
             stem_dir = Path(out) / self.model / Path(path).stem
@@ -137,7 +145,7 @@ class FullMixTranscriber:
 
 def default_full_mix() -> FullMixTranscriber:
     if not full_mix_available():
-        raise RuntimeError("full-mix route needs: pip install demucs basic-pitch")
+        raise RouteUnavailable("full-mix route needs: pip install demucs basic-pitch")
     if shutil.which("ffmpeg") is None:
-        raise RuntimeError("full-mix route needs FFmpeg")
+        raise RouteUnavailable("full-mix route needs FFmpeg")
     return FullMixTranscriber(DemucsSeparator(), BasicPitchTranscriber())

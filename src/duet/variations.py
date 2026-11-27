@@ -7,6 +7,8 @@ goes to the composer as an edit of the current duet (``duet.compose.service.revi
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from duet.audio.arranger import best_transpose
 from duet.difficulty import LEVELS, pianist_difficulty, pianist_stats
@@ -17,7 +19,22 @@ from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_
 from duet.repair import repair_robot
 from duet.score import DuetScore, Event
 
+if TYPE_CHECKING:
+    from duet.compose.service import CompositionResult
+
+Edit = Callable[..., "CompositionResult"]  # see vary
 BUILT_IN = ("slower", "faster", "easier", "swap")
+
+
+class VariationError(ValueError):
+    """The variation cannot be made as asked."""
+
+
+def is_built_in(instruction: str) -> bool:
+    """Built-in variations run in code; anything else needs the composer."""
+    return instruction.strip().lower() in BUILT_IN
+
+
 BEGINNER_RANGE = (48, 84)  # C3..C6, when a score does not give the pianist's range
 
 
@@ -143,14 +160,18 @@ def swap_parts(score: DuetScore, robot: RobotProfile, keyboard: KeyboardProfile)
 def vary(
     score: DuetScore,
     instruction: str,
-    composer=None,
+    edit: Edit | None = None,
     robot: RobotProfile | None = None,
     keyboard: KeyboardProfile | None = None,
 ) -> tuple[DuetScore, str]:
-    """Apply a variation. Returns (new score, what was done)."""
+    """Apply a variation. Returns (new score, what was done).
+
+    ``edit`` handles what is not built in, usually ``revise`` bound to a composer and a
+    copyright guard; it is called with the score, the instruction and keyword arguments
+    ``robot``, ``keyboard`` and ``difficulty``."""
     robot = robot or robot_profile()
     keyboard = keyboard or keyboard_profile()
-    word = instruction.strip().lower()
+    word = instruction.strip().lower()  # see is_built_in
     if word == "slower":
         new = change_tempo(score, 0.85, robot)
         return new, f"tempo {score.meta.tempo_bpm:g} -> {new.meta.tempo_bpm:g} bpm"
@@ -167,16 +188,17 @@ def vary(
         return new, f"pianist level {before} -> {pianist_difficulty(new)}"
     if word == "swap":
         return swap_parts(score, robot, keyboard), "robot and pianist swapped parts"
-    if composer is None:
-        raise ValueError(f"{instruction!r} needs the composer (built in: {', '.join(BUILT_IN)})")
-    from duet.compose.service import revise
-
+    if edit is None:
+        raise VariationError(
+            f"{instruction!r} needs the composer (built in: {', '.join(BUILT_IN)})"
+        )
     target = None
     if word == "harder":
         target = min(5, pianist_difficulty(score) + 1)
         instruction = f"make the pianist part a little harder (level {target})"
-    result = revise(score, instruction, composer, robot, keyboard, difficulty=target)
-    assert check_robot(result.score, robot).ok
+    result = edit(score, instruction, robot=robot, keyboard=keyboard, difficulty=target)
+    if not check_robot(result.score, robot).ok:
+        raise VariationError("the edited duet is not playable by the robot")
     return result.score, result.explanation or instruction
 
 

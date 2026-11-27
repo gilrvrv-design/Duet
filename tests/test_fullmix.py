@@ -67,7 +67,7 @@ def test_auto_route_warns_without_full_mix(tmp_path, monkeypatch):
     monkeypatch.setattr(fullmix, "full_mix_available", lambda: False)
     result = transcribe_file(mix_file(tmp_path))
     assert result.route == "melody" and "more than one voice" in result.warnings[-1]
-    with pytest.raises(RuntimeError, match="pip install demucs basic-pitch"):
+    with pytest.raises(fullmix.RouteUnavailable, match="pip install demucs basic-pitch"):
         transcribe_file(mix_file(tmp_path), route="full")
 
 

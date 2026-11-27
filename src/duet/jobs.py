@@ -11,12 +11,12 @@ import time
 import traceback
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from enum import StrEnum
 from typing import Any
 
-from duet.api.store import Record, Store
-
-TERMINAL = {"succeeded", "failed"}
+from duet.progress import Progress
+from duet.storage import Record, Store
 
 
 class JobState(StrEnum):
@@ -24,6 +24,9 @@ class JobState(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+TERMINAL = frozenset({JobState.SUCCEEDED, JobState.FAILED})
 
 
 class JobFailure(Exception):
@@ -34,7 +37,7 @@ class JobFailure(Exception):
         self.code, self.detail = code, detail
 
 
-Work = Callable[[Callable[[str, float | None], None]], dict]
+Work = Callable[[Progress], dict]
 
 
 class JobRunner:
@@ -52,17 +55,12 @@ class JobRunner:
         return self.store.get("job", record.id)
 
     def _add_event(self, job_id: str, stage: str, fraction: float | None, **fields: Any) -> None:
-        job = self.store.get("job", job_id)
-        events = [
-            *job.meta["events"],
-            {
-                "seq": len(job.meta["events"]),
-                "stage": stage,
-                "progress": fraction,
-                "t": time.time(),
-            },
-        ]
-        self.store.update_meta("job", job_id, events=events, **fields)
+        def append(job: Record) -> Record:
+            events = job.meta["events"]
+            event = {"seq": len(events), "stage": stage, "progress": fraction, "t": time.time()}
+            return replace(job, meta={**job.meta, **fields, "events": [*events, event]})
+
+        self.store.update("job", job_id, append)  # one step: no event is ever lost
 
     def _run(self, job_id: str, work: Work) -> None:
         self._add_event(job_id, "started", 0.0, state=JobState.RUNNING)

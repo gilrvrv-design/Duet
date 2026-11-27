@@ -6,7 +6,7 @@ import pytest
 
 from duet.conductor import VirtualClock, perform
 from duet.device.clock import SyncSample, best_sync, hub_now_us
-from duet.device.gateway import DeviceGateway
+from duet.device.gateway import DeviceFault, DeviceGateway, DeviceMismatch
 from duet.device.sim_server import SimulatedDevice
 from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import (
@@ -175,3 +175,65 @@ def test_messages_over_the_size_limit_are_refused():
 
     with pytest.raises(ValueError, match="limit 255"):
         Fault(code="X", detail="y" * MAX_MESSAGE_BYTES).to_json()
+
+
+def test_two_performances_with_the_same_plan_seqs_are_acked_apart(device):
+    """Plans number from 1 every time; the gateway's wire seqs keep acks apart."""
+    sim, url = device
+    score = load_score(ROOT / "tests" / "data" / "two-notes.json")
+    with DeviceGateway(url, profile=robot_profile()) as gateway:
+        for _ in range(2):
+            perform(
+                score, robot_profile(), keyboard_profile(), [gateway], VirtualClock(hub_now_us())
+            )
+            gateway.wait_acked()
+        assert gateway.errors == [] and not gateway._unacked
+    assert sim.commands > 0
+
+
+def test_an_error_ack_stops_the_performance(device):
+    sim, url = device
+    with DeviceGateway(url) as gateway:
+        gateway.send(Estop())
+        gateway.send(Home(seq=7))
+        with pytest.raises(DeviceFault, match="seq 7: error: emergency stop"):
+            gateway.wait_acked()
+        with pytest.raises(DeviceFault):
+            gateway.send(Home(seq=8))  # nothing more is sent once the device refused
+    assert gateway.errors == ["seq 7: error: emergency stop"]
+
+
+@pytest.mark.parametrize("device", [{"homing_fails": True, "homing_s": 0.1}], indirect=True)
+def test_a_homing_fault_wakes_wait_ready_at_once(device):
+    _, url = device
+    with DeviceGateway(url) as gateway:
+        gateway.send(Home(seq=1))
+        started = time.monotonic()
+        with pytest.raises(DeviceFault, match="HOMING_TIMEOUT"):
+            gateway.wait_ready(timeout_s=10)
+        assert time.monotonic() - started < 2  # not the full ten seconds
+
+
+def test_a_lost_connection_is_raised_not_hung_on(device):
+    sim, url = device
+    gateway = DeviceGateway(url, resync_every_s=None).connect()
+    try:
+        gateway._call(gateway._ws.close())  # as if the device rebooted
+        with pytest.raises(DeviceFault, match="connection closed|stopped"):
+            gateway.wait_ready(timeout_s=5)
+    finally:
+        gateway.close()
+
+
+@pytest.mark.parametrize("device", [{"profile": robot_profile("glock-v1")}], indirect=True)
+def test_a_device_with_other_limits_is_refused_at_connect(device):
+    _, url = device
+    with pytest.raises(DeviceMismatch, match="profile: device glock-v1"):
+        DeviceGateway(url, profile=robot_profile()).connect()
+
+
+def test_the_simulated_device_reports_the_firmware_limits():
+    from duet.device.limits import DeviceLimits, mismatches
+
+    hello = SimulatedDevice().hello()
+    assert mismatches(DeviceLimits.from_hello(hello), robot_profile()) == []

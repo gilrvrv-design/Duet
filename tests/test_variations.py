@@ -1,7 +1,9 @@
 import json
+from functools import partial
 
 import pytest
 
+from duet.compose.service import revise
 from duet.difficulty import pianist_difficulty
 from duet.feasibility import check_robot
 from duet.profile import keyboard_profile, robot_profile
@@ -75,7 +77,7 @@ def test_other_instructions_go_to_the_composer_as_an_edit():
     data = EXAMPLE.to_dict()
     data["parts"]["pianist"]["range"] = ["A3", "C5"]
     score = load_score(data)
-    new, note = vary(score, "in a minor key", composer=EditComposer())
+    new, note = vary(score, "in a minor key", edit=partial(revise, composer=EditComposer()))
     assert new.meta.key == "A minor" and note == "Moved to A minor."
     assert [e.pitch for e in new.part_events("robot")] == [
         e.pitch for e in score.part_events("robot")

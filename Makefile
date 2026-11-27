@@ -21,4 +21,4 @@ firmware:
 	$(MAKE) -s -C firmware test
 
 serve:
-	uvicorn --factory duet.api:create_app --reload
+	DUET_EXAMPLES=examples uvicorn --factory duet.api:create_app --reload

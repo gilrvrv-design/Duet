@@ -3,18 +3,27 @@
 ``DeviceGateway`` is a blocking ``send(msg)`` device for the conductor. A background
 thread runs the WebSocket. Timed commands are converted from Hub time to device time
 using the measured clock offset.
+
+Every message gets a wire ``seq`` of the gateway's own, so two performances that both
+number their plan from 1 can never confuse acknowledgements. Anything that means the
+performance cannot go on (a lost connection, an error ack, a fatal fault) wakes every
+waiter and is raised as ``DeviceFault`` from the next ``send`` or wait.
 """
 
 from __future__ import annotations
 
 import asyncio
 import dataclasses
+import logging
 import threading
 import time
+from collections.abc import Callable
 
 from websockets.asyncio.client import ClientConnection, connect
 
 from duet.device.clock import ClockSync, SyncSample, best_sync, hub_now_us
+from duet.device.limits import DeviceLimits, mismatches
+from duet.profile import RobotProfile
 from duet.protocol import (
     TIMED,
     Ack,
@@ -29,66 +38,85 @@ from duet.protocol import (
     parse_message,
 )
 
+log = logging.getLogger(__name__)
+
+# Faults after which the rig cannot carry on without a person (docs/device-protocol.md).
+FATAL_FAULTS = frozenset({"WATCHDOG", "HOMING_TIMEOUT"})
+SYNC_SAMPLES = 16
+HEARTBEAT_EVERY_S = 0.25  # a quarter of the firmware's 1 s watchdog
+RESYNC_EVERY_S = 2.0
+
+
+class DeviceFault(RuntimeError):
+    """The device refused something, faulted, or the connection was lost."""
+
+
+class DeviceMismatch(ConnectionError):
+    """The device enforces different limits than the profile the Hub plans with."""
+
 
 class DeviceGateway:
     def __init__(
         self,
         url: str,
-        sync_samples: int = 16,
+        sync_samples: int = SYNC_SAMPLES,
         timeout_s: float = 5.0,
-        resync_every_s: float | None = 2.0,
-        heartbeat_every_s: float = 0.25,
+        resync_every_s: float | None = RESYNC_EVERY_S,
+        heartbeat_every_s: float = HEARTBEAT_EVERY_S,
+        profile: RobotProfile | None = None,
+        now_us: Callable[[], int] = hub_now_us,
     ) -> None:
         self.url = url
         self.sync_samples = sync_samples
         self.resync_every_s = resync_every_s
         self.heartbeat_every_s = heartbeat_every_s
         self.timeout_s = timeout_s
+        self.profile = profile
+        self.now_us = now_us
         self.hello: Hello | None = None
         self.sync: ClockSync | None = None
-        self.acked: set[int] = set()
         self.errors: list[str] = []
         self.faults: list[Fault] = []
         self.telemetry: Telemetry | None = None
-        self._ready = threading.Event()
+        self._state = threading.Condition()  # guards everything below; notified on change
+        self._homed = False
+        self._failure: str | None = None
+        self._unacked: dict[int, int] = {}  # wire seq -> the caller's seq
+        self._wire_seq = 0
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
         self._ws: ClientConnection | None = None
-        self._reader_task: asyncio.Task | None = None
-        self._resync_task: asyncio.Task | None = None
-        self._heartbeat_task: asyncio.Task | None = None
+        self._tasks: list[asyncio.Task] = []
         self._sync_lock: asyncio.Lock | None = None
         self._pongs: asyncio.Queue[tuple[TimePong, int]] | None = None
-        self._sent: set[int] = set()
-        self._next_seq = 1_000_000  # gateway's own messages (pings) stay clear of plan seqs
 
     # lifecycle ---------------------------------------------------------------
     def connect(self) -> DeviceGateway:
         self._thread.start()
-        self._call(self._connect())
-        self.resync()
+        try:
+            self._call(self._connect())
+            self.resync()
+        except BaseException:
+            self.close()
+            raise
         if self.resync_every_s:
-            self._resync_task = self._start(self._resync_forever())
-        self._heartbeat_task = self._start(self._heartbeat_forever())
+            self._start(self._resync_forever(), "resync")
+        self._start(self._heartbeat_forever(), "heartbeat")
         return self
-
-    def _start(self, coro) -> asyncio.Task:
-        async def create():
-            return asyncio.create_task(coro)
-
-        return asyncio.run_coroutine_threadsafe(create(), self._loop).result(self.timeout_s)
 
     def close(self) -> None:
         if self._thread.is_alive():
             self._call(self._shutdown())
             self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join(timeout=self.timeout_s)
-        self._loop.close()
+        if not self._loop.is_closed():
+            self._loop.close()
 
     async def _shutdown(self) -> None:
-        for task in (self._heartbeat_task, self._resync_task, self._reader_task):
-            if task is not None:
-                task.cancel()
+        tasks, self._tasks = self._tasks, []
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         if self._ws is not None:
             await self._ws.close()
 
@@ -101,6 +129,30 @@ class DeviceGateway:
     def _call(self, coro):
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result(self.timeout_s)
 
+    def _start(self, coro, name: str) -> None:
+        def create() -> None:
+            task = self._loop.create_task(coro, name=name)
+            task.add_done_callback(self._task_done)
+            self._tasks.append(task)
+
+        self._loop.call_soon_threadsafe(create)
+
+    def _task_done(self, task: asyncio.Task) -> None:
+        """A background task must never die silently: its death stops the performance."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        reason = f"{task.get_name()} stopped: {exc!r}" if exc else "connection closed"
+        if exc:
+            log.error("device link %s", reason)
+        self._fail(reason)
+
+    def _fail(self, reason: str) -> None:
+        with self._state:
+            if self._failure is None:
+                self._failure = reason
+            self._state.notify_all()
+
     async def _connect(self) -> None:
         self._ws = await connect(self.url)
         self._pongs = asyncio.Queue()
@@ -109,39 +161,69 @@ class DeviceGateway:
         if not isinstance(first, Hello):
             raise ConnectionError(f"device did not say hello: {first}")
         self.hello = first
-        self._reader_task = self._loop.create_task(self._reader())
+        self._check_hello(first)
+        task = self._loop.create_task(self._reader(), name="reader")
+        task.add_done_callback(self._task_done)
+        self._tasks.append(task)
+
+    def _check_hello(self, hello: Hello) -> None:
+        if self.profile is None:
+            return
+        problems = []
+        if hello.profile and hello.profile != self.profile.id:
+            problems.append(f"profile: device {hello.profile}, Hub {self.profile.id}")
+        if hello.travel_steps:  # 0: an older device that does not report its limits
+            problems += mismatches(DeviceLimits.from_hello(hello), self.profile)
+        if problems:
+            raise DeviceMismatch("device and profile disagree: " + "; ".join(problems))
 
     async def _reader(self) -> None:
         async for text in self._ws:
-            received = hub_now_us()
+            received = self.now_us()
             msg = parse_message(text)
             if isinstance(msg, TimePong):
                 await self._pongs.put((msg, received))
-            elif isinstance(msg, Telemetry):
+            else:
+                self._receive(msg)
+
+    def _receive(self, msg: Message) -> None:
+        with self._state:
+            if isinstance(msg, Telemetry):
                 self.telemetry = msg
-                if msg.homed:
-                    self._ready.set()
-                else:
-                    self._ready.clear()
+                self._homed = msg.homed
             elif isinstance(msg, Fault):
                 self.faults.append(msg)
+                if msg.code in FATAL_FAULTS:
+                    self._homed = False
+                    self._failure = self._failure or f"fault {msg.code}: {msg.detail}"
             elif isinstance(msg, Ack):
-                if msg.status == "ok":
-                    self.acked.add(msg.seq)
-                else:
-                    self.errors.append(f"seq {msg.seq}: {msg.status}")
+                seq = self._unacked.pop(msg.seq, msg.seq)
+                if msg.status != "ok":
+                    self.errors.append(f"seq {seq}: {msg.status}")
+                    self._failure = self._failure or f"device refused seq {seq}: {msg.status}"
+            self._state.notify_all()
+
+    def _check(self) -> None:
+        """Raise if the performance cannot go on. Call with ``_state`` held."""
+        if self._failure is not None:
+            raise DeviceFault(self._failure)
 
     # clock sync --------------------------------------------------------------
     def resync(self) -> ClockSync:
         self.sync = self._call(self._sync())
         return self.sync
 
+    def _next_wire_seq(self) -> int:
+        with self._state:
+            self._wire_seq += 1
+            return self._wire_seq
+
     async def _sync(self) -> ClockSync:
         async with self._sync_lock:  # one exchange at a time, so pongs match pings
             samples = []
             for _ in range(self.sync_samples):
-                self._next_seq += 1
-                await self._ws.send(TimePing(hub_now_us(), seq=self._next_seq).to_json())
+                ping = TimePing(self.now_us(), seq=self._next_wire_seq())
+                await self._ws.send(ping.to_json())
                 pong, t4 = await asyncio.wait_for(self._pongs.get(), self.timeout_s)
                 samples.append(SyncSample(pong.t1, pong.t2, pong.t3, t4))
             return best_sync(samples, previous=self.sync)
@@ -165,22 +247,37 @@ class DeviceGateway:
             raise RuntimeError("connect() before sending")
         if isinstance(msg, TIMED):
             msg = dataclasses.replace(msg, t_us=self.sync.to_device(msg.t_us))
-        elif isinstance(msg, Home):
-            self._ready.clear()
-        self._sent.add(msg.seq)
-        self._call(self._ws.send(msg.to_json()))
+        wire = self._next_wire_seq()
+        with self._state:
+            self._check()
+            if isinstance(msg, Home):
+                self._homed = False
+            self._unacked[wire] = msg.seq
+        self._call(self._ws.send(dataclasses.replace(msg, seq=wire).to_json()))
+
+    def _wait(self, done: Callable[[], bool], timeout_s: float, what: str) -> None:
+        deadline = time.monotonic() + timeout_s
+        with self._state:
+            while not done():
+                self._check()
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise TimeoutError(what)
+                self._state.wait(left)
+            self._check()
 
     def wait_ready(self, timeout_s: float) -> Telemetry:
         """Block until the device reports it is homed."""
-        if not self._ready.wait(timeout_s):
-            raise TimeoutError("device did not report homed")
+        self._wait(lambda: self._homed, timeout_s, "device did not report homed")
         return self.telemetry
 
     def wait_acked(self) -> None:
         """Block until the device acknowledged everything sent (FR-D4)."""
-        deadline = time.monotonic() + self.timeout_s
-        while not self._sent <= self.acked:
-            if time.monotonic() > deadline:
-                missing = sorted(self._sent - self.acked)[:5]
-                raise TimeoutError(f"device did not acknowledge seq {missing}")
-            time.sleep(0.005)
+
+        def what() -> str:
+            return f"device did not acknowledge seq {sorted(self._unacked.values())[:5]}"
+
+        try:
+            self._wait(lambda: not self._unacked, self.timeout_s, "")
+        except TimeoutError:
+            raise TimeoutError(what()) from None
