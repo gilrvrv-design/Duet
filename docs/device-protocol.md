@@ -62,10 +62,14 @@ Every message is a flat JSON object with a `type` and a `seq`:
 
 | Who sends it | `seq` values |
 |---|---|
-| Conductor (one performance) | 0, 1, 2 ... in time order |
-| Gateway's own clock pings | from 1,000,000 up, so they never collide with plan numbers |
+| Gateway (every command and clock ping) | 1, 2, 3 ... counting up for the whole connection |
 | Device (`hello`, `telemetry`, `fault`) | 0 |
 | Device (`ack`, `time_pong`) | the `seq` of the message being answered |
+
+The conductor numbers each performance's plan from 0. The gateway puts its **own**
+counter on the wire and remembers which plan number each wire `seq` stands for, so two
+performances on one connection can never mix up their acknowledgements, and errors are
+reported with the plan's number.
 
 ## Messages
 
@@ -85,7 +89,7 @@ Every message is a flat JSON object with a `type` and a `seq`:
 
 | Type | Fields | When |
 |---|---|---|
-| `hello` | `protocol`, `device_id`, `profile` | First message on every connection |
+| `hello` | `protocol`, `device_id`, `profile`, and the limits it enforces: `steps_per_mm`, `travel_steps`, `duty_limit`, `duty_window_us`, `max_pulse_us` | First message on every connection |
 | `ack` | `status`: `ok` or `error: …` | For every command except `heartbeat` and `time_ping` |
 | `time_pong` | `t1`, `t2` (arrived), `t3` (left), device clock | Answer to `time_ping` |
 | `telemetry` | `homed`, `position` (steps), `queued` | When homing ends; when position stops being trusted |
@@ -94,15 +98,15 @@ Every message is a flat JSON object with a `type` and a `seq`:
 ### Examples
 
 ```json
-{"type":"hello","seq":0,"protocol":1,"device_id":"duet-rig-1","profile":"bottles-v1"}
+{"type":"hello","seq":0,"protocol":1,"device_id":"duet-rig-1","profile":"bottles-v1","steps_per_mm":80,"travel_steps":48000,"duty_limit":0.2,"duty_window_us":10000000,"max_pulse_us":50000}
 {"type":"home","seq":0}
 {"type":"ack","seq":0,"status":"ok"}
 {"type":"telemetry","seq":0,"homed":true,"position":0,"queued":0}
 {"type":"move_at","seq":7,"t_us":5012000345,"target_steps":26800,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0}
 {"type":"strike_at","seq":8,"t_us":5012755345,"pulse_us":22000}
 {"type":"led_frame_at","seq":9,"t_us":5012767345,"first":93,"count":2,"rgb":[255,255,255]}
-{"type":"time_ping","seq":1000017,"t1":81234567}
-{"type":"time_pong","seq":1000017,"t1":81234567,"t2":1068889101,"t3":1068889102}
+{"type":"time_ping","seq":17,"t1":81234567}
+{"type":"time_pong","seq":17,"t1":81234567,"t2":1068889101,"t3":1068889102}
 {"type":"heartbeat","seq":0}
 {"type":"fault","seq":0,"code":"NOT_ARRIVED","detail":"strike before the carriage arrived"}
 ```
@@ -243,6 +247,16 @@ stateDiagram-v2
 | `error: cannot parse` | Not valid JSON, unknown type, or missing fields | log it; it is a Hub bug |
 | `error: queue full` | 512 commands already waiting | send less far ahead |
 | `error: emergency stop` | The rig is latched in emergency stop | stop the performance; a person must power-cycle |
+
+### What the gateway does with answers
+
+- The gateway compares the limits in `hello` with the profile the Hub plans with and
+  refuses to connect if they differ (`DeviceMismatch`): a score the Hub thinks playable
+  would otherwise be refused mid-song. A device that reports no limits (`travel_steps`
+  0) is accepted.
+- Any `error: …` ack, a `WATCHDOG` or `HOMING_TIMEOUT` fault, or a lost connection stops
+  the performance: every waiting call wakes at once and the next `send` or wait raises
+  `DeviceFault`. Other faults are recorded in `gateway.faults` and the music plays on.
 
 ### Fault codes
 

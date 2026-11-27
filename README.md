@@ -22,6 +22,9 @@ Needs Python 3.12+, [uv](https://docs.astral.sh/uv/) and FFmpeg (for MP3, M4A an
 make install
 ```
 
+This installs exactly the versions pinned in `uv.lock`. After changing dependencies in
+`pyproject.toml`, run `uv lock` and commit the new lockfile.
+
 ```bash
 source .venv/bin/activate
 ```

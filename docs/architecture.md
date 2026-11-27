@@ -141,7 +141,9 @@ flowchart TB
         ped["pedagogy<br/>skills · lessons"]
         cal["calibration"]
         evalm["evaluation"]
-        api["api/<br/>REST · store"]
+        api["api/<br/>app wiring · routes · views"]
+        storage["storage<br/>records by kind and id"]
+        lib["library · learning<br/>versions · skills · lessons"]
         jobs["jobs"]
         cli["cli"]
     end
@@ -178,6 +180,10 @@ flowchart TB
     cal --> profile
     evalm --> compose
     api --> jobs
+    api --> lib
+    lib --> storage
+    jobs --> storage
+    lib --> ped
     api --> compose
     api --> audio
     api --> ped
@@ -192,7 +198,7 @@ flowchart TB
 | Checks and fixes | `feasibility`, `difficulty`, `repair`, `variations`, `copyright` | Can it be played? How hard is it? Make it playable, easier, original |
 | Making scores | `compose/`, `audio/`, `respond`, `ensemble`, `midi_io` | Every way of getting a DuetScore |
 | Playing | `plans`, `conductor`, `follow`, `listening`, `mic`, `session`, `protocol`, `sim`, `device/` | Turn a score into timed commands and listen to the pianist |
-| Learning and service | `pedagogy`, `calibration`, `evaluation`, `api/`, `jobs`, `cli` | Skills, lessons, measuring the rig and the composer, the outside interfaces |
+| Learning and service | `pedagogy`, `calibration`, `evaluation`, `library`, `learning`, `storage`, `api/`, `jobs`, `cli` | Skills, lessons, measuring the rig and the composer; the library and learning rules as plain functions over a store; the outside interfaces (`api/app.py` only wires; routes live in `api/routes/`, one module per area) |
 | Firmware | `firmware/lib/duet_core/` (C++) | Runs timed commands on the rig and keeps the hardware safe |
 
 ## The score: one format for everything
@@ -369,7 +375,7 @@ never need the network, a GPU or hardware.
 | `Composer.write(system, messages)` | `compose/service.py` | `ClaudeComposer` | `ScriptedComposer` |
 | `Transcriber.transcribe(audio, sr)` | `audio/notes.py` | `PyinTranscriber`, `BasicPitchTranscriber` | synthesized audio |
 | `Separator.separate(path)` | `audio/fullmix.py` | `DemucsSeparator` | `FakeSeparator` |
-| `Store` (add, put, get, list, delete) | `api/store.py` | `MemoryStore`, `SqliteStore` | both, in every API test |
+| `Store` (add, put, get, list, delete, update) | `storage.py` | `MemoryStore`, `SqliteStore` | both, in every API test |
 | `Device.send(msg)` | `conductor.py` | `DeviceGateway` | `SimulatedRig` |
 | `KeyInput` (poll, wait_for) | `listening.py` | `MidiKeys`, `MicKeys` | `SimulatedPianist`, `TempoPianist`, `PhrasePianist` |
 | `Hal` (C++) | `firmware/lib/duet_core/src/duet_hal.hpp` | `Esp32Hal` | `SimHal` |
