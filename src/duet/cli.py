@@ -138,6 +138,20 @@ DEMO_PHRASES = [
 ]
 
 
+def cmd_vary(args) -> int:
+    from duet.variations import BUILT_IN, vary
+
+    composer = None
+    if args.instruction.strip().lower() not in BUILT_IN:
+        from duet.compose.claude import ClaudeComposer
+
+        composer = ClaudeComposer()
+    score, note = vary(read_score(args.score), args.instruction, composer, _robot(args))
+    write_score(score, args.out)
+    print(note)
+    return 0
+
+
 def cmd_teach(args) -> int:
     """ "Teach me this song": a lesson path of duets from an audio recording."""
     from duet.audio.pipeline import transcribe_file
@@ -412,6 +426,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--model", default=None)
     p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser("vary", help="a variation: slower, faster, easier, swap, or any request")
+    p.add_argument("score")
+    p.add_argument("instruction", help="built in: slower faster easier swap; else asks Claude")
+    p.add_argument("out")
+    p.set_defaults(func=cmd_vary)
 
     p = sub.add_parser("teach", help="teach me this song: lesson steps from a recording")
     p.add_argument("audio")

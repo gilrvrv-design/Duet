@@ -53,13 +53,15 @@ def pianist_stats(score: DuetScore) -> PartStats:
     onsets: dict[float, list[int]] = {}
     for t in timed:
         onsets.setdefault(round(t.start_s, 6), []).append(t.event.pitch)
-    duration = max(t.end_s for t in timed) - timed[0].start_s
+    # Speed between notes: what makes a part hard. One note has no speed.
+    times = sorted(onsets)
+    span = times[-1] - times[0]
     tops = [max(p) for _, p in sorted(onsets.items())]
     polyphony = max(sum(1 for o in timed if o.start_s <= t.start_s + 1e-9 < o.end_s) for t in timed)
     pitches = [t.event.pitch for t in timed]
     return PartStats(
         notes=len(onsets),
-        notes_per_s=len(onsets) / duration if duration > 0 else 0.0,
+        notes_per_s=(len(times) - 1) / span if span > 0 else 0.0,
         max_jump=max((abs(b - a) for a, b in pairwise(tops)), default=0),
         max_polyphony=polyphony,
         has_offbeats=any(abs(t.event.beat - round(t.event.beat)) > 1e-9 for t in timed),

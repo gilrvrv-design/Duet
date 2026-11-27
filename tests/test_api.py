@@ -218,3 +218,47 @@ def test_lessons_from_a_transcription(client):
         client.post(f"/v1/lessons/{lesson['id']}/steps/9/attempts", json={"played": []}).status_code
         == 404
     )
+
+
+def test_library_featured_search_versions_and_forks(client):
+    featured = client.get("/v1/duets?featured=true").json()
+    assert [d["title"] for d in featured] == ["Rain on the Bottles"]
+    original = featured[0]
+    assert original["version"] == 1 and original["root"] == original["id"]
+
+    easier = client.post(f"/v1/duets/{original['id']}/variations", json={"instruction": "slower"})
+    assert easier.status_code == 201
+    v2 = easier.json()
+    assert (
+        v2["version"] == 2
+        and v2["parent"] == original["id"]
+        and v2["change"].startswith("tempo 84")
+    )
+    v3 = client.post(f"/v1/duets/{v2['id']}/variations", json={"instruction": "swap"}).json()
+    line = client.get(f"/v1/duets/{v3['id']}/versions").json()
+    assert [d["version"] for d in line] == [1, 2, 3]
+    assert [d["instruction"] for d in line[1:]] == ["slower", "swap"]
+
+    fork = client.post(f"/v1/duets/{v2['id']}/fork").json()
+    assert fork["version"] == 1 and fork["forked_from"] == v2["id"] and fork["root"] == fork["id"]
+
+    assert [d["title"] for d in client.get("/v1/duets?q=rain").json()][:1] == [
+        "Rain on the Bottles"
+    ]
+    assert client.get("/v1/duets?q=nothing-matches-this").json() == []
+    assert all(d["pianist_difficulty"] == 1 for d in client.get("/v1/duets?difficulty=1").json())
+
+
+def test_variation_through_the_composer_and_errors(client):
+    duet = client.get("/v1/duets?featured=true").json()[0]
+    # The scripted composer answers with GOOD, so a free-form edit gives that duet back.
+    edited = client.post(f"/v1/duets/{duet['id']}/variations", json={"instruction": "add a bridge"})
+    assert edited.status_code == 201 and edited.json()["version"] == 2
+    job = client.post(
+        f"/v1/duets/{duet['id']}/variations?background=true", json={"instruction": "easier"}
+    ).json()
+    assert wait_for(client, job["id"])["state"] == "succeeded"
+    assert (
+        client.post("/v1/duets/missing/variations", json={"instruction": "slower"}).status_code
+        == 404
+    )

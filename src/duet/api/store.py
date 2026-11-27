@@ -36,6 +36,7 @@ class Store(Protocol):
     def put(self, kind: str, record_id: str, data: Any, **meta) -> Record: ...
     def get(self, kind: str, record_id: str) -> Record: ...
     def delete(self, kind: str, record_id: str) -> None: ...
+    def list(self, kind: str) -> list[Record]: ...
     def update_meta(self, kind: str, record_id: str, **meta) -> Record: ...
 
 
@@ -71,6 +72,12 @@ class MemoryStore:
         self.get(kind, record_id)
         with self._lock:
             del self._items[record_id]
+
+    def list(self, kind: str) -> list[Record]:
+        with self._lock:
+            return sorted(
+                (r for r in self._items.values() if r.kind == kind), key=lambda r: r.created_at
+            )
 
     def update_meta(self, kind: str, record_id: str, **meta) -> Record:
         record = self.get(kind, record_id)
@@ -168,6 +175,15 @@ class SqliteStore:
             ).rowcount
         if not deleted:
             raise NotFound(f"{kind} {record_id} not found")
+
+    def list(self, kind: str) -> list[Record]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, data, meta, created_at FROM records WHERE kind = ? ORDER BY created_at",
+                (kind,),
+            ).fetchall()
+        decode = self._codec(kind)[1]
+        return [Record(i, kind, decode(json.loads(d)), json.loads(m), c) for i, d, m, c in rows]
 
     def update_meta(self, kind: str, record_id: str, **meta) -> Record:
         record = self.get(kind, record_id)

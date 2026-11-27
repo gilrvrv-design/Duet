@@ -55,6 +55,12 @@ With an acoustic piano, add `--mic` (needs `pip install sounddevice`); the liste
 duet play examples/rain-on-the-bottles.json --sim --wait --mic
 ```
 
+Make a variation: `slower`, `faster`, `easier` and `swap` are instant; anything else ("in a minor key") asks Claude to edit the duet:
+
+```bash
+duet vary examples/rain-on-the-bottles.json easier rain-easier.json
+```
+
 Teach me this song: lesson steps from a recording, from the easiest part slowly up to your target level:
 
 ```bash

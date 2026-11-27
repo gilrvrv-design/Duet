@@ -31,6 +31,7 @@ from duet.profile import keyboard_profile, robot_profile
 from duet.progress import Progress, no_progress
 from duet.repair import repair_robot
 from duet.score import DuetScore
+from duet.variations import BUILT_IN, vary
 
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 MIDI = "audio/midi"
@@ -67,6 +68,10 @@ class PerformanceIn(Take):
 class NextRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
     bars: int = Field(8, ge=1, le=64)
+
+
+class VariationIn(BaseModel):
+    instruction: str = Field(min_length=1, max_length=500)
 
 
 class LessonOptions(BaseModel):
@@ -137,6 +142,92 @@ def create_app(
         matrix = reachability(robot)
         return {"pitches": list(matrix.pitches), "min_interval_s": matrix.seconds}
 
+    # Library (spec §5.9) -----------------------------------------------------
+    def add_duet(score: DuetScore, **meta):
+        """Every duet starts its own line (root) at version 1 unless told otherwise."""
+        record = store.add("duet", score, **meta)
+        if "root" not in meta:
+            store.update_meta("duet", record.id, root=record.id, version=1)
+        return store.get("duet", record.id)
+
+    def featured() -> None:
+        examples = Path(__file__).resolve().parents[3] / "examples"
+        if any(r.meta.get("featured") for r in store.list("duet")):
+            return
+        for path in sorted(examples.glob("*.json")) if examples.is_dir() else []:
+            add_duet(
+                DuetScore.model_validate_json(path.read_text()), source="example", featured=True
+            )
+
+    featured()
+
+    @app.get("/v1/duets")
+    def search_duets(
+        q: str = "",
+        difficulty: int | None = None,
+        max_bars: int | None = None,
+        featured: bool | None = None,
+        limit: int = 20,
+    ):
+        words = [w for w in q.lower().split() if w]
+        hits = []
+        for record in store.list("duet"):
+            score: DuetScore = record.data
+            if difficulty is not None and pianist_difficulty(score) != difficulty:
+                continue
+            if max_bars is not None and score.bar_count > max_bars:
+                continue
+            if featured is not None and bool(record.meta.get("featured")) != featured:
+                continue
+            text = " ".join(
+                [score.meta.title, score.meta.prompt or "", score.meta.key, *score.meta.style_tags]
+            ).lower()
+            matched = sum(w in text for w in words)
+            if words and not matched:
+                continue
+            hits.append((matched, record.created_at, record))
+        hits.sort(key=lambda h: (-h[0], -h[1]))
+        return [summary_view(r) for _, _, r in hits[:limit]]
+
+    @app.post("/v1/duets/{duet_id}/variations", status_code=201)
+    def create_variation(duet_id: str, body: VariationIn, background: bool = False):
+        parent = store.get("duet", duet_id)
+
+        def work(progress):
+            word = body.instruction.strip().lower()
+            composer = None if word in BUILT_IN else get_composer()
+            try:
+                score, note = vary(parent.data, body.instruction, composer)
+            except ValueError as exc:
+                raise JobFailure("VARIATION_INVALID", str(exc)) from exc
+            except RuntimeError as exc:
+                raise JobFailure("LLM_ERROR", str(exc)) from exc
+            record = add_duet(
+                score,
+                source="variation",
+                parent=duet_id,
+                instruction=body.instruction,
+                change=note,
+                root=parent.meta.get("root", duet_id),
+                version=parent.meta.get("version", 1) + 1,
+            )
+            return duet_view(record)
+
+        if background:
+            return _accepted(jobs.submit("variation", work))
+        return _sync(lambda: work(no_progress))
+
+    @app.get("/v1/duets/{duet_id}/versions")
+    def duet_versions(duet_id: str):
+        root = store.get("duet", duet_id).meta.get("root", duet_id)
+        line = [r for r in store.list("duet") if r.meta.get("root") == root]
+        return [summary_view(r) for r in sorted(line, key=lambda r: r.meta.get("version", 1))]
+
+    @app.post("/v1/duets/{duet_id}/fork", status_code=201)
+    def fork_duet(duet_id: str):
+        original = store.get("duet", duet_id)
+        return duet_view(add_duet(original.data, source="fork", forked_from=duet_id))
+
     # Duets -------------------------------------------------------------------
     @app.post("/v1/duets", status_code=201)
     def create_duet(score: dict):
@@ -144,7 +235,7 @@ def create_app(
             parsed = DuetScore.model_validate(score)
         except ValidationError as exc:
             raise Problem(422, "SCORE_INVALID", str(exc)) from exc
-        return duet_view(store.add("duet", parsed, source="json"))
+        return duet_view(add_duet(parsed, source="json"))
 
     @app.post("/v1/duets/import", status_code=201)
     async def import_midi(file: Annotated[UploadFile, File()]):
@@ -153,7 +244,7 @@ def create_app(
             score = midi_to_score(data, title=Path(file.filename or "imported").stem)
         except (OSError, EOFError, ValueError) as exc:
             raise Problem(422, "MIDI_INVALID", f"cannot read MIDI: {exc}") from exc
-        return duet_view(store.add("duet", score, source="midi"))
+        return duet_view(add_duet(score, source="midi"))
 
     @app.get("/v1/duets/{duet_id}")
     def get_duet(duet_id: str):
@@ -173,7 +264,14 @@ def create_app(
     def repair_duet(duet_id: str):
         score = store.get("duet", duet_id).data
         result = repair_robot(score, robot_profile(score.parts["robot"].instrument_profile))
-        record = store.add("duet", result.score, source="repair", parent=duet_id)
+        parent = store.get("duet", duet_id)
+        record = add_duet(
+            result.score,
+            source="repair",
+            parent=duet_id,
+            root=parent.meta.get("root", duet_id),
+            version=parent.meta.get("version", 1) + 1,
+        )
         return {**duet_view(record), "changes": result.summary().splitlines()}
 
     # Compositions ------------------------------------------------------------
@@ -184,8 +282,7 @@ def create_app(
             raise JobFailure("COMPOSITION_FAILED", str(exc)) from exc
         except RuntimeError as exc:
             raise JobFailure("LLM_ERROR", str(exc)) from exc
-        record = store.add(
-            "duet",
+        record = add_duet(
             result.score,
             source="composition",
             explanation=result.explanation,
@@ -292,7 +389,7 @@ def create_app(
         path = teach_song(record.data, options.target_level, title)
         steps = []
         for step in path.steps:
-            duet = store.add("duet", step.score, source="lesson", transcription=tid)
+            duet = add_duet(step.score, source="lesson", transcription=tid)
             steps.append(
                 {
                     "title": step.title,
@@ -379,8 +476,7 @@ def create_app(
         record = store.get("transcription", tid)
         title = options.title or Path(record.meta.get("filename") or "Transcribed duet").stem
         arrangement = arrange(record.data, difficulty=options.difficulty, title=title)
-        duet = store.add(
-            "duet",
+        duet = add_duet(
             arrangement.score,
             source="transcription",
             transcription=tid,
@@ -419,6 +515,19 @@ async def _read_upload(file: UploadFile) -> bytes:
     if not data:
         raise Problem(422, "FILE_EMPTY", "the uploaded file is empty")
     return data
+
+
+def summary_view(record) -> dict:
+    score: DuetScore = record.data
+    keep = ("source", "featured", "version", "root", "parent", "instruction", "change")
+    return {
+        "id": record.id,
+        "title": score.meta.title,
+        "bars": score.bar_count,
+        "tempo_bpm": score.meta.tempo_bpm,
+        "pianist_difficulty": pianist_difficulty(score),
+        **{k: record.meta[k] for k in keep if k in record.meta},
+    }
 
 
 def skills_view(model: SkillModel) -> dict:

@@ -30,7 +30,7 @@ def test_stats():
     score = make_score(pianist=[(1, 1, 1, "C4"), (1, 2, 1, "G4"), (1, 3, 2, "E4")], tempo=60)
     stats = pianist_stats(score)
     assert (stats.notes, stats.max_jump, stats.max_polyphony) == (3, 7, 1)
-    assert stats.notes_per_s == 0.75
+    assert stats.notes_per_s == 1.0  # onsets at 0, 1 and 2 s
     assert (stats.low, stats.high) == (60, 67)
 
 

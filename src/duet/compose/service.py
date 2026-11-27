@@ -15,6 +15,7 @@ from duet.compose.draft import DraftError, draft_to_score, score_to_draft
 from duet.compose.prompts import feedback_message, request_message, system_prompt
 from duet.difficulty import check_pianist, pianist_difficulty
 from duet.feasibility import check_robot
+from duet.pitch import midi_to_name
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.progress import Progress, no_progress
 from duet.repair import Change, repair_robot
@@ -70,22 +71,59 @@ def compose(
 ) -> CompositionResult:
     robot = robot or robot_profile()
     keyboard = keyboard or keyboard_profile()
+    return _converse(
+        request, _request_text(request), composer, robot, keyboard, max_rounds, progress
+    )
+
+
+def _request_text(request: CompositionRequest) -> str:
+    return request_message(
+        request.prompt,
+        difficulty=request.difficulty,
+        bars=request.bars,
+        lead=request.lead,
+        pianist_range=request.pianist_range,
+        tempo_bpm=request.tempo_bpm,
+        time_signature=request.time_signature,
+        focus=request.focus,
+    )
+
+
+def revise(
+    score: DuetScore,
+    instruction: str,
+    composer: Composer,
+    robot: RobotProfile | None = None,
+    keyboard: KeyboardProfile | None = None,
+    difficulty: int | None = None,
+    max_rounds: int = MAX_FEEDBACK_ROUNDS,
+    progress: Progress = no_progress,
+) -> CompositionResult:
+    """Change an existing duet as asked (spec FR-C8): the composer edits the current
+    draft instead of starting again, and the result is checked like a new composition."""
+    robot = robot or robot_profile()
+    keyboard = keyboard or keyboard_profile()
+    pianist_range = score.parts["pianist"].range or (keyboard.low, keyboard.high)
+    request = CompositionRequest(
+        prompt=score.meta.prompt or score.meta.title,
+        difficulty=difficulty or score.meta.difficulty_target or pianist_difficulty(score),
+        bars=max(1, score.bar_count),
+        pianist_range=tuple(midi_to_name(p) for p in pianist_range),
+        tempo_bpm=score.meta.tempo_bpm,
+        time_signature=score.meta.time_signature,
+    )
+    text = (
+        f"{_request_text(request)}\n\nHere is the current duet:\n{score_to_draft(score)}\n\n"
+        f"Change it: {instruction}. Keep everything you are not asked to change. "
+        "Answer with the full JSON object."
+    )
+    return _converse(request, text, composer, robot, keyboard, max_rounds, progress)
+
+
+def _converse(request, first_message, composer, robot, keyboard, max_rounds, progress):
+    """Ask, check, feed problems back, repeat; then repair deterministically."""
     system = system_prompt(robot)
-    messages: list[dict] = [
-        {
-            "role": "user",
-            "content": request_message(
-                request.prompt,
-                difficulty=request.difficulty,
-                bars=request.bars,
-                lead=request.lead,
-                pianist_range=request.pianist_range,
-                tempo_bpm=request.tempo_bpm,
-                time_signature=request.time_signature,
-                focus=request.focus,
-            ),
-        }
-    ]
+    messages: list[dict] = [{"role": "user", "content": first_message}]
     best: tuple[DuetScore, str] | None = None
     history: list[list[str]] = []
     for round_no in range(1, max_rounds + 2):  # first draft plus feedback rounds
