@@ -17,7 +17,7 @@ from duet.api.errors import Problem
 from duet.api.views import duet_view, summary_view
 from duet.compose.service import ComposerError, CompositionError, revise
 from duet.jobs import JobFailure
-from duet.midi_io import midi_to_score, score_to_midi_bytes
+from duet.midi_io import read_midi, score_to_midi_bytes
 from duet.profile import robot_profile
 from duet.repair import repair_robot
 from duet.score import MAX_LEVEL, MIN_LEVEL, DuetScore
@@ -65,10 +65,11 @@ async def import_midi(ctx: Ctx, file: Annotated[UploadFile, File()]):
 
     def work():
         try:
-            score = midi_to_score(data, title=title)
+            score, warnings = read_midi(data, title=title)
         except (OSError, EOFError, ValueError) as exc:
             raise Problem("MIDI_INVALID", f"cannot read MIDI: {exc}") from exc
-        return duet_view(library.add_duet(ctx.store, score, source="midi"), ctx.guard)
+        record = library.add_duet(ctx.store, score, source="midi", warnings=warnings)
+        return duet_view(record, ctx.guard)
 
     return await run_in_threadpool(work)  # parsing must not block other requests
 

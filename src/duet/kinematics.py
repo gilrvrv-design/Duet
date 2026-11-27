@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from duet.pitch import midi_to_name
 from duet.profile import Kinematics, RobotProfile
 
 
@@ -41,8 +42,6 @@ class Reachability:
 
     def as_table(self) -> str:
         """Plain-text table in milliseconds, for LLM prompts and humans."""
-        from duet.pitch import midi_to_name
-
         names = [midi_to_name(p) for p in self.pitches]
         lines = ["from\\to " + " ".join(f"{n:>5}" for n in names)]
         for name, row in zip(names, self.seconds, strict=True):

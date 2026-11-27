@@ -28,6 +28,13 @@ PartName = Literal["robot", "pianist"]
 PARTS: tuple[PartName, ...] = ("robot", "pianist")
 MIN_LEVEL, MAX_LEVEL = 1, 5  # pianist difficulty levels; the rules are in duet.difficulty
 Level = Annotated[int, Field(ge=MIN_LEVEL, le=MAX_LEVEL)]
+MIN_TEMPO_BPM, MAX_TEMPO_BPM = 20.0, 300.0  # exclusive, inclusive
+Tempo = Annotated[float, Field(gt=MIN_TEMPO_BPM, le=MAX_TEMPO_BPM)]
+
+
+def clamp_tempo(tempo_bpm: float) -> float:
+    """The nearest tempo a score allows (to a tenth of a bpm)."""
+    return min(MAX_TEMPO_BPM, max(MIN_TEMPO_BPM + 0.1, tempo_bpm))
 
 
 def _parse_pitch(value: object) -> int:
@@ -64,7 +71,7 @@ class Meta(_Model):
     prompt: str | None = None
     key: str = "C major"
     time_signature: tuple[int, int] = (4, 4)
-    tempo_bpm: float = Field(100.0, gt=20, le=300)
+    tempo_bpm: Tempo = 100.0
     style_tags: tuple[str, ...] = ()
     difficulty_target: Level | None = None
 

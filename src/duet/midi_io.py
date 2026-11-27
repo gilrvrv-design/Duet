@@ -18,7 +18,7 @@ from pathlib import Path
 
 import mido
 
-from duet.score import DuetScore, Event, PartName
+from duet.score import DuetScore, Event, PartName, clamp_tempo
 from duet.timing import bar_and_beat, beat_index
 
 TICKS_PER_QUARTER = 480
@@ -99,12 +99,33 @@ class _Note:
     vel: int
 
 
-def _read_notes(midi: mido.MidiFile):
-    """All notes plus the first tempo and time signature in the file."""
+Source = str | Path | bytes | mido.MidiFile
+DEFAULT_TEMPO_US = 500_000  # MIDI's default: 120 bpm in quarter notes
+
+
+def _open(source: Source) -> mido.MidiFile:
+    if isinstance(source, mido.MidiFile):
+        return source
+    if isinstance(source, bytes):
+        return mido.MidiFile(file=io.BytesIO(source))
+    return mido.MidiFile(str(source))
+
+
+def _bpm(tempo_us: int, unit: int) -> float:
+    """MIDI tempo (microseconds per quarter) in beats of the time signature per minute."""
+    return round(60_000_000 / tempo_us * unit / 4, 3)
+
+
+def _read_notes(midi: mido.MidiFile, warnings: list[str] | None = None):
+    """All notes plus the first tempo and time signature in the file. What a DuetScore
+    cannot hold (later tempo or metre changes, notes never released) is reported in
+    ``warnings``."""
+    warnings = [] if warnings is None else warnings
     notes: list[_Note] = []
     names: dict[int, str] = {}
-    tempo, signature = 500_000, (4, 4)
+    tempo, signature = DEFAULT_TEMPO_US, (4, 4)
     seen_tempo = seen_sig = False
+    tempo_changes = signature_changes = unreleased = 0
     for t, track in enumerate(midi.tracks):
         now = 0
         open_notes: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
@@ -112,15 +133,28 @@ def _read_notes(midi: mido.MidiFile):
             now += msg.time
             if msg.type == "track_name":
                 names[t] = msg.name.strip().lower()
-            elif msg.type == "set_tempo" and not seen_tempo:
-                tempo, seen_tempo = msg.tempo, True
-            elif msg.type == "time_signature" and not seen_sig:
-                signature, seen_sig = (msg.numerator, msg.denominator), True
+            elif msg.type == "set_tempo":
+                if not seen_tempo:
+                    tempo, seen_tempo = msg.tempo, True
+                elif msg.tempo != tempo:
+                    tempo_changes += 1
+            elif msg.type == "time_signature":
+                if not seen_sig:
+                    signature, seen_sig = (msg.numerator, msg.denominator), True
+                elif (msg.numerator, msg.denominator) != signature:
+                    signature_changes += 1
             elif msg.type == "note_on" and msg.velocity > 0:
                 open_notes[(msg.channel, msg.note)].append((now, msg.velocity))
             elif msg.type in ("note_off", "note_on") and open_notes[(msg.channel, msg.note)]:
                 start, vel = open_notes[(msg.channel, msg.note)].pop(0)
                 notes.append(_Note(t, start, now, msg.note, vel))
+        unreleased += sum(len(v) for v in open_notes.values())
+    if tempo_changes:
+        warnings.append(f"{tempo_changes} later tempo change(s) ignored: one tempo per score")
+    if signature_changes:
+        warnings.append(f"{signature_changes} later time signature change(s) ignored")
+    if unreleased:
+        warnings.append(f"{unreleased} note(s) never released were left out")
     return notes, names, tempo, signature
 
 
@@ -152,19 +186,20 @@ def _skyline(notes: list[_Note]) -> dict[_Note, PartName]:
 
 
 def midi_to_score(
-    source: str | Path | bytes | mido.MidiFile,
-    title: str | None = None,
-    quantize_beats: float | None = None,
+    source: Source, title: str | None = None, quantize_beats: float | None = None
 ) -> DuetScore:
-    if isinstance(source, mido.MidiFile):
-        midi = source
-    elif isinstance(source, bytes):
-        midi = mido.MidiFile(file=io.BytesIO(source))
-    else:
-        midi = mido.MidiFile(str(source))
-    notes, names, tempo_us, (beats, unit) = _read_notes(midi)
+    return read_midi(source, title, quantize_beats)[0]
+
+
+def read_midi(
+    source: Source, title: str | None = None, quantize_beats: float | None = None
+) -> tuple[DuetScore, list[str]]:
+    """The score, and what the import had to ignore or change to make it."""
+    warnings: list[str] = []
+    midi = _open(source)
+    notes, names, tempo_us, (beats, unit) = _read_notes(midi, warnings)
     tpb = midi.ticks_per_beat * 4 / unit
-    tempo_bpm = round(60_000_000 / tempo_us * unit / 4, 3)
+    tempo_bpm = _bpm(tempo_us, unit)
 
     by_track = _assign_parts(notes, names)
     part_of = {n: by_track[n.track] for n in notes} if by_track else _skyline(notes)
@@ -184,10 +219,16 @@ def midi_to_score(
             Event(part=part_of[n], bar=bar, beat=beat, dur=round(dur, 6), pitch=n.pitch, vel=n.vel)
         )
 
-    meta = {"tempo_bpm": min(max(tempo_bpm, 20.01), 300), "time_signature": (beats, unit)}
+    allowed = clamp_tempo(tempo_bpm)
+    if allowed != tempo_bpm:
+        warnings.append(
+            f"tempo {tempo_bpm:g} bpm is outside what a score allows; using {allowed:g}"
+        )
+    meta = {"tempo_bpm": allowed, "time_signature": (beats, unit)}
     if title:
         meta["title"] = title
-    return DuetScore.model_validate({"meta": meta, "events": [e.model_dump() for e in events]})
+    score = DuetScore.model_validate({"meta": meta, "events": [e.model_dump() for e in events]})
+    return score, warnings
 
 
 @dataclass(frozen=True)
@@ -198,17 +239,12 @@ class TrackNote:
     vel: int
 
 
-def midi_tracks(source: str | Path | bytes | mido.MidiFile):
+def midi_tracks(source: Source):
     """Every track with notes, by name: (tempo_bpm, time signature, {name: notes}).
 
     For ensembles (spec Phase 4), where each line goes to its own instrument.
     """
-    if isinstance(source, mido.MidiFile):
-        midi = source
-    elif isinstance(source, bytes):
-        midi = mido.MidiFile(file=io.BytesIO(source))
-    else:
-        midi = mido.MidiFile(str(source))
+    midi = _open(source)
     notes, names, tempo_us, (beats, unit) = _read_notes(midi)
     tpb = midi.ticks_per_beat * 4 / unit
     tracks: dict[str, list[TrackNote]] = {}
@@ -219,4 +255,4 @@ def midi_tracks(source: str | Path | bytes | mido.MidiFile):
                 round(n.start / tpb, 6), round(max(n.end - n.start, 1) / tpb, 6), n.pitch, n.vel
             )
         )
-    return round(60_000_000 / tempo_us * unit / 4, 3), (beats, unit), tracks
+    return _bpm(tempo_us, unit), (beats, unit), tracks

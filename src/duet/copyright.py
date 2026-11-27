@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 from duet.pitch import name_to_midi
-from duet.score import DuetScore
+from duet.score import PARTS, DuetScore
 
 MATCH = 7  # consecutive matching intervals that make a melody recognisable
 REVIEW = 5  # shorter runs worth a person's look
@@ -100,7 +100,9 @@ class CopyrightGuard:
     def load(cls, protected_file: str | Path | None = None) -> CopyrightGuard:
         """Public-domain melodies ship with Duet; protected ones come from a file the
         operator provides (``DUET_PROTECTED_MELODIES``), e.g. from a licensed catalogue."""
-        text = (resources.files("duet.profiles") / "melodies-public-domain.yaml").read_text()
+        text = (resources.files("duet.profiles") / "melodies-public-domain.yaml").read_text(
+            encoding="utf-8"
+        )
         melodies = _parse(yaml.safe_load(text), protected=False)
         path = protected_file or os.environ.get("DUET_PROTECTED_MELODIES")
         if path:
@@ -109,7 +111,7 @@ class CopyrightGuard:
 
     def check(self, score: DuetScore) -> Verdict:
         verdict = Verdict()
-        for part in ("robot", "pianist"):
+        for part in PARTS:
             line = melody_line(score, part)
             intervals = tuple(b - a for a, b in zip(line, line[1:], strict=False))
             for melody in self.melodies:

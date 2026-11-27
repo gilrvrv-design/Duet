@@ -88,3 +88,18 @@ def test_quantize_and_running_status_note_on_zero():
     score = midi_to_score(midi, quantize_beats=0.25)
     (event,) = score.events
     assert (event.beat, event.dur, event.vel) == (1.0, 1.0, 90)
+
+
+def test_import_reports_what_it_ignores_or_changes():
+    from duet.midi_io import read_midi
+
+    midi = _file((None, [[60], [62]]))
+    track = midi.tracks[0]
+    track.insert(0, mido.MetaMessage("set_tempo", tempo=4_000_000))  # 15 bpm: too slow
+    track.insert(1, mido.MetaMessage("set_tempo", tempo=600_000, time=480))
+    track.append(mido.Message("note_on", note=64, velocity=64, time=0))  # never released
+    score, warnings = read_midi(midi)
+    assert score.meta.tempo_bpm == 20.1
+    assert any("tempo change" in w for w in warnings)
+    assert any("never released" in w for w in warnings)
+    assert any("outside what a score allows" in w for w in warnings)

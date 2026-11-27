@@ -15,12 +15,13 @@ from duet.feasibility import check_robot, max_speed_up
 from duet.pitch import best_transpose, is_black_key
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.repair import repair_robot
-from duet.score import DuetScore, Event
+from duet.score import DuetScore, Event, clamp_tempo
 
 if TYPE_CHECKING:
     from duet.compose.service import CompositionResult
 
 Edit = Callable[..., "CompositionResult"]  # see vary
+SLOWER, FASTER = 0.85, 1.15  # tempo factors of one "slower" or "faster" step
 BUILT_IN = ("slower", "faster", "easier", "swap")
 
 
@@ -43,7 +44,7 @@ def change_tempo(score: DuetScore, factor: float, robot: RobotProfile) -> DuetSc
         tempo = math.floor(score.meta.tempo_bpm * factor * 10) / 10  # round toward safe
     else:
         tempo = round(score.meta.tempo_bpm * factor, 1)
-    return score.with_tempo(min(300.0, max(20.5, tempo)))
+    return score.with_tempo(clamp_tempo(tempo))
 
 
 def simplify_pianist(score: DuetScore, target_level: int, keyboard: KeyboardProfile) -> DuetScore:
@@ -167,10 +168,10 @@ def vary(
     keyboard = keyboard or keyboard_profile()
     word = instruction.strip().lower()  # see is_built_in
     if word == "slower":
-        new = change_tempo(score, 0.85, robot)
+        new = change_tempo(score, SLOWER, robot)
         return new, f"tempo {score.meta.tempo_bpm:g} -> {new.meta.tempo_bpm:g} bpm"
     if word == "faster":
-        new = change_tempo(score, 1.15, robot)
+        new = change_tempo(score, FASTER, robot)
         return new, f"tempo {score.meta.tempo_bpm:g} -> {new.meta.tempo_bpm:g} bpm"
     if word == "easier":
         before = pianist_difficulty(score)
