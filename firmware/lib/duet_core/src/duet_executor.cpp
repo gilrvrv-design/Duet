@@ -9,7 +9,7 @@ Executor::Executor(Hal& hal, Sink& sink, Config config) : hal_(hal), sink_(sink)
 }
 
 void Executor::ack(int64_t seq, const char* status) {
-  char buf[96];
+  char buf[kMaxMessage + 1];
   write_ack(buf, sizeof buf, seq, status);
   sink_.send(buf);
 }
@@ -34,6 +34,11 @@ void Executor::finish_homing() {
   homed_ = true;
   target_steps_ = 0;
   report();
+}
+
+void Executor::on_oversize(int64_t now_us) {
+  last_message_us_ = now_us;
+  ack(0, "error: message too long");  // the seq is unknown: the frame was cut
 }
 
 void Executor::on_message(const char* json, int64_t now_us) {
@@ -176,6 +181,9 @@ void Executor::strike(const Command& c, int64_t now_us) {
 }
 
 bool Executor::duty_allows(int32_t pulse_us, int64_t now_us) {
+  // The history holds kDutySlots strikes. If the slot we would overwrite is still inside
+  // the window, older strikes there are no longer counted, so refuse: never undercount.
+  if (now_us - duty_time_[duty_next_] < cfg_.duty_window_us) return false;
   int64_t on = pulse_us;
   for (size_t i = 0; i < kDutySlots; ++i) {
     if (now_us - duty_time_[i] < cfg_.duty_window_us) on += duty_pulse_[i];

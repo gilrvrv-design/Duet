@@ -151,6 +151,42 @@ static void test_duty_cycle_limit() {
   CHECK(out.has("DUTY_CYCLE"));
 }
 
+static void test_duty_cannot_be_bypassed_with_short_pulses() {
+  // Review finding: 1000 strikes of 5 ms, 10 ms apart, is 50% on-time. With a history of
+  // only 256 strikes, the old check forgot the oldest strikes and let all of them fire.
+  SimHal hal;
+  Capture out;
+  Executor ex(hal, out);
+  ex.on_message(R"({"type":"home","seq":1})", 0);
+  char msg[160];
+  int64_t fired_on_us = 0;
+  for (int i = 0; i < 1000; ++i) {
+    int64_t t = 1000 + i * 10000LL;
+    std::snprintf(msg, sizeof msg, R"({"type":"strike_at","seq":%d,"t_us":%lld,"pulse_us":5000})", i + 2, (long long)t);
+    hal.now_us = t - 500;
+    ex.on_message(msg, hal.now_us);
+    size_t before = hal.events.size();
+    for (; hal.now_us <= t + 100; hal.now_us += 100) ex.poll(hal.now_us);
+    if (hal.events.size() > before) fired_on_us += 5000;
+  }
+  CHECK(fired_on_us <= 2000000);  // at most 20% of the 10 s window
+  CHECK(out.has("DUTY_CYCLE"));
+}
+
+static void test_hello_reports_limits_and_oversize_is_rejected() {
+  Config cfg;
+  char buf[kMaxMessage + 1];
+  int n = write_hello(buf, sizeof buf, "rig", "bottles-v1", cfg);
+  CHECK(n > 0 && n <= static_cast<int>(kMaxMessage));
+  CHECK(std::string(buf).find(R"("travel_steps":48000)") != std::string::npos);
+  CHECK(std::string(buf).find(R"("duty_limit":0.200)") != std::string::npos);
+  SimHal hal;
+  Capture out;
+  Executor ex(hal, out);
+  ex.on_oversize(0);
+  CHECK(out.has("error: message too long"));
+}
+
 static void test_time_ping() {
   SimHal hal;
   Capture out;
@@ -166,6 +202,8 @@ int main() {
   test_strike_before_arrival_is_refused();
   test_safety_rules();
   test_duty_cycle_limit();
+  test_duty_cannot_be_bypassed_with_short_pulses();
+  test_hello_reports_limits_and_oversize_is_rejected();
   test_time_ping();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);

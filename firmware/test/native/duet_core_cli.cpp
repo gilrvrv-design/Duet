@@ -21,12 +21,19 @@ using namespace duet;
 
 struct Print : Sink {
   void send(const char* json) override {
-    if (std::string(json).find("\"fault\"") != std::string::npos)
+    if (std::string(json).find("\"fault\"") != std::string::npos ||
+        std::string(json).find("\"status\":\"error") != std::string::npos)
       std::printf("{\"event\":\"fault\",\"message\":%s}\n", json);
   }
 };
 
 int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--hello") {  // the limits this firmware enforces
+    char buf[kMaxMessage + 1];
+    write_hello(buf, sizeof buf, "cli", "bottles-v1", Config{});
+    std::printf("%s\n", buf);
+    return 0;
+  }
   int64_t lookahead = argc > 1 ? std::atoll(argv[1]) : 500000;
   int64_t heartbeat = argc > 2 ? std::atoll(argv[2]) : 250000;  // 0 = no heartbeats
   std::vector<std::pair<int64_t, std::string>> inbox;

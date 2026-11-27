@@ -100,3 +100,51 @@ def test_heartbeats_keep_the_watchdog_quiet(firmware_cli):
     )
     assert "WATCHDOG" in run_firmware(firmware_cli, messages, "500000", "0")
     assert "WATCHDOG" not in run_firmware(firmware_cli, messages, "500000", "250000")
+
+
+def test_firmware_limits_match_the_profile(firmware_cli):
+    """The firmware's compiled-in limits (duet_config.hpp) and the profile the Hub plans
+    with (bottles-v1.yaml) describe the same rig."""
+    from duet.device.limits import FIRMWARE_MAX_PULSE_US, DeviceLimits, mismatches
+    from duet.protocol import parse_message
+
+    hello = parse_message(
+        subprocess.run(
+            [str(firmware_cli), "--hello"], capture_output=True, text=True, check=True
+        ).stdout
+    )
+    limits = DeviceLimits.from_hello(hello)
+    assert mismatches(limits, robot_profile()) == []
+    assert limits.max_pulse_us == FIRMWARE_MAX_PULSE_US
+    # A glockenspiel profile allows a higher duty limit than this firmware enforces.
+    assert any("duty_limit" in m for m in mismatches(limits, robot_profile("glock-v1")))
+
+
+def fault_codes(output: str) -> list[str]:
+    codes = []
+    for line in output.splitlines():
+        event = json.loads(line)
+        if event["event"] == "fault" and event["message"]["type"] == "fault":
+            codes.append(event["message"]["code"])
+    return codes
+
+
+@pytest.mark.parametrize(
+    "messages",
+    [
+        [MoveAt(1_000_000, 6400, 500, 5000, seq=1)],  # no home
+        [Home(), MoveAt(1_000_000, 99_999, 500, 5000, seq=1)],  # beyond travel
+        [Home(), MoveAt(1_000_000, 46000, 500, 5000, seq=1), StrikeAt(1_100_000, 20000, seq=2)],
+        [Home()] + [StrikeAt(1_000_000 + i * 10_000, 5000, seq=i + 1) for i in range(1000)],
+        [Home()] + [StrikeAt(1_000_000 + i * 100_000, 50_000, seq=i + 1) for i in range(60)],
+    ],
+    ids=["not-homed", "soft-limit", "not-arrived", "short-pulse-duty", "long-pulse-duty"],
+)
+def test_firmware_and_simulator_refuse_the_same_things(messages, firmware_cli):
+    rig = SimulatedRig(robot_profile())
+    for m in messages:
+        rig.send(m)
+    rig.run()
+    firmware = fault_codes(run_firmware(firmware_cli, messages))
+    hub = [c for c in rig.fault_codes if c != "OFF_BOTTLE"]  # the firmware does not know bottles
+    assert firmware == hub and firmware  # each stream breaks a rule

@@ -44,6 +44,7 @@ class Striker(_Model):
     recovery_ms: float = Field(ge=0)
     latency_ms: float = Field(0, ge=0)
     duty_limit: float = Field(0.2, gt=0, le=1)
+    duty_window_s: float = Field(10.0, gt=0)  # the limit is on-time over any window this long
 
     @model_validator(mode="after")
     def _check_pulse(self) -> Striker:

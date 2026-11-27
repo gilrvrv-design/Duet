@@ -12,7 +12,7 @@
 namespace duet {
 
 constexpr size_t kQueueSize = 512;  // more than 2 s of a dense piece
-constexpr size_t kDutySlots = 256;  // >= strikes that fit in one duty window
+constexpr size_t kDutySlots = 256;  // strike history; when full inside the window, refuse
 
 // Where replies (acks, pongs, faults) go: a WebSocket, a serial port or a test buffer.
 class Sink {
@@ -33,6 +33,9 @@ class Executor {
   Executor(Hal& hal, Sink& sink, Config config = Config{});
 
   void on_message(const char* json, int64_t now_us);
+  // Call instead of on_message when a frame or line was longer than kMaxMessage.
+  void on_oversize(int64_t now_us);
+  const Config& config() const { return cfg_; }
   void poll(int64_t now_us);  // call as often as possible (every loop iteration)
 
   bool homed() const { return homed_; }

@@ -78,8 +78,8 @@ void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED: {
       client = static_cast<int8_t>(num);
-      char hello[160];
-      duet::write_hello(hello, sizeof hello, DEVICE_ID, PROFILE_ID);
+      char hello[duet::kMaxMessage + 1];
+      duet::write_hello(hello, sizeof hello, DEVICE_ID, PROFILE_ID, executor.config());
       server.sendTXT(num, hello);
       break;
     }
@@ -87,10 +87,13 @@ void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
       if (client == static_cast<int8_t>(num)) client = -1;
       break;
     case WStype_TEXT: {
-      char buf[256];
-      size_t n = length < sizeof buf - 1 ? length : sizeof buf - 1;
-      memcpy(buf, payload, n);
-      buf[n] = '\0';
+      if (length > duet::kMaxMessage) {  // never act on a cut-off message
+        executor.on_oversize(now_us());
+        break;
+      }
+      char buf[duet::kMaxMessage + 1];
+      memcpy(buf, payload, length);
+      buf[length] = '\0';
       executor.on_message(buf, now_us());
       break;
     }
@@ -100,15 +103,25 @@ void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
 }
 
 void read_serial() {
-  static char line[256];
+  static char line[duet::kMaxMessage + 1];
   static size_t len = 0;
+  static bool too_long = false;
   while (Serial.available()) {
     char c = static_cast<char>(Serial.read());
-    if (c == '\n' || len == sizeof line - 1) {
+    if (c == '\n') {
       line[len] = '\0';
-      if (len) executor.on_message(line, now_us());
+      if (too_long) {
+        executor.on_oversize(now_us());
+      } else if (len) {
+        executor.on_message(line, now_us());
+      }
       len = 0;
-    } else if (c != '\r') {
+      too_long = false;
+    } else if (c == '\r' || too_long) {
+      continue;
+    } else if (len == duet::kMaxMessage) {
+      too_long = true;  // keep reading to the end of the line, then reject it whole
+    } else {
       line[len++] = c;
     }
   }

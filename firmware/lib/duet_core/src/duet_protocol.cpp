@@ -1,5 +1,7 @@
 #include "duet_protocol.hpp"
 
+#include "duet_config.hpp"
+
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -97,11 +99,16 @@ bool parse(const char* json, Command& out) {
   return true;
 }
 
-int write_hello(char* buf, size_t n, const char* device_id, const char* profile) {
+int write_hello(char* buf, size_t n, const char* device_id, const char* profile,
+                const Config& cfg) {
   return std::snprintf(buf, n,
                        "{\"type\":\"hello\",\"seq\":0,\"protocol\":1,\"device_id\":\"%s\","
-                       "\"profile\":\"%s\"}",
-                       device_id, profile);
+                       "\"profile\":\"%s\",\"steps_per_mm\":%.3f,\"travel_steps\":%d,"
+                       "\"duty_limit\":%.3f,\"duty_window_us\":%lld,\"max_pulse_us\":%d}",
+                       device_id, profile, static_cast<double>(cfg.steps_per_mm),
+                       static_cast<int>(cfg.travel_steps), static_cast<double>(cfg.duty_limit),
+                       static_cast<long long>(cfg.duty_window_us),
+                       static_cast<int>(cfg.max_pulse_us));
 }
 
 int write_ack(char* buf, size_t n, int64_t seq, const char* status) {

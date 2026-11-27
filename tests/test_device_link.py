@@ -48,7 +48,7 @@ def test_offset_and_delay_maths():
         StrikeAt(20, 15000, seq=3),
         LedFrameAt(30, 4, 2, (255, 0, 0), seq=4),
         Estop(),
-        Hello(device_id="d", profile="bottles-v1"),
+        Hello(device_id="d", profile="bottles-v1", steps_per_mm=80.0, travel_steps=48000),
         TimePing(5),
         TimePong(5, 6, 7),
         Ack(seq=9, status="ok"),
@@ -168,3 +168,10 @@ def test_conductor_waits_for_slow_homing(device):
         assert gateway.telemetry.homed
     assert perf.start_us - sent_home > 600_000  # the count-in started after homing
     assert sim.early_commands == 0
+
+
+def test_messages_over_the_size_limit_are_refused():
+    from duet.protocol import MAX_MESSAGE_BYTES
+
+    with pytest.raises(ValueError, match="limit 255"):
+        Fault(code="X", detail="y" * MAX_MESSAGE_BYTES).to_json()

@@ -48,7 +48,8 @@ def test_simulator_catches_a_bad_plan():
     for msg in (Home(), MoveAt(0, 46000, 500, 5000, seq=1), StrikeAt(100_000, 20000, seq=2)):
         rig.send(msg)
     rig.run()
-    assert rig.faults == ["t=100000: strike before the carriage arrived"]
+    assert rig.fault_codes == ["NOT_ARRIVED"]
+    assert str(rig.faults[0]) == "t=100000: NOT_ARRIVED: strike before the carriage arrived"
     assert rig.sounds == []
 
 

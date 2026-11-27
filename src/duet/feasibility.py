@@ -17,7 +17,6 @@ from duet.score import DuetScore
 from duet.timing import beat_index, seconds_per_beat
 
 DEFAULT_MARGIN_S = 0.010
-DUTY_WINDOW_S = 10.0
 
 
 class Code(StrEnum):
@@ -149,8 +148,9 @@ def check_robot(
 
 
 def _check_duty(strikes: list[_Strike], profile: RobotProfile) -> list[Violation]:
-    """Solenoid on-time over any 10 s window must stay under the duty limit (FR-R6)."""
-    limit = profile.striker.duty_limit * DUTY_WINDOW_S
+    """Solenoid on-time over any window must stay under the duty limit (FR-R6)."""
+    window_s = profile.striker.duty_window_s
+    limit = profile.striker.duty_limit * window_s
     window: deque[tuple[float, float]] = deque()
     on_time = 0.0
     found = []
@@ -158,7 +158,7 @@ def _check_duty(strikes: list[_Strike], profile: RobotProfile) -> list[Violation
         pulse = profile.striker.pulse_for_velocity(strike.vel) / 1_000_000
         window.append((strike.time_s, pulse))
         on_time += pulse
-        while window and window[0][0] <= strike.time_s - DUTY_WINDOW_S:
+        while window and window[0][0] <= strike.time_s - window_s:
             on_time -= window.popleft()[1]
         if on_time > limit + 1e-12:
             found.append(
@@ -167,7 +167,7 @@ def _check_duty(strikes: list[_Strike], profile: RobotProfile) -> list[Violation
                     strike.index,
                     strike.bar,
                     strike.beat,
-                    f"too many robot notes in 10 s: solenoid would be on {on_time:.2f} s "
+                    f"too many robot notes in {window_s:g} s: solenoid would be on {on_time:.2f} s "
                     f"(limit {limit:.2f} s)",
                 )
             )

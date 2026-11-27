@@ -11,6 +11,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import ClassVar
 
+MAX_MESSAGE_BYTES = 255  # same as kMaxMessage in firmware/lib/duet_core/src/duet_protocol.hpp
+
 
 @dataclass(frozen=True)
 class Message:
@@ -21,7 +23,10 @@ class Message:
         return {"type": self.type, **asdict(self)}
 
     def to_json(self) -> str:
-        return json.dumps(self.to_dict(), separators=(",", ":"))
+        text = json.dumps(self.to_dict(), separators=(",", ":"))
+        if len(text.encode()) > MAX_MESSAGE_BYTES:
+            raise ValueError(f"{self.type} message is {len(text)} bytes; limit {MAX_MESSAGE_BYTES}")
+        return text
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,12 @@ class Hello(Message):
     protocol: int = 1
     device_id: str = ""
     profile: str = ""
+    # Safety limits the firmware enforces (0 = not reported by an older device).
+    steps_per_mm: float = 0.0
+    travel_steps: int = 0
+    duty_limit: float = 0.0
+    duty_window_us: int = 0
+    max_pulse_us: int = 0
 
 
 @dataclass(frozen=True)
