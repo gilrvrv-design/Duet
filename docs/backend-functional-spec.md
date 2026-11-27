@@ -1,7 +1,7 @@
 # Duet — Back-End Functional Specification
 
-**Status:** Draft v1.0 · 2026-11-27
-**Scope:** Every non-UI software component behind Duet: composition, score processing, real-time performance orchestration, device control (robot and LED guide), listening, data, and platform services.
+**Status:** Draft v1.1 · 2026-11-27
+**Scope:** Every non-UI software component behind Duet: composition, audio-to-MIDI transcription, score processing, real-time performance orchestration, device control (robot and LED guide), listening, data, and platform services.
 **Source:** xylophonebot.com ("Duet — human and robot duet · in progress") plus the assumptions in §2.
 
 ---
@@ -18,8 +18,18 @@ The bold version is a **musical partner, not a playback device**. The back end s
 2. **Listens.** It follows the human, waits when they hesitate, speeds up when they're confident, and answers a phrase with a phrase.
 3. **Teaches without sheet music.** Each session makes the pianist a little better. The system knows what they've learned and writes the next piece to stretch them.
 4. **Scales from one bench to an ensemble.** Any robotic instrument (bottles today; marimba, drums or a second robot later) plugs in through an instrument profile. Duets become trios, and people in two different cities can play together.
+5. **Turns any sound into a duet.** Drop in a song file, a voice memo of someone humming, a video of a school concert, or a recording of a bird. Duet separates it into instruments, writes them down as MIDI, works out the tempo, key and chords, and arranges a version the robot and *this* pianist can play together. It can even play along with the original recording, with the robot taking the melody and the pianist taking the bass.
+6. **Rewrites its own instrument.** Given a song, Duet tells you how to retune the bottles ("add 12 ml of water to bottle 3 to get F#5") so the robot can play it more faithfully. The robot adapts to the music, not only the music to the robot.
 
-All of this rests on one idea: a **constraint-aware score model** (the *DuetScore*). It sits between the LLM and the hardware. The LLM writes a DuetScore. The back end checks it against physics and pedagogy, repairs what fails, and compiles it to MIDI. A conductor then performs it live against the human.
+All of this rests on one idea: a **constraint-aware score model** (the *DuetScore*). It sits between every input (an LLM, an audio file, a MIDI file, a live player) and the hardware. Each input becomes a DuetScore. The back end checks it against physics and pedagogy, repairs what fails, and compiles it to MIDI. A conductor then performs it live against the human.
+
+```
+ text prompt ──► LLM composer ─────┐
+ audio / video file ─► Transcriber ┤
+ hummed melody ──► Pitch tracker ──┼──► DuetScore ─► validate/repair ─► MIDI + plans ─► perform
+ MIDI file ──► Importer ───────────┤
+ live pianist ──► Listening Engine ┘
+```
 
 ---
 
@@ -53,6 +63,9 @@ The user approved working on assumptions, so these are decided rather than left 
 | A6 | The LLM is a hosted frontier model (the Claude family). A fast model handles interactive composition and a stronger model handles hard or long pieces. The model is configurable. |
 | A7 | Target users are beginners, families, classrooms, makers and live audiences (exhibitions and demos). |
 | A8 | The first deployment is one rig. Multi-rig and multi-user features come later (Phase 4). |
+| A9 | Audio transcription runs in the cloud on GPU workers, because separation and polyphonic transcription models are too heavy for the Hub. A light CPU path (monophonic pitch tracking for humming) runs on the Hub so it also works offline. |
+| A10 | Users upload only audio they have the right to use. Duet stores derived MIDI and arrangements, not the original audio, unless the user asks for that. Download from streaming sites is not supported (§5.14 FR-A12). |
+| A11 | Open-source libraries are used where their licence allows commercial use. Libraries or model weights with non-commercial or copyleft licences are kept out of the shipped product unless the licence is cleared (§5.14.4). |
 
 ---
 
@@ -89,6 +102,8 @@ The user approved working on assumptions, so these are decided rather than left 
 | Identity Service | Cloud | Users, households/classrooms, rigs, roles |
 | Session Service | Cloud | Duet sessions from request to performance to review |
 | Composition Service | Cloud | Prompting, LLM calls, the repair loop, explanations |
+| Audio Ingest & Transcription Service | Cloud (GPU) + Hub (light path) | Any audio or video file → stems, tempo map, key, chords, multi-track MIDI, then a Duet arrangement (§5.14) |
+| Arranger | Cloud | Reduces a multi-track transcription to a robot part and a pianist part at a target difficulty; LLM-assisted |
 | Score Compiler | Cloud + Hub (shared library) | DuetScore validation, feasibility, repair hints, MIDI import/export |
 | Library Service | Cloud | Saved, shared and curated duets; search; versions |
 | Progress & Pedagogy Service | Cloud | Skill model, difficulty targeting, lesson paths |
@@ -156,6 +171,10 @@ Rules:
 | `Performance` | session id, event log (planned vs actual), pianist accuracy, recording URI |
 | `SkillModel` | user id, per-skill estimates (range, rhythm, tempo, intervals, hands), history |
 | `Lesson` / `Path` | ordered goals, generated or curated duets, completion rules |
+| `AudioAsset` | id, owner, original filename, format, duration, sample rate, channels, sha256, storage URI (temporary unless kept), rights confirmation |
+| `TranscriptionJob` | id, asset id, options, status, stage progress, model versions, timings, cost, errors |
+| `Transcription` | job id, stems[] (URI, kind, confidence), tempo map, downbeats, key, chord track, tracks[] (notes, instrument, confidence), full MIDI URI, MusicXML URI |
+| `Arrangement` | transcription id, target rig profile, difficulty, robot/pianist assignment decisions, resulting Duet id |
 
 ---
 
@@ -371,6 +390,115 @@ With these defaults, adjacent bottles (~80 mm apart) need about 0.26 s and the f
 **FR-T3** Optional audio/video recording of a performance, with a shareable clip (consent required).
 **FR-T4** Product analytics with privacy-preserving defaults; no raw audio leaves the Hub without consent.
 
+### 5.14 Audio Ingest & Transcription Service (audio → MIDI)
+
+This service takes **any audio file** and turns it into MIDI: one track per instrument, a tempo map, key and chords. It can also go one step further and produce a Duet arrangement for the rig. It is a first-class way to create duets, next to text prompts.
+
+#### 5.14.1 Pipeline
+
+```
+ upload ─► 1 decode ─► 2 analyse ─► 3 separate ─► 4 transcribe ─► 5 rhythm ─► 6 clean ─► 7 export ─► 8 arrange
+          (FFmpeg)   (loudness,    (Demucs       (per-stem      (beats,     (merge,   (MIDI,     (DuetScore
+                      speech/music  stems)        models)        downbeats,  quantise, MusicXML,  for the rig)
+                      detection)                                 tempo map)  velocity) stems)
+```
+
+| Stage | What it does | Library (existing, open source) |
+|---|---|---|
+| 1 Decode | Accept any common audio or video container; extract audio; resample to 44.1 kHz stereo and 22.05/16 kHz mono copies; trim silence; normalise loudness to −14 LUFS | **FFmpeg** (via `ffmpeg-python` or `PyAV`), `soundfile`, `pyloudnorm` |
+| 2 Analyse | Detect music vs. speech vs. silence; detect whether the input is a single melody (humming, whistling, one instrument), solo piano, or a full mix; choose a pipeline route | `librosa` features plus a small classifier (for example a fine-tuned audio tagger such as PANNs or YAMNet) |
+| 3 Separate | Split a full mix into stems: vocals, drums, bass, piano, guitar, other | **Demucs** (`htdemucs_6s` six-stem model) |
+| 4 Transcribe | Turn each stem into notes: pitch, onset, offset, velocity, plus pitch bends | **Basic Pitch** (Spotify; polyphonic, instrument-agnostic, light) as the default; **piano transcription model** (ByteDance high-resolution piano transcription, `piano_transcription_inference`) for piano stems; **torchcrepe** (CREPE) or `librosa.pyin` for monophonic vocals, humming and whistling; **MT3** (Magenta multi-instrument transcription) as an optional high-quality route for full mixes; drum onset detection mapped to General MIDI drums |
+| 5 Rhythm | Beats, downbeats, time signature, tempo curve; build a tempo map so MIDI lines up with bars | **Beat This!** (beat and downbeat tracking); `librosa.beat` as a fallback |
+| 6 Key & chords | Global key and key changes; chord track for the arrangement and for LED "chord mode" | `librosa` chroma + key profiles (Krumhansl–Schmuckler) in-house; chord recognition model (see §5.14.4 for licence notes) |
+| 7 Clean | Merge broken notes, remove ghost notes under a confidence threshold, enforce minimum duration, quantise to the beat grid at a user-chosen strength (0–100%), map velocities | `pretty_midi`, `numpy`; in-house rules |
+| 8 Export | Type 1 MIDI with one track per stem and correct General MIDI programs; tempo map and markers; MusicXML lead sheet; stem audio files (optional) | `pretty_midi` / `mido` for MIDI; `music21` for MusicXML |
+| 9 Arrange | Reduce the transcription to a robot part and a pianist part (§5.14.3) | Score Compiler + Composition Service (LLM) |
+
+#### 5.14.2 Functional requirements
+
+**FR-A1 Formats.** Accept WAV, AIFF, FLAC, MP3, AAC/M4A, OGG/Vorbis, Opus, WMA, and the audio track of MP4, MOV, MKV and WebM video. Reject DRM-protected files with a clear message. Limits: 200 MB and 15 minutes per file by default (configurable per plan).
+
+**FR-A2 Input sources.** File upload (resumable, chunked); recording in the app (microphone, for humming or singing); recording on the Hub's microphone ("play it to the robot"); and a cloud-storage link the user owns (Google Drive, Dropbox).
+
+**FR-A3 Routes.** The analyser (stage 2) picks the cheapest route that gives good results; the user can override it:
+
+| Route | Used for | Stages |
+|---|---|---|
+| **Melody** | humming, whistling, singing, a single instrument | decode → pitch track (CREPE) → rhythm → clean → export. Runs on the Hub, no GPU, in under 2× real time |
+| **Piano** | solo piano recordings | decode → piano transcription → rhythm → clean → export |
+| **Full mix** | songs and bands | all stages, including separation |
+| **Full mix, high quality** | when the user asks for best quality | full mix with MT3 and a longer model ensemble |
+
+**FR-A4 Outputs.** For every job:
+- `full.mid`: all transcribed instruments, one track each;
+- `melody.mid`: the main melody line only (from the vocal stem or the strongest lead);
+- `chords.mid` and a chord list with timings;
+- `leadsheet.musicxml`;
+- optional stems as audio files;
+- a JSON report with tempo, key, time signature, per-track confidence and a list of uncertain passages.
+
+**FR-A5 Progress and preview.** Stream stage progress over the composition stream (§6.2): `decoding`, `separating 40%`, `transcribing piano`, and so on. Return a first rough preview (melody route on the full mix) within 10 seconds so the user hears something before the full job ends.
+
+**FR-A6 Editing.** The user can fix the result before arranging: change tempo or downbeat, transpose, delete or move notes, choose which stem is "the melody", and change quantise strength. Each edit makes a new version. Edits are kept, so the next model upgrade can re-run the job and keep the user's corrections.
+
+**FR-A7 Confidence everywhere.** Every note has a confidence value. Low-confidence notes show up faded in the editor and are the first to go when the arranger needs to simplify.
+
+**FR-A8 Re-runnable.** Jobs record the model versions used. When a better model ships, the user can re-run an old job with one click.
+
+**FR-A9 Caching and de-duplication.** Cache by file hash and options. The same file uploaded twice returns the stored result immediately.
+
+**FR-A10 Privacy and retention.** Original audio is deleted 24 hours after the job ends unless the user keeps it. Stems follow the same rule. Recordings of children follow the stricter minor settings (§5.12).
+
+**FR-A11 Rights confirmation.** Before upload, the user confirms they have the right to use the audio. Public sharing of an arrangement made from a copyrighted recording is blocked unless the user marks it as their own work or a public-domain piece, and the copyright guard (FR-C5) checks melody similarity against a known-songs index.
+
+**FR-A12 No ripping.** The service does not download from streaming platforms (YouTube, Spotify and similar). Only files and storage links the user owns.
+
+**FR-A13 MIDI also in, not only out.** The same editor and arranger accept MIDI imports (FR-S7). Audio and MIDI inputs share one path after stage 7.
+
+#### 5.14.3 From transcription to duet (the Arranger)
+
+**FR-A20 Part assignment.** Choose which material goes to the robot and which to the pianist. Default: the robot takes the melody (if it fits the bottles), the pianist takes the bass and chord roots. The user can swap.
+
+**FR-A21 Fit to the bottles.** Transpose the robot part to the key that puts the most melody notes on the available bottles. Notes that still don't fit are octave-folded or replaced with the nearest chord tone. The result goes through the full feasibility check (FR-S3) and repair (FR-S4).
+
+**FR-A22 Fit to the pianist.** Simplify the pianist part to the target difficulty: block chords → root notes → root on beat one only. Use the skill model (FR-E2) when the pianist is known.
+
+**FR-A23 LLM arrangement.** For a richer result, give the LLM the transcription summary (key, chords, melody contour, structure) and ask for a DuetScore that keeps the song recognisable while fitting both players. The output runs through the same validate–repair loop as text prompts (FR-C4).
+
+**FR-A24 Retuning suggestions.** Compare the song's pitch usage with the bottles' current tuning. If retuning one or two bottles would raise melody coverage meaningfully (for example from 70% to 95%), suggest it with the change in cents and an estimate of the water to add or remove. After retuning, the calibration wizard verifies it (FR-K2).
+
+**FR-A25 Play along with the original.** Optionally keep the separated stems and play them through the Hub speaker during the performance, with the transcribed parts muted. The robot plays the melody and the pianist plays the bass, together with the real drums and the rest of the band. The conductor syncs stem playback to its clock; in follow mode, stems are time-stretched to the pianist's tempo (with `pyrubberband` / Rubber Band).
+
+**FR-A26 "Teach me this song".** One action creates a lesson path from a transcription: the first step is the easiest pianist part at a slow tempo, and each step raises the difficulty until the pianist plays the full part at full speed.
+
+#### 5.14.4 Library licence notes
+
+| Library / model | Licence (to be confirmed by legal before ship) | Use |
+|---|---|---|
+| FFmpeg | LGPL 2.1+ (if built without GPL parts) | Decode; use an LGPL build |
+| Demucs | MIT | Source separation |
+| Basic Pitch | Apache 2.0 | Default transcription |
+| ByteDance piano transcription | Check repository and weights licence | Piano route |
+| MT3 | Apache 2.0 (code); check weights | High-quality route |
+| torchcrepe | MIT | Melody route |
+| Beat This! | MIT | Beats and downbeats |
+| librosa | ISC | Features, fallback beats, key |
+| pretty_midi, mido | MIT | MIDI writing |
+| music21 | BSD | MusicXML |
+| pyrubberband / Rubber Band | Rubber Band is GPL or commercial | Time-stretch; needs a commercial licence or an alternative |
+| madmom (chords, beats) | Code BSD, **model weights non-commercial** | Research only unless the weights are licensed |
+| Essentia | **AGPL** | Avoid in the shipped product, or license it commercially |
+
+All models run behind an internal `Transcriber` interface (`transcribe(stem, options) → NoteEvents`), so any one of them can be replaced without changing the rest of the pipeline.
+
+#### 5.14.5 Infrastructure
+
+- **Job queue** (for example Redis/Celery or a cloud queue) with separate pools: CPU (decode, analyse, export) and GPU (separation, transcription).
+- **GPU workers** autoscale on queue depth and scale to zero when idle; models stay loaded per worker.
+- **Hub light path**: the melody route (CREPE "tiny" model, CPU) runs on the Hub for offline humming-to-duet.
+- **Storage**: original audio and stems in an object store with lifecycle rules (FR-A10); MIDI and reports kept with the Duet.
+
 ---
 
 ## 6. API Surface (public, versioned `/v1`)
@@ -383,6 +511,14 @@ With these defaults, adjacent bottles (~80 mm apart) need about 0.26 s and the f
 | `GET /v1/compositions/{id}` | Status, DuetScore, repair log |
 | `POST /v1/compositions/{id}/variations` | Easier / harder / edit instruction |
 | `POST /v1/duets/import` | Upload MIDI |
+| `POST /v1/audio/uploads` | Start a resumable upload; returns an upload URL and `asset_id` |
+| `POST /v1/transcriptions` | Start a job: `{asset_id, route: auto/melody/piano/full/full_hq, quantize, keep_stems}` |
+| `GET /v1/transcriptions/{id}` | Status, stage progress, report |
+| `GET /v1/transcriptions/{id}/midi?track=full/melody/chords` | MIDI download |
+| `GET /v1/transcriptions/{id}/musicxml` · `/stems/{kind}` | Lead sheet and stems |
+| `PATCH /v1/transcriptions/{id}` | Save edits (FR-A6) as a new version |
+| `POST /v1/transcriptions/{id}/arrangements` | Make a Duet for a rig: `{rig_id, difficulty, robot_takes: melody/bass/auto, use_llm, play_along}` |
+| `GET /v1/transcriptions/{id}/retuning?rig_id=` | Bottle retuning suggestions (FR-A24) |
 | `GET /v1/duets/{id}` · `PATCH` · `DELETE` | Library management |
 | `GET /v1/duets/{id}/midi` | Compiled MIDI download |
 | `GET /v1/duets?query=&difficulty=&style=` | Search |
@@ -396,6 +532,7 @@ With these defaults, adjacent bottles (~80 mm apart) need about 0.26 s and the f
 ### 6.2 Real-time streams (WebSocket)
 
 - `wss://…/v1/compositions/{id}/stream` — composition progress events (`thinking`, `draft`, `validating`, `repairing`, `ready`).
+- `wss://…/v1/transcriptions/{id}/stream` — transcription progress (`decoding`, `analysing`, `separating`, `transcribing:<stem>`, `rhythm`, `cleaning`, `preview_ready`, `ready`).
 - `wss://hub.local/v1/sessions/{id}/live` — conductor state, current bar and beat, upcoming cues, hit grades, tempo, faults. The UI uses this to draw the on-screen keyboard and robot animation that mirror the real rig.
 
 ### 6.3 Errors
@@ -435,6 +572,8 @@ Every new robotic instrument (Phase 4) is a new profile plus a firmware driver. 
 | Listening latency | MIDI input→grade ≤ 20 ms; microphone input→grade ≤ 60 ms |
 | Composition latency | First draft streamed in ≤ 3 s; validated 16-bar duet ready in ≤ 10 s p90; ≤ 25 s for 64 bars |
 | Composition quality | ≥ 98% of generated duets pass feasibility after repair; ≥ 90% pass with no deterministic repair (by Phase 2) |
+| Transcription speed | Melody route on the Hub ≤ 2× real time on CPU; full mix ≤ 0.5× real time on one GPU (a 4-minute song in ≤ 2 minutes); first preview ≤ 10 s |
+| Transcription quality | Note-level F1 (onset, `mir_eval`): ≥ 0.90 on solo piano (MAESTRO), ≥ 0.85 on monophonic melody, ≥ 0.60 per stem on full mixes (Slakh2100); beat F-measure ≥ 0.90; key accuracy ≥ 85% |
 | Availability | Cloud 99.9%; the Hub can play cached duets fully offline |
 | Scale (Phase 4) | 10 000 rigs, 1 000 concurrent compositions, 100 concurrent remote duets |
 | Security | TLS everywhere; device identity by per-device keys; signed firmware; least-privilege API tokens; secrets never stored on the ESP32 in plain text |
@@ -455,7 +594,10 @@ A bench rig with a contact microphone measures real onset timing against the pla
 ### 9.3 Composition evaluation gate
 A fixed set of 200 or more prompts across styles and difficulties. Metrics: feasibility pass rate, repair count, difficulty accuracy (target vs. scored), musicality (listener ratings plus an LLM judge), copyright similarity. A prompt or model change ships only if it doesn't regress.
 
-### 9.4 Contract tests
+### 9.4 Transcription benchmarks
+Every model or pipeline change runs against fixed test sets: MAESTRO (piano), Slakh2100 (multi-instrument), MedleyDB (melody), plus an in-house set of phone recordings of humming, kids' singing and noisy rooms. Scores use `mir_eval`. A change ships only if it does not regress. A second check measures end-to-end usefulness: the share of uploaded songs whose arrangement plays on the rig with no manual edits.
+
+### 9.5 Contract tests
 Versioned Device Protocol and DuetScore schema tests for backwards compatibility (old firmware with new Hub, old duets with a new compiler).
 
 ---
@@ -483,8 +625,9 @@ Each phase leaves a working, demo-ready system.
 - Transport controls and practice loop (FR-P3); cloud library basics (FR-B1, B4); accounts and rig pairing (FR-I1, I3).
 - Live session stream for the UI; the web simulation driven by real compositions.
 - Calibration wizard with microphone tuning (FR-K1…K3).
+- **Audio → MIDI v1:** upload any audio file; melody and piano routes (FR-A1, A3, A4 with `full.mid` and `melody.mid`); Basic Pitch, torchcrepe, Beat This!, pretty_midi; simple arranger (FR-A20…A22); "hum to duet" on the Hub.
 
-**Exit criteria:** ≥ 95% of evaluation prompts produce playable duets; 16-bar duet ready in ≤ 10 s p90; onset error ≤ ±10 ms p95; a non-technical person completes a duet with no help.
+**Exit criteria:** ≥ 95% of evaluation prompts produce playable duets; 16-bar duet ready in ≤ 10 s p90; onset error ≤ ±10 ms p95; a non-technical person completes a duet with no help; a hummed 8-bar tune becomes a playable duet in under 30 s.
 
 ### Phase 2 — "It Listens"
 **Goal:** the system hears the pianist and plays with them, not just next to them.
@@ -494,8 +637,9 @@ Each phase leaves a working, demo-ready system.
 - Performance review and grading (FR-E4); skill model v1 (FR-E1) feeding composition (FR-E2).
 - Variations ("easier", "harder") as diff edits (FR-C8); lesson paths v1 (FR-E3).
 - Degraded-mode audio fallback (FR-P5); telemetry dashboards (FR-T1, T2).
+- **Audio → MIDI v2, full songs:** Demucs separation, per-stem transcription, chords and key, MusicXML, editor (FR-A6), confidence (FR-A7), GPU job queue (§5.14.5); LLM arrangement (FR-A23); "Teach me this song" (FR-A26).
 
-**Exit criteria:** score following stays locked on ≥ 95% of beginner performances; measurable improvement (accuracy +15%) over 5 sessions for test users; follow mode feels "natural" in user testing (≥ 4/5).
+**Exit criteria:** score following stays locked on ≥ 95% of beginner performances; measurable improvement (accuracy +15%) over 5 sessions for test users; follow mode feels "natural" in user testing (≥ 4/5); ≥ 70% of uploaded pop songs give a recognisable, playable duet with no manual edits.
 
 ### Phase 3 — "It Responds"
 **Goal:** a real musical conversation.
@@ -505,8 +649,10 @@ Each phase leaves a working, demo-ready system.
 - Expressive robot dynamics per bottle (FR-R4 full); lookahead parking (FR-R2).
 - Water-level tuning suggestions (FR-K2); classroom and kiosk mode (FR-E5); performance recording and sharing (FR-T3).
 - Copyright guard with similarity check (FR-C5); explanations (FR-C7).
+- **Audio → MIDI v3, play along and retune:** play along with the original stems, time-stretched to the pianist (FR-A25); bottle retuning suggestions (FR-A24); MT3 high-quality route; re-run old jobs on new models (FR-A8).
+- **Live listening:** transcribe a song played into the Hub microphone in real time (streaming Basic Pitch / CREPE), so someone can put on a record and the robot joins in after a few bars.
 
-**Exit criteria:** the robot answers a phrase within one beat ≥ 99% of the time; users rate responses "musical" ≥ 4/5; a classroom runs 20 students through one rig in a lesson.
+**Exit criteria:** the robot answers a phrase within one beat ≥ 99% of the time; users rate responses "musical" ≥ 4/5; a classroom runs 20 students through one rig in a lesson; the robot joins a live recording within 8 bars and stays in time.
 
 ### Phase 4 — "Ensemble & Platform"
 **Goal:** Duet becomes a platform for human–robot music anywhere.
@@ -516,7 +662,8 @@ Each phase leaves a working, demo-ready system.
 - **Remote duets:** two rigs in different places; the human on rig A plays with the robot on rig B and vice versa, with network latency hidden through look-ahead and turn-based structures.
 - **Community library:** public duets, remixes and forks, moderation, featured artists and teachers, rating.
 - **Live show mode:** audience votes on the next style; a projector view; multi-rig synchronized performance.
-- **Open API and webhooks** for schools, museums and creative coders.
+- **Open API and webhooks** for schools, museums and creative coders, including **audio → MIDI as a public API** for any app.
+- **Audio → ensemble:** one uploaded song becomes a full arrangement for every robot and human in the room, each part fitted to its instrument.
 - Scale and NFR targets for Phase 4 (§8).
 
 **Exit criteria:** at least 3 instrument types supported by profile alone; a remote duet across continents rated playable; 3rd-party robot integrated using only the SDK.
@@ -527,6 +674,7 @@ Each phase leaves a working, demo-ready system.
 |---|---|---|---|---|---|
 | Theme | It plays | First duet | It listens | It responds | Ensemble |
 | Composition | hand-written MIDI | LLM + repair | skill-targeted | real-time replies | multi-part ensembles |
+| Audio → MIDI | — | hum + piano files | full songs, stems, editor | play-along, retune, live | public API, ensembles |
 | Pianist | follows lights | follows lights | graded, wait/follow | conversation | anywhere, remote |
 | Robot | fixed tempo | fixed tempo | tempo-following | expressive, improvising | many instruments |
 | Platform | local CLI | accounts + library | progress + lessons | classrooms, sharing | community + SDK |
@@ -545,6 +693,10 @@ Each phase leaves a working, demo-ready system.
 | Children's privacy | On-Hub audio processing, parental consent, no public sharing for minors by default |
 | Copyright | Style-not-melody policy, public-domain list, similarity check |
 | LLM cost and latency | Caching, fast default model, partial repair, streaming |
+| Transcription errors on dense mixes | Separation first; confidence-based simplification; quick preview plus editor; melody-first arrangement only needs one good line |
+| GPU cost of transcription | Route selection (cheapest route that works); hash cache; scale-to-zero workers; Hub light path for humming |
+| Licence of transcription models | Licence table (§5.14.4) checked before ship; swappable `Transcriber` interface |
+| Users upload copyrighted songs | Rights confirmation, no streaming downloads, 24 h audio deletion, sharing blocked unless cleared |
 
 ---
 
@@ -556,3 +708,6 @@ Each phase leaves a working, demo-ready system.
 - **Rig** — one robot, LED guide, piano and Hub.
 - **Instrument profile** — the data that describes what an instrument can play and how fast.
 - **Wait / follow mode** — the robot waits for the pianist, or follows their tempo.
+- **Stem** — one separated instrument from a mixed recording (vocals, drums, bass, piano, guitar, other).
+- **Transcription** — the notes, tempo map, key and chords recovered from audio.
+- **Arranger** — the step that turns a transcription into a playable robot part and pianist part.
