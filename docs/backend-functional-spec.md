@@ -74,6 +74,9 @@ The user approved working on assumptions, so these are decided rather than left 
 ```
                         ┌──────────────────────── CLOUD ────────────────────────┐
    Web / Mobile UI ───► │ API Gateway ─► Session Svc ─► Composition Svc ─► LLM  │
+                        │      │              │              ▲                  │
+                        │      └─► Audio Ingest ─► GPU Transcription Workers    │
+                        │          (decode)   (separate·beats·notes·chords)     │
                         │      │              │              │                  │
                         │  Identity Svc   Library Svc   Score Compiler          │
                         │      │              │         (validate/repair/MIDI)  │
