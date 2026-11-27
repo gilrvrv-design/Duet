@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from pathlib import Path
 
@@ -60,8 +61,10 @@ def cmd_play(args) -> int:
         result = repair_robot(score, robot)
         print(f"repaired {len(result.changes)} problem(s) so the robot can play it")
         score = result.score
+    if args.device:
+        return _play_on_device(score, robot, keyboard_profile(args.piano), args.device)
     if not args.sim:
-        print("only the simulated rig is available so far; use --sim", file=sys.stderr)
+        print("choose --sim or --device ws://host:port", file=sys.stderr)
         return 2
     rig = SimulatedRig(robot)
     clock = RealClock() if args.realtime else VirtualClock()
@@ -74,6 +77,33 @@ def cmd_play(args) -> int:
     for fault in rig.faults:
         print("  " + fault)
     return 0 if not rig.faults and len(rig.sounds) == len(planned) else 1
+
+
+def _play_on_device(score, robot, keyboard, url: str) -> int:
+    from duet.device.gateway import DeviceGateway
+
+    with DeviceGateway(url) as gateway:
+        sync = gateway.sync
+        print(
+            f"connected to {gateway.hello.device_id}: clock offset {sync.offset_us} us "
+            f"(+/- {sync.error_bound_us:.0f} us)"
+        )
+        perf = perform(score, robot, keyboard, [gateway], RealClock())
+        gateway.wait_acked()
+        print(f"sent {perf.messages_sent} commands, errors: {len(gateway.errors)}")
+        return 0 if not gateway.errors else 1
+
+
+def cmd_device_sim(args) -> int:
+    import asyncio
+
+    from duet.device.sim_server import SimulatedDevice
+
+    device = SimulatedDevice(robot_profile(args.robot))
+    print(f"simulated device listening on ws://{args.host}:{args.port}")
+    with contextlib.suppress(KeyboardInterrupt):
+        asyncio.run(device.serve(args.host, args.port))
+    return 0
 
 
 def cmd_compose(args) -> int:
@@ -160,7 +190,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("score")
     p.add_argument("--sim", action="store_true", help="use the simulated rig")
     p.add_argument("--realtime", action="store_true", help="run the clock in real time")
+    p.add_argument("--device", help="play on a device at this WebSocket URL")
     p.set_defaults(func=cmd_play)
+    p = sub.add_parser("device-sim", help="run a simulated rig device on a WebSocket")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8765)
+    p.set_defaults(func=cmd_device_sim)
     return parser
 
 

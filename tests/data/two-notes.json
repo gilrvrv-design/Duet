@@ -1,0 +1,53 @@
+{
+  "schema": "duetscore/1",
+  "meta": {
+    "title": "Two notes",
+    "key": "C major",
+    "time_signature": [
+      2,
+      4
+    ],
+    "tempo_bpm": 240.0,
+    "style_tags": []
+  },
+  "parts": {
+    "robot": {
+      "instrument_profile": "bottles-v1",
+      "role": "melody"
+    },
+    "pianist": {
+      "instrument_profile": "piano-88",
+      "role": "accompaniment",
+      "hand": "right"
+    }
+  },
+  "events": [
+    {
+      "part": "robot",
+      "bar": 1,
+      "beat": 1.0,
+      "dur": 1.0,
+      "pitch": "C5",
+      "vel": 80
+    },
+    {
+      "part": "robot",
+      "bar": 1,
+      "beat": 2.0,
+      "dur": 1.0,
+      "pitch": "D5",
+      "vel": 80
+    },
+    {
+      "part": "pianist",
+      "bar": 1,
+      "beat": 1.0,
+      "dur": 2.0,
+      "pitch": "C4",
+      "vel": 80
+    }
+  ],
+  "sections": [],
+  "turns": [],
+  "annotations": []
+}

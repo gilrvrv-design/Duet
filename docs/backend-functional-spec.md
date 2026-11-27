@@ -348,7 +348,7 @@ With these defaults, adjacent bottles (~80 mm apart) need about 0.26 s and the f
 
 **FR-D1 Transport.** WebSocket (JSON for control; compact CBOR for timed events) over Wi-Fi; the same message set over USB serial (framed with COBS). Discovery by mDNS (`_duet._tcp`).
 
-**FR-D2 Clock sync.** NTP-style ping exchange every 2 s; the ESP32 keeps an offset and drift estimate. Target sync error under 2 ms. All timed commands use Hub-clock microseconds.
+**FR-D2 Clock sync.** NTP-style ping exchange (at connect, then every 2 s); the Hub keeps the offset of each device clock, using the lowest-delay sample, and converts every timed command to that device's own clock before sending. Firmware only deals with its local time. Target sync error under 2 ms.
 
 **FR-D3 Message set (minimum):**
 

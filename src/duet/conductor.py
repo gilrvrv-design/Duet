@@ -11,6 +11,7 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Protocol
 
+from duet.device.clock import hub_now_us
 from duet.plans import LedCue, led_plan, robot_plan
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import Home, LedFrameAt, Message, MoveAt, StrikeAt, message_time_us
@@ -41,7 +42,7 @@ class Clock(Protocol):
 
 class RealClock:
     def now_us(self) -> int:
-        return time.monotonic_ns() // 1000
+        return hub_now_us()
 
     def sleep_until(self, t_us: int) -> None:
         delay = (t_us - self.now_us()) / 1_000_000
