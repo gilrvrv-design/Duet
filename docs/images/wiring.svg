@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 860" font-family="Helvetica, Arial, sans-serif" font-size="13">
-  <title>Rig wiring, checked against the component datasheets: ESP32, A4988, 74AHCT125, IRLZ44N, LJ12A3, WS2812B, 1N5819</title>
-  <rect width="1160" height="860" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 820" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>Rig wiring with the Adafruit TMC2209 breakout and MOSFET Driver, checked against datasheets and Adafruit's guides</title>
+  <rect width="1160" height="820" fill="#ffffff"/>
   <text x="580" y="28" text-anchor="middle" font-size="18" font-weight="bold" fill="#222">Rig wiring (pins from firmware/src/board.h, checked against datasheets)</text>
 
   <g font-size="12">
@@ -8,7 +8,7 @@
     <line x1="130" y1="52" x2="160" y2="52" stroke="#ea580c" stroke-width="3"/><text x="166" y="56" fill="#222">5 V</text>
     <line x1="210" y1="52" x2="240" y2="52" stroke="#ca8a04" stroke-width="3"/><text x="246" y="56" fill="#222">3.3 V (ESP32 3V3 pin)</text>
     <line x1="420" y1="52" x2="450" y2="52" stroke="#2563eb" stroke-width="2"/><text x="456" y="56" fill="#222">signal</text>
-    <text x="520" y="56" fill="#222">All grounds are joined (12 V, 5 V, ESP32, driver, MOSFET source, sensor, strip).</text>
+    <text x="520" y="56" fill="#222">All grounds are joined (12 V, 5 V, ESP32, TMC2209, MOSFET Driver, sensor, strip).</text>
   </g>
 
   <!-- ===== ESP32 ===== -->
@@ -26,19 +26,19 @@
   </g>
   <text x="530" y="580" text-anchor="middle" font-size="11" fill="#555">inputs: high ≥ 2.475 V, max 3.6 V · outputs: high ≥ 2.64 V</text>
 
-  <!-- ===== A4988 ===== -->
+  <!-- ===== TMC2209 breakout ===== -->
   <rect x="40" y="200" width="300" height="200" rx="6" fill="#f3f4f6" stroke="#374151" stroke-width="2"/>
-  <text x="190" y="222" text-anchor="middle" font-weight="bold">Stepper driver A4988</text>
+  <text x="190" y="222" text-anchor="middle" font-weight="bold">Adafruit TMC2209 breakout (#6121)</text>
   <g font-size="11" fill="#222">
     <text x="52" y="244">STEP · DIR from the ESP32</text>
-    <text x="52" y="260">ENABLE (active low) from GPIO 27</text>
-    <text x="52" y="280" fill="#a16207" font-weight="bold">VDD (logic) → 3.3 V, not 5 V</text>
-    <text x="52" y="294" fill="#555">inputs need ≥ 0.7 × VDD: 2.31 V at 3.3 V</text>
-    <text x="52" y="314" fill="#a16207" font-weight="bold">MS1, MS2, MS3 → 3.3 V  (1/16 step)</text>
-    <text x="52" y="328" fill="#555">internal pull-downs: unconnected = full step</text>
-    <text x="52" y="348" fill="#a16207" font-weight="bold">SLEEP and RESET → 3.3 V</text>
-    <text x="52" y="368" fill="#b91c1c">VMOT 12 V (8–35 V) · 1A 1B 2A 2B → motor</text>
-    <text x="52" y="386" fill="#555">current limit: I = VREF / (8 × Rs)</text>
+    <text x="52" y="260">EN (high = disabled) from GPIO 27</text>
+    <text x="52" y="280" fill="#a16207" font-weight="bold">VDD (logic) → 3.3 V</text>
+    <text x="52" y="300" fill="#a16207" font-weight="bold">MS1 and MS2 → 3.3 V  (1/16 step)</text>
+    <text x="52" y="314" fill="#555">open = 1/8: every move would go twice too far</text>
+    <text x="52" y="336" fill="#b91c1c">+ / − terminals: 12 V (5–29 V)</text>
+    <text x="52" y="352">1A 1B 2A 2B terminals → motor coils</text>
+    <text x="52" y="372" fill="#555">current knob: up to 2 A clockwise; start low</text>
+    <text x="52" y="388" fill="#555">UART, DIAG, INDEX: not used</text>
   </g>
   <line x1="420" y1="286" x2="340" y2="286" stroke="#2563eb" stroke-width="2"/>
   <line x1="420" y1="311" x2="340" y2="311" stroke="#2563eb" stroke-width="2"/>
@@ -53,67 +53,60 @@
   <line x1="190" y1="170" x2="190" y2="200" stroke="#7c3aed" stroke-width="3"/>
   <text x="200" y="190" font-size="11" fill="#6d28d9">2 coils</text>
 
-  <!-- ===== MOSFET + solenoid ===== -->
-  <rect x="40" y="450" width="260" height="170" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="2"/>
-  <text x="170" y="472" text-anchor="middle" font-weight="bold">Solenoid switch</text>
+  <!-- ===== MOSFET Driver + solenoid ===== -->
+  <rect x="40" y="450" width="300" height="160" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="2"/>
+  <text x="190" y="472" text-anchor="middle" font-weight="bold">Adafruit MOSFET Driver (#5648)</text>
   <g font-size="11" fill="#222">
-    <text x="52" y="494">N-MOSFET IRLZ44N, source to GND</text>
-    <text x="52" y="512" fill="#a16207" font-weight="bold">gate driven at 5 V, not 3.3 V</text>
-    <text x="52" y="526" fill="#555">Rds(on) is specified only for VGS ≥ 4 V</text>
-    <text x="52" y="546">gate: 220 Ω from the shifter's 2Y</text>
-    <text x="52" y="562">10 kΩ gate → GND (off at power-up)</text>
-    <text x="52" y="584" fill="#b91c1c" font-weight="bold">flyback diode 1N5819 across the coil</text>
-    <text x="52" y="600" fill="#555">stripe (cathode) to +12 V · 40 V, 1 A</text>
+    <text x="52" y="494">STEMMA JST PH cable: V+ · GND · In</text>
+    <text x="52" y="512" fill="#b91c1c">V+ → 12 V (3–30 V)</text>
+    <text x="52" y="530" fill="#a16207" font-weight="bold">In ← GPIO 32 directly (needs 2.5–20 V)</text>
+    <text x="52" y="548">built in: AO3406 MOSFET, 1N4007 flyback diode,</text>
+    <text x="52" y="562">pull-down on In (off while the ESP32 boots)</text>
+    <text x="52" y="582">terminals + and −: − goes to GND when In is high</text>
+    <text x="52" y="598" fill="#555">1.5 A continuous, 3 A peak</text>
   </g>
-  <rect x="60" y="680" width="220" height="56" rx="6" fill="#fde68a" stroke="#b45309" stroke-width="2"/>
-  <text x="170" y="704" text-anchor="middle" font-weight="bold" fill="#92400e">JF-1039B solenoid</text>
-  <text x="170" y="722" text-anchor="middle" font-size="11" fill="#92400e">12 V, ~0.4 A (seller data)</text>
-  <line x1="120" y1="620" x2="120" y2="680" stroke="#dc2626" stroke-width="3"/>
-  <text x="74" y="655" font-size="11" fill="#b91c1c">+12 V</text>
-  <line x1="220" y1="620" x2="220" y2="680" stroke="#111" stroke-width="3"/>
-  <text x="226" y="655" font-size="11">drain</text>
+  <rect x="80" y="660" width="220" height="56" rx="6" fill="#fde68a" stroke="#b45309" stroke-width="2"/>
+  <text x="190" y="684" text-anchor="middle" font-weight="bold" fill="#92400e">JF-1039B solenoid</text>
+  <text x="190" y="702" text-anchor="middle" font-size="11" fill="#92400e">12 V, ~0.4 A (seller data)</text>
+  <line x1="140" y1="610" x2="140" y2="660" stroke="#dc2626" stroke-width="3"/>
+  <text x="104" y="640" font-size="11" fill="#b91c1c">+</text>
+  <line x1="240" y1="610" x2="240" y2="660" stroke="#111" stroke-width="3"/>
+  <text x="248" y="640" font-size="11">−</text>
+  <!-- GPIO32 -> In -->
+  <line x1="420" y1="466" x2="380" y2="466" stroke="#2563eb" stroke-width="2"/>
+  <line x1="380" y1="466" x2="380" y2="526" stroke="#2563eb" stroke-width="2"/>
+  <line x1="380" y1="526" x2="340" y2="526" stroke="#2563eb" stroke-width="2"/>
 
   <!-- ===== 74AHCT125 ===== -->
-  <rect x="400" y="630" width="260" height="150" rx="6" fill="#f5f3ff" stroke="#6d28d9" stroke-width="2"/>
-  <text x="530" y="652" text-anchor="middle" font-weight="bold" fill="#5b21b6">74AHCT125, VCC 5 V</text>
+  <rect x="400" y="620" width="300" height="130" rx="6" fill="#f5f3ff" stroke="#6d28d9" stroke-width="2"/>
+  <text x="550" y="642" text-anchor="middle" font-weight="bold" fill="#5b21b6">74AHCT125, VCC 5 V</text>
   <g font-size="11" fill="#222">
-    <text x="412" y="672">ch 1: LEDs · 1A ← GPIO 13 · 1Y → 330 Ω → DIN</text>
-    <text x="412" y="690">ch 2: solenoid · 2A ← GPIO 32 · 2Y → gate</text>
-    <text x="412" y="706">10 kΩ 2A → GND (off while the ESP32 boots)</text>
-    <text x="412" y="726" fill="#a16207" font-weight="bold">1OE, 2OE → GND (active low)</text>
-    <text x="412" y="744" fill="#a16207" font-weight="bold">3A, 4A → GND · 3OE, 4OE → 5 V</text>
-    <text x="412" y="762" fill="#555">unused inputs must not float · input high ≥ 2 V</text>
+    <text x="412" y="664">ch 1: 1A ← GPIO 13 · 1Y → 330 Ω → strip DIN</text>
+    <text x="412" y="684" fill="#a16207" font-weight="bold">1OE → GND (active low)</text>
+    <text x="412" y="702" fill="#a16207" font-weight="bold">2A, 3A, 4A → GND · 2OE, 3OE, 4OE → 5 V</text>
+    <text x="412" y="722" fill="#555">unused inputs must not float · input high ≥ 2 V</text>
+    <text x="412" y="738" fill="#555">the strip needs ≥ 3.5 V: the ESP32 alone is not enough</text>
   </g>
-  <!-- GPIO32 -> 2A -->
-  <line x1="420" y1="466" x2="370" y2="466" stroke="#2563eb" stroke-width="2"/>
-  <line x1="370" y1="466" x2="370" y2="686" stroke="#2563eb" stroke-width="2"/>
-  <line x1="370" y1="686" x2="400" y2="686" stroke="#2563eb" stroke-width="2"/>
-  <!-- 2Y -> gate -->
-  <line x1="400" y1="700" x2="340" y2="700" stroke="#2563eb" stroke-width="2"/>
-  <line x1="340" y1="700" x2="340" y2="550" stroke="#2563eb" stroke-width="2"/>
-  <line x1="340" y1="550" x2="300" y2="550" stroke="#2563eb" stroke-width="2"/>
   <!-- GPIO13 -> 1A -->
-  <line x1="640" y1="526" x2="680" y2="526" stroke="#2563eb" stroke-width="2"/>
-  <line x1="680" y1="526" x2="680" y2="668" stroke="#2563eb" stroke-width="2"/>
-  <line x1="680" y1="668" x2="660" y2="668" stroke="#2563eb" stroke-width="2"/>
+  <line x1="640" y1="526" x2="720" y2="526" stroke="#2563eb" stroke-width="2"/>
+  <line x1="720" y1="526" x2="720" y2="660" stroke="#2563eb" stroke-width="2"/>
+  <line x1="720" y1="660" x2="700" y2="660" stroke="#2563eb" stroke-width="2"/>
 
   <!-- LED strip -->
-  <rect x="760" y="640" width="360" height="80" rx="6" fill="#fefce8" stroke="#a16207" stroke-width="2"/>
-  <text x="940" y="662" text-anchor="middle" font-weight="bold" fill="#713f12">LED strip WS2812B, 176 LEDs (144/m)</text>
-  <text x="772" y="682" font-size="11">DIN needs ≥ 0.7 × VDD = 3.5 V: hence the shifter</text>
-  <text x="772" y="698" font-size="11">5 V from the 5 V supply, fed at both ends</text>
-  <text x="772" y="714" font-size="11">1000 µF across 5 V at the strip</text>
-  <line x1="660" y1="676" x2="720" y2="676" stroke="#2563eb" stroke-width="2"/>
-  <line x1="720" y1="676" x2="760" y2="676" stroke="#2563eb" stroke-width="2"/>
+  <rect x="760" y="630" width="360" height="80" rx="6" fill="#fefce8" stroke="#a16207" stroke-width="2"/>
+  <text x="940" y="652" text-anchor="middle" font-weight="bold" fill="#713f12">LED strip WS2812B, 176 LEDs (144/m)</text>
+  <text x="772" y="672" font-size="11">DIN needs ≥ 0.7 × VDD = 3.5 V: hence the shifter</text>
+  <text x="772" y="688" font-size="11">5 V from the 5 V supply, fed at both ends</text>
+  <text x="772" y="704" font-size="11">1000 µF across 5 V at the strip</text>
+  <line x1="700" y1="676" x2="760" y2="676" stroke="#2563eb" stroke-width="2"/>
   <g fill="#facc15" stroke="#a16207" stroke-width="0.5">
-    <rect x="772" y="726" width="10" height="8"/><rect x="786" y="726" width="10" height="8"/><rect x="800" y="726" width="10" height="8"/><rect x="814" y="726" width="10" height="8"/><rect x="828" y="726" width="10" height="8"/><rect x="842" y="726" width="10" height="8"/><rect x="856" y="726" width="10" height="8"/><rect x="870" y="726" width="10" height="8"/><rect x="884" y="726" width="10" height="8"/><rect x="898" y="726" width="10" height="8"/><rect x="912" y="726" width="10" height="8"/><rect x="926" y="726" width="10" height="8"/>
+    <rect x="772" y="716" width="10" height="8"/><rect x="786" y="716" width="10" height="8"/><rect x="800" y="716" width="10" height="8"/><rect x="814" y="716" width="10" height="8"/><rect x="828" y="716" width="10" height="8"/><rect x="842" y="716" width="10" height="8"/><rect x="856" y="716" width="10" height="8"/><rect x="870" y="716" width="10" height="8"/><rect x="884" y="716" width="10" height="8"/><rect x="898" y="716" width="10" height="8"/><rect x="912" y="716" width="10" height="8"/><rect x="926" y="716" width="10" height="8"/>
   </g>
 
   <!-- ===== Home sensor with divider ===== -->
   <rect x="740" y="330" width="380" height="140" rx="6" fill="#ecfdf5" stroke="#047857" stroke-width="2"/>
   <text x="930" y="352" text-anchor="middle" font-weight="bold" fill="#065f46">Home sensor LJ12A3-4-Z/BX (NPN, NO, 6–36 V)</text>
   <text x="752" y="372" font-size="11">brown +12 V · blue GND · black output (node A)</text>
-  <!-- mini schematic -->
   <g stroke="#111" stroke-width="1.5" fill="none">
     <line x1="800" y1="400" x2="800" y2="440"/>
     <circle cx="800" cy="420" r="3" fill="#111"/>
@@ -148,9 +141,9 @@
 
   <!-- ===== Power ===== -->
   <rect x="760" y="80" width="360" height="80" rx="6" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
-  <text x="940" y="102" text-anchor="middle" font-weight="bold" fill="#991b1b">12 V supply (3 A or more, estimate)</text>
-  <text x="772" y="122" font-size="11">A4988 VMOT · solenoid · home sensor</text>
-  <text x="772" y="140" font-size="11">inline fuse; the e-stop can also cut this rail</text>
+  <text x="940" y="102" text-anchor="middle" font-weight="bold" fill="#991b1b">Adafruit 12 V 1 A adapter (#798)</text>
+  <text x="772" y="122" font-size="11">TMC2209 motor terminals · MOSFET Driver V+ · home sensor</text>
+  <text x="772" y="140" font-size="11">add an inline fuse · see the power budget in the guide</text>
   <rect x="760" y="180" width="360" height="80" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
   <text x="940" y="202" text-anchor="middle" font-weight="bold" fill="#9a3412">5 V supply (4 A or more, estimate)</text>
   <text x="772" y="222" font-size="11">LED strip · 74AHCT125 VCC · ESP32 5V in (or USB)</text>
@@ -162,5 +155,6 @@
   <line x1="690" y1="210" x2="600" y2="210" stroke="#ea580c" stroke-width="3"/>
   <line x1="600" y1="210" x2="600" y2="230" stroke="#ea580c" stroke-width="3"/>
 
-  <text x="580" y="812" text-anchor="middle" fill="#444" font-size="12">Values in grey are from the datasheets. Supply sizes and the solenoid current are estimates (no manufacturer datasheet for the JF-1039B).</text>
-  <text x="580" y="832" text-anchor="middle" fill="#444" font-size="12">TMC2209 users: its standalone microstep pins differ from the A4988 (not verified here; see the rig guide).</text>
+  <text x="580" y="782" text-anchor="middle" fill="#444" font-size="12">Values in grey are from datasheets and Adafruit's guides. The solenoid current (no maker datasheet) and the 5 V supply size are estimates.</text>
+  <text x="580" y="802" text-anchor="middle" fill="#444" font-size="12">Building with an A4988 or a discrete MOSFET instead? See "Alternatives" in the rig guide.</text>
+</svg>

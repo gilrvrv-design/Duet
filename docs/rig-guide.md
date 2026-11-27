@@ -25,22 +25,29 @@ The bottle positions in the picture come from `src/duet/profiles/bottles-v1.yaml
 
 ### Parts
 
+Parts marked **ordered** are the Adafruit parts bought for this build; the rest are still
+needed. Part numbers in the other rows are suggestions; equivalents work.
+
 | Part | Used for | Notes |
 |---|---|---|
 | ESP32 DevKit (ESP32-WROOM-32) | the rig's controller | runs `firmware/` |
 | NEMA 17 stepper + GT2 belt + 20T pulley + idler | carriage drive | 1/16 microstepping gives 80 steps per mm (200 × 16 steps per 40 mm) |
-| Stepper driver A4988 (on a carrier board) | drives the motor | logic VDD from **3.3 V**; MS1–MS3, SLEEP and RESET tied to 3.3 V; set the current limit |
+| **Adafruit TMC2209 Stepper Motor Driver Breakout (#6121)** — ordered | drives the motor | VDD from **3.3 V**; **MS1 and MS2 tied to 3.3 V** for 1/16; motor 5–29 V; current set by the onboard knob (up to 2 A) |
 | 2 ground steel rods + linear bearings | carriage guides | |
 | JF-1039B push-pull solenoid, 12 V | striker | on the carriage, rod pointing up; about 0.4 A (seller data, no datasheet found) |
-| N-MOSFET IRLZ44N + 220 Ω + 10 kΩ | switches the solenoid | gate driven at **5 V** through the level shifter, not straight from the ESP32 |
-| Schottky diode 1N5819 | flyback across the solenoid | **required**; 40 V, 1 A |
+| **Adafruit MOSFET Driver (#5648)** — ordered | switches the solenoid | AO3406 MOSFET, 1N4007 flyback diode and an input pull-down built in; 1.5 A continuous |
+| **STEMMA JST PH 3-pin to female socket cable (#3894)** — ordered | MOSFET driver to ESP32 and 12 V | V+, GND, In |
 | LJ12A3-4-Z/BX inductive sensor (NPN, normally open, 6–36 V) + 4.7 kΩ, 27 kΩ, 10 kΩ | home position | pull-up to 12 V and a divider into GPIO 34; see below |
 | Emergency stop button (normally open) + 10 kΩ | stops everything | pull-up to 3.3 V; see the note on GPIO 35 |
 | WS2812B strip, 144 LEDs/m, 1.22 m (176 LEDs) | lights over the keys | |
-| 74AHCT125 quad buffer + 330 Ω + 10 kΩ | LED data and solenoid gate, 3.3 V to 5 V | two of its four channels used; the other two tied off |
+| 74AHCT125 quad buffer + 330 Ω | LED data, 3.3 V to 5 V | one channel used; the other three tied off |
 | 1000 µF capacitor | across 5 V at the strip | |
-| 12 V supply, 3 A or more, with an inline fuse | motor, solenoid, sensor | size is an estimate |
+| **Adafruit 12 V 1 A regulated adapter (#798)** — ordered | motor and solenoid | probably enough; see [power budget](#power-budget). Add an inline fuse |
 | 5 V supply, 4 A or more | LED strip, level shifter | size is an estimate; the firmware's brightness cap helps |
+
+Also in the order, for prototyping: breadboard, jumper wires, a micro-B USB cable (for
+the ESP32 board, if it has micro-B), 220 Ω resistors, 3 mm LEDs, heat shrink, 4-wire
+ribbon cable (motor wires) and a 6-pin JST PH cable pair.
 
 ## Wiring
 
@@ -48,46 +55,56 @@ The bottle positions in the picture come from `src/duet/profiles/bottles-v1.yaml
 
 | ESP32 pin | Goes to | Direction | Notes |
 |---|---|---|---|
-| GPIO 25 | A4988 STEP | out | step pulses from FastAccelStepper (A4988 needs ≥ 1 µs high and low) |
-| GPIO 26 | A4988 DIR | out | if the carriage homes the wrong way, swap one motor coil pair |
-| GPIO 27 | A4988 ENABLE | out | active low; enabled automatically while moving |
-| GPIO 32 | 74AHCT125 2A → 2Y → 220 Ω → MOSFET gate | out | high = solenoid on; 10 kΩ from 2A to GND keeps it off during boot |
+| GPIO 25 | TMC2209 STEP | out | step pulses from FastAccelStepper |
+| GPIO 26 | TMC2209 DIR | out | if the carriage homes the wrong way, swap one motor coil pair |
+| GPIO 27 | TMC2209 EN | out | active low ("pull high to disable"); enabled automatically while moving |
+| GPIO 32 | MOSFET Driver **In** (STEMMA cable) | out | high = solenoid on; the board's pull-down keeps it off during boot |
 | GPIO 34 | home sensor, through the divider | in | active low (`HOME_ACTIVE_LOW = true`) |
 | GPIO 35 | emergency stop button | in | active low; **external** 10 kΩ pull-up to 3.3 V |
 | GPIO 13 | 74AHCT125 1A → 1Y → 330 Ω → strip DIN | out | |
-| 3V3 | A4988 VDD, MS1–MS3, SLEEP, RESET, e-stop pull-up | — | |
-| GND | every ground | — | 12 V, 5 V, driver, MOSFET source, sensor, strip |
+| 3V3 | TMC2209 VDD, MS1, MS2, e-stop pull-up | — | |
+| GND | every ground | — | 12 V, 5 V, ESP32, TMC2209, MOSFET Driver, sensor, strip |
 
 > **GPIO 34 and 35 are input-only and have no internal pull-up resistors** (ESP32
 > datasheet). Without the external resistors the pins float, and the emergency stop can
 > trip at random or never. The firmware sets them as plain inputs and relies on those
 > resistors.
 
+Change pins in `firmware/src/board.h` if your wiring differs.
+
 ### Why each connection is the way it is
 
-These come from the component datasheets (see [Checked against datasheets](#checked-against-datasheets)).
+These come from the datasheets and Adafruit's guides (see
+[Checked against datasheets](#checked-against-datasheets)).
 
 ```mermaid
 flowchart LR
     esp["ESP32 output<br/>high ≥ 2.64 V"]
-    esp -->|"needs ≥ 0.7 × VDD"| a4988["A4988 inputs<br/>VDD 3.3 V → 2.31 V ✓<br/>VDD 5 V → 3.5 V ✗"]
+    esp -->|"VDD 3.3 V: inputs accept 3.3 V logic ✓"| tmc["TMC2209 breakout<br/>STEP · DIR · EN"]
+    esp -->|"needs ≥ 2.5 V ✓"| mos["MOSFET Driver In<br/>AO3406 + 1N4007"]
     esp -->|"needs ≥ 0.7 × 5 V = 3.5 V ✗"| ws["WS2812B DIN"]
     esp -->|"needs ≥ 2 V ✓"| ahct["74AHCT125<br/>outputs 5 V"]
     ahct -->|"5 V ✓"| ws
-    ahct -->|"VGS 5 V: Rds(on) specified ✓"| fet["IRLZ44N gate"]
-    esp -.->|"VGS 3.3 V: not specified"| fet
 ```
 
-- **A4988 logic at 3.3 V.** Its inputs need at least 0.7 × VDD. At 5 V that is 3.5 V, more
-  than the ESP32 guarantees (2.64 V). At 3.3 V it is 2.31 V.
-- **A4988 microstep pins tied high.** MS1–MS3 have internal pull-downs, so if left open
-  the driver runs in **full steps** and every move goes 16 times too far. All three high
-  gives 1/16 step. SLEEP and RESET must be high too: STEP is ignored while RESET is low.
-- **MOSFET gate at 5 V.** The IRLZ44N's on-resistance is specified only at VGS 4 V and
-  above, and its threshold can be as high as 2 V. Driving the gate from a spare 74AHCT125
-  channel gives 5 V. The 220 Ω keeps the buffer's output current under its 25 mA rating.
-- **74AHCT125 tidy-up.** Its output enables (1OE, 2OE) are active low, so tie them to
-  GND. Unused inputs must not float: tie 3A and 4A to GND, and 3OE and 4OE to 5 V.
+- **TMC2209 logic at 3.3 V.** Adafruit: give VDD "the same power as the logic level of
+  your microcontroller … from 3.3V to 5V". For the ESP32 that is 3.3 V.
+- **TMC2209 MS1 and MS2 tied high.** The breakout defaults to **1/8** microstepping with
+  both pins open; "if you wanted to use 1/16 microstep mode, you would tie both MS1 and
+  MS2 high". The firmware's 80 steps per mm assumes 1/16. With them open, every move goes
+  **twice** too far.
+- **TMC2209 EN is active low.** "Pull this pin high to disable the output to the motors."
+  The firmware drives it low while moving.
+- **TMC2209 current.** Turn the onboard knob to set the motor current (up to 2 A, fully
+  clockwise). Start low; more current means more heat and more draw from the 12 V adapter.
+- **MOSFET Driver from GPIO 32 directly.** Its input takes "between 2.5V and 20V", and the
+  ESP32 gives at least 2.64 V. The board's own schematic has a pull-down on the input
+  (so the solenoid stays off while the ESP32 boots) and a flyback diode across the output.
+  Wire the solenoid to the output's **+** and **−** terminals; **−** is switched to ground
+  when In is high.
+- **74AHCT125 tidy-up.** Only channel 1 is used (LED data). Its output enable 1OE is
+  active low: tie it to GND. Unused inputs must not float: tie 2A, 3A and 4A to GND, and
+  2OE, 3OE and 4OE to 5 V.
 - **Home sensor through a divider.** The sensor's sheet gives only "NPN, sink, 6–36 V",
   not its output circuit, and some modules have an internal pull-up to their own supply.
   So the output is pulled up to 12 V (4.7 kΩ) and divided down (27 kΩ / 10 kΩ). The sheet
@@ -102,16 +119,30 @@ flowchart LR
   **Measure before connecting:** power the sensor, hold steel near it and away from it,
   and check GPIO 34's side of the divider reads in those ranges before you plug it in.
 
+### Power budget
+
+The 12 V 1 A adapter feeds the motor (through the TMC2209) and the solenoid.
+
+- **Solenoid:** about 0.4 A (seller data), but only for each 15–30 ms strike, and the
+  firmware keeps it on under 20% of any 10 s.
+- **Motor:** depends on your motor and the current knob. A chopper driver draws less from
+  the supply than the coil current, but how much less is not in any datasheet here.
+
+So 1 A is probably enough with a moderate current setting. Check it: set the knob low,
+run a dense piece (`duet play … --device …`), and watch for the ESP32 resetting or the
+motor losing steps (`NOT_ARRIVED`). If either happens, lower the motor current or use a
+bigger 12 V supply. The LED strip is on its own 5 V supply.
+
 ### Before you power it on
 
 ```mermaid
 flowchart TD
-    a["All grounds joined?"] -->|"yes"| b["Flyback diode across the solenoid,<br/>stripe to +12 V?"]
-    b -->|"yes"| c["10 kΩ pull-ups on GPIO 34 and 35<br/>go to 3.3 V, not 5 V or 12 V?"]
+    a["All grounds joined?"] -->|"yes"| b["Solenoid on the MOSFET Driver's<br/>+ and − terminals?"]
+    b -->|"yes"| c["10 kΩ pull-up on GPIO 35<br/>goes to 3.3 V, not 5 V or 12 V?"]
     c -->|"yes"| c2["Sensor divider measured:<br/>GPIO 34 side 2.7–3.4 V idle?"]
-    c2 -->|"yes"| c3["A4988 VDD, MS1–MS3, SLEEP, RESET<br/>on 3.3 V?"]
+    c2 -->|"yes"| c3["TMC2209 VDD, MS1 and MS2<br/>on 3.3 V?"]
     c3 -->|"yes"| d["LED strip powered from the 5 V supply,<br/>not the ESP32?"]
-    d -->|"yes"| e["Driver current limit set?<br/>Motor coils paired correctly?"]
+    d -->|"yes"| e["TMC2209 current knob turned low?<br/>Motor coils paired correctly?"]
     e -->|"yes"| f["Carriage moves freely by hand<br/>end to end?"]
     f -->|"yes"| go["Power on"]
     a -->|"no"| fix["Fix it first"]
@@ -123,6 +154,19 @@ flowchart TD
     e -->|"no"| fix
     f -->|"no"| fix
 ```
+
+### Alternatives
+
+The design was first checked with discrete parts. Those notes still hold if you build it
+that way:
+
+- **A4988 instead of the TMC2209:** power its VDD from 3.3 V (inputs need 0.7 × VDD);
+  tie MS1, MS2 and MS3 to 3.3 V (internal pull-downs, otherwise full steps: 16 times too
+  far); tie SLEEP and RESET to 3.3 V.
+- **Discrete MOSFET instead of the MOSFET Driver:** the IRLZ44N's on-resistance is only
+  specified from VGS 4 V, so drive its gate at 5 V (for example from a spare 74AHCT125
+  channel, through 220 Ω), add 10 kΩ gate-to-ground, and put a 1N5819 flyback diode
+  across the solenoid, stripe to +12 V.
 
 ## The LED strip over the keys
 
@@ -352,11 +396,11 @@ flowchart TD
 
 | Symptom | Likely cause | Check |
 |---|---|---|
-| ESP32 resets when the solenoid fires | supply dip or missing flyback diode | diode across the coil; separate 12 V and 5 V supplies; common ground |
-| Solenoid clicks at power-on | gate or buffer input floating at boot | 10 kΩ gate-to-ground and 10 kΩ from 2A to GND |
-| Carriage moves 16 times too far | A4988 in full-step mode | MS1–MS3 tied to 3.3 V |
-| Motor does not move at all | A4988 asleep or held in reset | SLEEP and RESET on 3.3 V; ENABLE low |
-| MOSFET gets warm | gate under-driven | gate fed from the 74AHCT125 at 5 V, not from GPIO 32 directly |
+| ESP32 resets when the solenoid fires | supply dip | separate 12 V and 5 V supplies; common ground; see the power budget |
+| Carriage moves twice as far as it should | TMC2209 in its default 1/8 mode | MS1 and MS2 tied to 3.3 V |
+| Motor does not move at all | TMC2209 disabled, or no current | EN low; current knob not fully counter-clockwise; 12 V on the motor terminals |
+| ESP32 resets when the solenoid fires or the motor accelerates | 12 V adapter overloaded | lower the TMC2209 current, or a bigger 12 V supply; see the power budget |
+| Solenoid never fires | wrong terminals or no V+ | solenoid on + and −; 12 V on the MOSFET Driver's V+; its Sig LED lights when GPIO 32 is high |
 | Emergency stop trips by itself | GPIO 35 floating | external 10 kΩ pull-up to 3.3 V |
 | First LED wrong colour or flickers | 3.3 V data into a 5 V strip | level shifter; 1OE to GND; 330 Ω at DIN; short data wire |
 | LEDs dim or red at the far end | voltage drop | feed 5 V at both ends of the strip |
@@ -401,18 +445,22 @@ sites, except the sensor sheet, which is a distributor's):
 | Part | Source | What was checked |
 |---|---|---|
 | ESP32 | [ESP32 Series Datasheet](https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf) (Espressif) | GPIO 34–39 input-only with no pull-ups; strapping pins 0, 2, 5, 12, 15 (none used); input high ≥ 0.75 × VDD, low ≤ 0.25 × VDD, max VDD + 0.3 V; output high ≥ 0.8 × VDD |
-| A4988 | [A4988 datasheet](https://www.allegromicro.com/-/media/files/datasheets/a4988-datasheet.pdf) (Allegro) | microstep table (all high = 1/16); MSx pull-downs; ENABLE active low; SLEEP and RESET; VDD 3–5.5 V; input high ≥ 0.7 × VDD; VBB 8–35 V; STEP ≥ 1 µs; I = VREF / (8 × Rs) |
+| Adafruit TMC2209 breakout (#6121) | [product page](https://www.adafruit.com/product/6121), [learn guide](https://learn.adafruit.com/adafruit-tmc2209-stepper-motor-driver-breakout-board) (Adafruit) | VDD 3–5 V; motor 5–29 V; default 1/8, MS1 and MS2 high = 1/16; EN high disables; current knob up to 2 A |
+| Adafruit MOSFET Driver (#5648) | [product page](https://www.adafruit.com/product/5648), [learn guide](https://learn.adafruit.com/adafruit-mosfet-driver) with schematic (Adafruit) | In accepts 2.5–20 V; V+ 3–30 V; AO3406 + 1N4007; pull-down on the input (schematic R2); 1.5 A continuous, 3 A peak; JST PH 2 A |
+| Adafruit 12 V 1 A adapter (#798) | [product page](https://www.adafruit.com/product/798) (Adafruit) | regulated 12 V, up to 1 A; 5.5/2.1 mm barrel, positive tip |
+| A4988 (alternative) | [A4988 datasheet](https://www.allegromicro.com/-/media/files/datasheets/a4988-datasheet.pdf) (Allegro) | microstep table (all high = 1/16); MSx pull-downs; ENABLE active low; SLEEP and RESET; VDD 3–5.5 V; input high ≥ 0.7 × VDD; VBB 8–35 V; STEP ≥ 1 µs; I = VREF / (8 × Rs) |
 | 74AHCT125 | [SN74AHCT125](https://www.ti.com/lit/ds/symlink/sn74ahct125.pdf) (Texas Instruments) | VCC 4.5–5.5 V; input high ≥ 2 V; OE active low; output ±25 mA; unused inputs tied |
-| IRLZ44N | [IRLZ44NPbF](https://www.infineon.com/dgdl/irlz44npbf.pdf?fileId=5546d462533600a40153567217c32725) (Infineon) | Rds(on) given at VGS 10, 5 and 4 V only; threshold 1–2 V; VGS max ±16 V |
+| IRLZ44N (alternative) | [IRLZ44NPbF](https://www.infineon.com/dgdl/irlz44npbf.pdf?fileId=5546d462533600a40153567217c32725) (Infineon) | Rds(on) given at VGS 10, 5 and 4 V only; threshold 1–2 V; VGS max ±16 V |
 | WS2812B | [WS2812B](https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf) (Worldsemi, hosted by Adafruit) | supply 3.5–5.3 V (absolute maximum); DIN high ≥ 0.7 × VDD; current per LED not given |
-| 1N5819 | [1N5817–1N5819](https://www.onsemi.com/pdf/datasheet/1n5817-d.pdf) (onsemi) | 40 V reverse, 1 A average |
+| 1N5819 (alternative) | [1N5817–1N5819](https://www.onsemi.com/pdf/datasheet/1n5817-d.pdf) (onsemi) | 40 V reverse, 1 A average |
 | LJ12A3-4-Z/BX | [distributor sheet](https://www.electrokit.com/upload/product/41014/41014825/LJ12A3-4.pdf) (Electrokit) | 6–36 V, NPN normally open, sink output, 4 mm range, wire colours; **output circuit not documented** |
 
 **Not verified:**
-- **TMC2209:** the maker's site refused automated downloads, so its standalone
-  microstep-pin table was not checked. Sources found disagree. If you use one instead of
-  the A4988, check its datasheet's MS1/MS2 table before relying on 80 steps per mm.
+- **TMC2209 chip datasheet:** Analog Devices' site refused automated downloads, so the
+  checks above rely on Adafruit's guide for its breakout, which is the board's own
+  documentation.
 - **JF-1039B solenoid:** no manufacturer datasheet found. The ~0.4 A figure comes from
   seller listings.
-- **Supply sizes** (12 V 3 A, 5 V 4 A) are estimates, not datasheet values.
+- **Supply sizes:** whether the 12 V 1 A adapter is enough depends on the motor and the
+  current setting (see [power budget](#power-budget)); the 5 V 4 A figure is an estimate.
 - **Nothing has been built yet.** These checks are on paper; measure before connecting.

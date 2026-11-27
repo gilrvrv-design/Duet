@@ -4,7 +4,7 @@
 constexpr int PIN_STEP = 25;
 constexpr int PIN_DIR = 26;
 constexpr int PIN_ENABLE = 27;
-constexpr int PIN_SOLENOID = 32;  // MOSFET gate for the JF-1039B push-pull solenoid
+constexpr int PIN_SOLENOID = 32;  // "In" of the Adafruit MOSFET Driver (#5648) for the JF-1039B solenoid
 constexpr int PIN_HOME = 34;      // LJ12A3 NPN sensor: open collector, 10 kOhm pull-up to 3.3 V
 constexpr bool HOME_ACTIVE_LOW = true;
 constexpr int PIN_LEDS = 13;
