@@ -20,6 +20,7 @@ from duet import __version__
 from duet.api.store import NotFound, Store, store_from_env
 from duet.compose import CompositionRequest, compose
 from duet.compose.service import Composer, CompositionError
+from duet.copyright import CopyrightGuard
 from duet.difficulty import check_pianist, pianist_difficulty
 from duet.feasibility import check_robot
 from duet.jobs import TERMINAL, JobFailure, JobRunner, job_view
@@ -74,9 +75,16 @@ class VariationIn(BaseModel):
     instruction: str = Field(min_length=1, max_length=500)
 
 
+class PublishIn(BaseModel):
+    own_work: bool = False  # the user wrote this music or holds the rights
+
+
 class LessonOptions(BaseModel):
     target_level: int = Field(3, ge=1, le=5)
     user: str | None = None
+
+
+GUARD = CopyrightGuard.load()  # public-domain list, plus DUET_PROTECTED_MELODIES if set
 
 
 def duet_view(record) -> dict:
@@ -91,6 +99,7 @@ def duet_view(record) -> dict:
         "robot_playable": report.ok,
         "robot_problems": report.feedback().splitlines(),
         "pianist_problems": check_pianist(score, keyboard_profile()),
+        "copyright": GUARD.check(score).status,
         **record.meta,
     }
 
@@ -167,6 +176,7 @@ def create_app(
         difficulty: int | None = None,
         max_bars: int | None = None,
         featured: bool | None = None,
+        public: bool | None = None,
         limit: int = 20,
     ):
         words = [w for w in q.lower().split() if w]
@@ -178,6 +188,8 @@ def create_app(
             if max_bars is not None and score.bar_count > max_bars:
                 continue
             if featured is not None and bool(record.meta.get("featured")) != featured:
+                continue
+            if public is not None and (record.meta.get("visibility") == "public") != public:
                 continue
             text = " ".join(
                 [score.meta.title, score.meta.prompt or "", score.meta.key, *score.meta.style_tags]
@@ -222,6 +234,25 @@ def create_app(
         root = store.get("duet", duet_id).meta.get("root", duet_id)
         line = [r for r in store.list("duet") if r.meta.get("root") == root]
         return [summary_view(r) for r in sorted(line, key=lambda r: r.meta.get("version", 1))]
+
+    @app.post("/v1/duets/{duet_id}/publish")
+    def publish_duet(duet_id: str, body: PublishIn | None = None):
+        """Make a duet public (spec FR-B2, FR-C5, FR-A11)."""
+        body = body or PublishIn()
+        record = store.get("duet", duet_id)
+        status = GUARD.check(record.data).status
+        if status == "protected" and not body.own_work:
+            raise Problem(422, "COPYRIGHT_MATCH", "this melody matches a protected work")
+        from_recording = record.meta.get("source") == "transcription"
+        if from_recording and status != "public_domain" and not body.own_work:
+            raise Problem(
+                422,
+                "RIGHTS_NOT_CONFIRMED",
+                "arrangements of recordings can be shared only as your own work or a "
+                "public-domain tune",
+            )
+        store.update_meta("duet", duet_id, visibility="public", own_work=body.own_work)
+        return duet_view(store.get("duet", duet_id))
 
     @app.post("/v1/duets/{duet_id}/fork", status_code=201)
     def fork_duet(duet_id: str):
@@ -277,7 +308,7 @@ def create_app(
     # Compositions ------------------------------------------------------------
     def run_composition(request: CompositionRequest, progress: Progress) -> dict:
         try:
-            result = compose(request, get_composer(), progress=progress)
+            result = compose(request, get_composer(), progress=progress, guard=GUARD)
         except CompositionError as exc:
             raise JobFailure("COMPOSITION_FAILED", str(exc)) from exc
         except RuntimeError as exc:

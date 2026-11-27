@@ -79,4 +79,4 @@ tests/
 | 24 | Call and response: capture the pianist's phrase, answer on the bottles within one beat, recall earlier motifs | FR-H6, FR-G1, FR-G3 | Answers start within a beat and stay playable | Done (answers 62 ms after the turn) |
 | 25 | Skill model, difficulty-targeted composition, lesson paths, "teach me this song" | FR-E1–E3, FR-A26 | A pianist's estimate moves with their results; paths step up | Done |
 | 26 | Variations as edits and a library with versions, forks and search | FR-C8, FR-B1–B5 | "Easier" lowers difficulty; versions and forks are kept | Done (search is keyword-based; embeddings later) |
-| 27 | Copyright guard: public-domain list and melody similarity | FR-C5 | A copied melody is flagged; public-domain tunes pass |  |
+| 27 | Copyright guard: public-domain list and melody similarity | FR-C5 | A copied melody is flagged; public-domain tunes pass | Done (protected list supplied by the operator) |

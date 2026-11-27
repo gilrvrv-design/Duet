@@ -68,11 +68,13 @@ def compose(
     keyboard: KeyboardProfile | None = None,
     max_rounds: int = MAX_FEEDBACK_ROUNDS,
     progress: Progress = no_progress,
+    guard=None,
 ) -> CompositionResult:
+    """``guard``: an optional copyright guard; its problems are fed back too (FR-C5)."""
     robot = robot or robot_profile()
     keyboard = keyboard or keyboard_profile()
     return _converse(
-        request, _request_text(request), composer, robot, keyboard, max_rounds, progress
+        request, _request_text(request), composer, robot, keyboard, max_rounds, progress, guard
     )
 
 
@@ -120,7 +122,7 @@ def revise(
     return _converse(request, text, composer, robot, keyboard, max_rounds, progress)
 
 
-def _converse(request, first_message, composer, robot, keyboard, max_rounds, progress):
+def _converse(request, first_message, composer, robot, keyboard, max_rounds, progress, guard=None):
     """Ask, check, feed problems back, repeat; then repair deterministically."""
     system = system_prompt(robot)
     messages: list[dict] = [{"role": "user", "content": first_message}]
@@ -145,6 +147,8 @@ def _converse(request, first_message, composer, robot, keyboard, max_rounds, pro
             best = (score, explanation)
             problems = check_robot(score, robot).feedback().splitlines()
             problems += check_pianist(score, keyboard)
+            if guard is not None:
+                problems += guard.check(score).problems()
             if not problems:
                 progress("ready", 1.0)
                 return CompositionResult(score, explanation, round_no, history)
@@ -158,6 +162,9 @@ def _converse(request, first_message, composer, robot, keyboard, max_rounds, pro
         )
     progress("repairing", None)
     result = _finish(best, robot, keyboard, rounds=max_rounds + 1, history=history)
+    if guard is not None and guard.check(result.score).status == "protected":
+        # Repair fixes physics, not authorship: never hand back a copied melody.
+        raise CompositionError("the composer kept copying a protected melody")
     progress("ready", 1.0)
     return result
 

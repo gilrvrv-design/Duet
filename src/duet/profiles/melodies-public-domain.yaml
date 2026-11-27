@@ -1,0 +1,12 @@
+# Opening phrases of well-known public-domain melodies, in C, for the copyright guard
+# (spec FR-C5). A duet that matches one of these is fine and gets labelled; protected
+# melodies are loaded separately (DUET_PROTECTED_MELODIES) and are never stored here.
+melodies:
+  - {title: "Twinkle Twinkle Little Star", notes: [C4, C4, G4, G4, A4, A4, G4, F4, F4, E4, E4, D4, D4, C4]}
+  - {title: "Ode to Joy", notes: [E4, E4, F4, G4, G4, F4, E4, D4, C4, C4, D4, E4, E4, D4, D4]}
+  - {title: "Frere Jacques", notes: [C4, D4, E4, C4, C4, D4, E4, C4, E4, F4, G4, E4, F4, G4]}
+  - {title: "Mary Had a Little Lamb", notes: [E4, D4, C4, D4, E4, E4, E4, D4, D4, D4, E4, G4, G4]}
+  - {title: "Jingle Bells", notes: [E4, E4, E4, E4, E4, E4, E4, G4, C4, D4, E4]}
+  - {title: "Happy Birthday (Good Morning to All)", notes: [G4, G4, A4, G4, C5, B4, G4, G4, A4, G4, D5, C5]}
+  - {title: "Amazing Grace", notes: [G3, C4, E4, C4, E4, D4, C4, A3, G3, G3, C4, E4, C4, E4, D4, G4]}
+  - {title: "London Bridge", notes: [G4, A4, G4, F4, E4, F4, G4, D4, E4, F4, E4, F4, G4]}

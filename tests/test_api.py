@@ -1,4 +1,5 @@
 import io
+import json
 
 import pytest
 import soundfile
@@ -261,4 +262,39 @@ def test_variation_through_the_composer_and_errors(client):
     assert (
         client.post("/v1/duets/missing/variations", json={"instruction": "slower"}).status_code
         == 404
+    )
+
+
+def test_publishing_and_copyright(client, tmp_path, monkeypatch):
+    from duet.api import app as app_module
+    from duet.copyright import CopyrightGuard
+
+    protected = tmp_path / "p.yaml"
+    notes = ["E5", "G5", "E5", "D5", "C5", "E5", "F5", "G5", "C6"]  # the example's robot tune
+    protected.write_text(json.dumps({"melodies": [{"title": "Invented Hit", "notes": notes}]}))
+    monkeypatch.setattr(app_module, "GUARD", CopyrightGuard.load(protected))
+
+    duet = client.get("/v1/duets?featured=true").json()[0]
+    assert client.get(f"/v1/duets/{duet['id']}").json()["copyright"] == "protected"
+    blocked = client.post(f"/v1/duets/{duet['id']}/publish", json={})
+    assert blocked.status_code == 422 and blocked.json()["code"] == "COPYRIGHT_MATCH"
+    ok = client.post(f"/v1/duets/{duet['id']}/publish", json={"own_work": True}).json()
+    assert ok["visibility"] == "public"
+    assert [d["id"] for d in client.get("/v1/duets?public=true").json()] == [duet["id"]]
+
+    buffer = io.BytesIO()
+    soundfile.write(
+        buffer,
+        synth([(p, i * 0.5, 0.45) for i, p in enumerate([60, 67, 64, 71, 62])]),
+        22050,
+        format="WAV",
+    )
+    t = client.post(
+        "/v1/transcriptions",
+        files={"file": ("x.wav", buffer.getvalue(), "audio/wav")},
+        data={"rights_confirmed": "true"},
+    ).json()
+    arranged = client.post(f"/v1/transcriptions/{t['id']}/arrangements").json()
+    assert (
+        client.post(f"/v1/duets/{arranged['id']}/publish").json()["code"] == "RIGHTS_NOT_CONFIRMED"
     )
