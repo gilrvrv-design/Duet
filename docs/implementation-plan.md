@@ -63,8 +63,8 @@ tests/
 
 ## Next deliveries
 
-| # | Delivery | Spec | Test that proves it |
-|---|---|---|---|
+| # | Delivery | Spec | Test that proves it | Status |
+|---|---|---|---|---|
 | 17 | Persistent store (SQLite/Postgres) behind the `MemoryStore` interface | §4.2 | API tests run against both stores | Done (SQLite) |
 | 18 | Async jobs for composition and transcription, with progress streams | §6.2, FR-A5 | Job states and stream events in order | Done |
 | 19 | WebSocket device gateway and clock sync with the simulated rig over a real socket | §5.10 | Sync error under 2 ms on localhost | Done |
@@ -73,6 +73,6 @@ tests/
 | 20b | Conductor waits for "homed" telemetry before the count-in; device reports position and homing state | FR-R5, FR-D3 | Slow homing on the simulated device delays the start instead of faulting | Done |
 | 21 | Calibration: bottle positions, measured pitch, strike latency | §5.11 | Recorded strikes update the profile | Done (tested on synthesized recordings) |
 | 22 | Listening engine: MIDI input, hit grading, wait mode | §5.6 | Recorded performance graded correctly | Done (MIDI path; real keyboard not tested here) |
-| 22b | Follow mode: score following and tempo coupling | FR-H3, FR-H5 | Robot follows a pianist who speeds up and slows down |
+| 22b | Follow mode: score following and tempo coupling | FR-H3, FR-H5 | Robot follows a pianist who speeds up and slows down | Done (sequential follower; online DTW later if needed) |
 | 22c | Microphone input with robot self-filtering | FR-H1, FR-H2 | Acoustic piano notes graded while bottles ring |
 | 23 | Composition evaluation set and gate | §9.3 | Pass rate reported per prompt-pack change | Done (30 cases; not yet run against the live API) |

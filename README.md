@@ -43,6 +43,12 @@ Use `--midi-in "<port name>"` with a MIDI keyboard; without it a simulated piani
 duet play examples/rain-on-the-bottles.json --sim --wait
 ```
 
+Or in follow mode, where the robot keeps your tempo (here a simulated pianist plays 10% slower than written):
+
+```bash
+duet play examples/rain-on-the-bottles.json --sim --follow --stretch 1.1
+```
+
 Grade a MIDI recording of the pianist part:
 
 ```bash

@@ -85,12 +85,16 @@ def cmd_play(args) -> int:
     rig = SimulatedRig(robot)
     keys = _keys(args)
     clock = RealClock() if args.realtime or args.midi_in else VirtualClock()
-    perf = perform(score, robot, keyboard_profile(args.piano), [rig], clock, keys=keys)
+    mode = "follow" if args.follow else "wait"
+    perf = perform(score, robot, keyboard_profile(args.piano), [rig], clock, keys=keys, mode=mode)
     rig.run()
     if keys is not None:
         from duet.listening import grade
 
-        print(f"waited {perf.waited_us / 1e6:.1f} s for the pianist")
+        if args.follow:
+            print(f"followed the pianist: tempo now {100 / perf.final_rate:.0f}% of written")
+        else:
+            print(f"waited {perf.waited_us / 1e6:.1f} s for the pianist")
         print(grade(perf.expected_pianist(), perf.played).feedback())
     planned = [p for p in perf.planned if p.part == "robot"]
     errors = [abs(s.t_us - p.t_us) for s, p in zip(rig.sounds, planned, strict=False)]
@@ -102,13 +106,17 @@ def cmd_play(args) -> int:
 
 
 def _keys(args):
-    """Wait mode needs someone at the keys: a MIDI keyboard or a simulated pianist."""
+    """Wait and follow modes need someone at the keys: a MIDI keyboard or a simulated pianist."""
     if args.midi_in:
         import mido
 
         from duet.listening import MidiKeys
 
         return MidiKeys(mido.open_input(args.midi_in))
+    if args.follow:
+        from duet.follow import TempoPianist
+
+        return TempoPianist(stretch=args.stretch)
     if args.wait:
         from duet.listening import SimulatedPianist
 
@@ -334,7 +342,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--realtime", action="store_true", help="run the clock in real time")
     p.add_argument("--device", help="play on a device at this WebSocket URL")
     p.add_argument("--wait", action="store_true", help="wait mode: pause for each pianist note")
-    p.add_argument("--midi-in", help="MIDI keyboard port for wait mode (default: simulated)")
+    p.add_argument("--follow", action="store_true", help="follow mode: robot keeps your tempo")
+    p.add_argument("--stretch", type=float, default=1.1, help="simulated pianist tempo factor")
+    p.add_argument("--midi-in", help="MIDI keyboard port (default: a simulated pianist)")
     p.add_argument("--reaction", type=float, default=0.3, help="simulated pianist delay (s)")
     p.set_defaults(func=cmd_play)
     p = sub.add_parser("eval", help="run the composition evaluation set (calls Claude)")

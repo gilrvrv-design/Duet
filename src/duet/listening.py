@@ -30,7 +30,15 @@ class KeyInput(Protocol):
     played: list[PlayedNote]
 
     def wait_for(self, pitches: frozenset[int], since_us: int, clock: Clock) -> int:
-        """Block until every pitch has been pressed at or after ``since_us``; return when."""
+        """Wait mode: block until every pitch was pressed at or after ``since_us``."""
+        ...
+
+    def poll(self, clock: Clock) -> list[PlayedNote]:
+        """Follow mode: notes played since the last poll."""
+        ...
+
+    def next_event_us(self, clock: Clock) -> int | None:
+        """Follow mode: when to poll next (None: nothing expected)."""
         ...
 
 
@@ -67,10 +75,17 @@ class MidiKeys:
     timeout_s: float | None = None  # None: wait as long as it takes
     played: list[PlayedNote] = field(default_factory=list)
 
-    def poll(self, clock: Clock) -> None:
-        for msg in self.port.iter_pending():
-            if msg.type == "note_on" and msg.velocity > 0:
-                self.played.append(PlayedNote(clock.now_us(), msg.note, msg.velocity))
+    def poll(self, clock: Clock) -> list[PlayedNote]:
+        new = [
+            PlayedNote(clock.now_us(), msg.note, msg.velocity)
+            for msg in self.port.iter_pending()
+            if msg.type == "note_on" and msg.velocity > 0
+        ]
+        self.played += new
+        return new
+
+    def next_event_us(self, clock: Clock) -> int:
+        return clock.now_us() + 2000  # poll the keyboard every 2 ms
 
     def wait_for(self, pitches, since_us, clock) -> int:
         deadline = None if self.timeout_s is None else clock.now_us() + self.timeout_s * 1e6
