@@ -61,6 +61,13 @@ Make a variation: `slower`, `faster`, `easier` and `swap` are instant; anything 
 duet vary examples/rain-on-the-bottles.json easier rain-easier.json
 ```
 
+Play a multi-track MIDI file as an ensemble: each line goes to the instrument that fits it best
+(bottles, a robot glockenspiel and the pianist here):
+
+```bash
+duet ensemble trio.mid --robots bottles-v1,glock-v1 --pianist C2-C5 --sim
+```
+
 Teach me this song: lesson steps from a recording, from the easiest part slowly up to your target level:
 
 ```bash

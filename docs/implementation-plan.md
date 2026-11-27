@@ -80,3 +80,4 @@ tests/
 | 25 | Skill model, difficulty-targeted composition, lesson paths, "teach me this song" | FR-E1–E3, FR-A26 | A pianist's estimate moves with their results; paths step up | Done |
 | 26 | Variations as edits and a library with versions, forks and search | FR-C8, FR-B1–B5 | "Easier" lowers difficulty; versions and forks are kept | Done (search is keyword-based; embeddings later) |
 | 27 | Copyright guard: public-domain list and melody similarity | FR-C5 | A copied melody is flagged; public-domain tunes pass | Done (protected list supplied by the operator) |
+| 28 | Ensembles: a second robot (glockenspiel), part assignment from multi-track MIDI, one conductor for several rigs | Phase 4 | Each line goes to the instrument that fits it; all rigs play from one clock | Done (simulated rigs) |

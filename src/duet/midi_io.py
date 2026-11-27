@@ -188,3 +188,35 @@ def midi_to_score(
     if title:
         meta["title"] = title
     return DuetScore.model_validate({"meta": meta, "events": [e.model_dump() for e in events]})
+
+
+@dataclass(frozen=True)
+class TrackNote:
+    beat: float  # 0-based, in beats of the time signature
+    dur: float
+    pitch: int
+    vel: int
+
+
+def midi_tracks(source: str | Path | bytes | mido.MidiFile):
+    """Every track with notes, by name: (tempo_bpm, time signature, {name: notes}).
+
+    For ensembles (spec Phase 4), where each line goes to its own instrument.
+    """
+    if isinstance(source, mido.MidiFile):
+        midi = source
+    elif isinstance(source, bytes):
+        midi = mido.MidiFile(file=io.BytesIO(source))
+    else:
+        midi = mido.MidiFile(str(source))
+    notes, names, tempo_us, (beats, unit) = _read_notes(midi)
+    tpb = midi.ticks_per_beat * 4 / unit
+    tracks: dict[str, list[TrackNote]] = {}
+    for n in sorted(notes, key=lambda n: (n.start, -n.pitch)):
+        name = names.get(n.track) or f"track {n.track}"
+        tracks.setdefault(name, []).append(
+            TrackNote(
+                round(n.start / tpb, 6), round(max(n.end - n.start, 1) / tpb, 6), n.pitch, n.vel
+            )
+        )
+    return round(60_000_000 / tempo_us * unit / 4, 3), (beats, unit), tracks

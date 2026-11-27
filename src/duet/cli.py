@@ -152,6 +152,42 @@ def cmd_vary(args) -> int:
     return 0
 
 
+def cmd_ensemble(args) -> int:
+    """Play a multi-track MIDI file with several robots and the pianist."""
+    from duet.ensemble import Instrument, assign, build_players, perform_ensemble
+    from duet.midi_io import midi_tracks
+    from duet.pitch import name_to_midi
+
+    tempo, signature, tracks = midi_tracks(args.midi)
+    instruments = [Instrument(r, robot_profile(r)) for r in args.robots.split(",") if r]
+    if args.pianist != "none":
+        low, high = (name_to_midi(n) for n in args.pianist.split("-"))
+        instruments.append(Instrument("pianist", low=low, high=high))
+    plan = assign(tracks, instruments)
+    print(f"transposed {plan.transpose:+d}")
+    for name, (track, octave) in plan.parts.items():
+        moved = f", {octave:+d} semitones" if octave else ""
+        print(f"  {name}: {track} ({plan.fit[name]:.0%} playable{moved})")
+    for track in plan.unused:
+        print(f"  nobody plays: {track}")
+    if not args.sim:
+        print("only simulated rigs so far; add --sim", file=sys.stderr)
+        return 2
+    rigs = {i.name: SimulatedRig(i.robot or instruments[0].robot) for i in instruments}
+    players = build_players(
+        tracks, instruments, plan, tempo, signature, {k: [v] for k, v in rigs.items()}
+    )
+    perform_ensemble(players, keyboard_profile(args.piano), VirtualClock())
+    faults = 0
+    for name, rig in rigs.items():
+        rig.run()
+        faults += len(rig.faults)
+        if rig.sounds:
+            print(f"  {name} played {len(rig.sounds)} notes")
+    print(f"faults: {faults}")
+    return 0 if not faults else 1
+
+
 def cmd_teach(args) -> int:
     """ "Teach me this song": a lesson path of duets from an audio recording."""
     from duet.audio.pipeline import transcribe_file
@@ -432,6 +468,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("instruction", help="built in: slower faster easier swap; else asks Claude")
     p.add_argument("out")
     p.set_defaults(func=cmd_vary)
+
+    p = sub.add_parser("ensemble", help="play a multi-track MIDI file with several robots")
+    p.add_argument("midi")
+    p.add_argument(
+        "--robots", default="bottles-v1,glock-v1", help="robot profile ids, comma separated"
+    )
+    p.add_argument("--pianist", default="C2-C5", help="the pianist's range, or none")
+    p.add_argument("--sim", action="store_true")
+    p.set_defaults(func=cmd_ensemble)
 
     p = sub.add_parser("teach", help="teach me this song: lesson steps from a recording")
     p.add_argument("audio")
