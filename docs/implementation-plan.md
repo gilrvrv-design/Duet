@@ -71,6 +71,6 @@ tests/
 | 19b | Periodic clock resync during long sessions (every 2 s) and drift estimate | FR-D2 | Simulated drifting clock stays within 2 ms over 10 minutes | Done (tested at 2000 ppm) |
 | 20 | ESP32 firmware executor for `move_at` / `strike_at` / `led_frame_at` | §5.10 | Hardware-in-the-loop timing test | Core done and contract-tested; ESP32 glue written, not yet compiled or run on hardware |
 | 20b | Conductor waits for "homed" telemetry before the count-in; device reports position and homing state | FR-R5, FR-D3 | Slow homing on the simulated device delays the start instead of faulting | Done |
-| 21 | Calibration: bottle positions, measured pitch, strike latency | §5.11 | Recorded strikes update the profile |
+| 21 | Calibration: bottle positions, measured pitch, strike latency | §5.11 | Recorded strikes update the profile | Done (tested on synthesized recordings) |
 | 22 | Listening engine: MIDI input, hit grading, wait mode | §5.6 | Recorded performance graded correctly |
 | 23 | Composition evaluation set and gate | §9.3 | Pass rate reported per prompt-pack change |

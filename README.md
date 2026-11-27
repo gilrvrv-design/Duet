@@ -52,6 +52,17 @@ Turn a recording (humming, a single instrument, or a song) into MIDI and a playa
 duet transcribe hum.m4a hum.mid --duet hum-duet.json --difficulty 1
 ```
 
+Calibrate the rig: play the sweep on the rig while recording it with a microphone, then measure the recording.
+Every other command accepts the result with `--robot calibrated.yaml`:
+
+```bash
+duet sweep sweep.json
+```
+
+```bash
+duet calibrate sweep-recording.wav --out calibrated.yaml
+```
+
 Compose a duet from a text request with Claude (needs Anthropic credentials; set `DUET_MODEL` to change the model):
 
 ```bash

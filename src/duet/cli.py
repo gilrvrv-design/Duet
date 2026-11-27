@@ -11,10 +11,26 @@ from duet.conductor import RealClock, VirtualClock, perform
 from duet.difficulty import pianist_difficulty
 from duet.feasibility import check_robot
 from duet.midi_io import midi_to_score, save_midi
-from duet.profile import keyboard_profile, robot_profile
+from duet.profile import (
+    RobotProfile,
+    keyboard_profile,
+    load_profile_file,
+    robot_profile,
+    save_profile_file,
+)
 from duet.repair import repair_robot
 from duet.score import DuetScore, load_score
 from duet.sim import SimulatedRig
+
+
+def _robot(args) -> RobotProfile:
+    """``--robot`` is a built-in profile id or a calibrated profile file (.yaml)."""
+    if str(args.robot).endswith((".yaml", ".yml")):
+        profile = load_profile_file(args.robot)
+        if not isinstance(profile, RobotProfile):
+            raise SystemExit(f"{args.robot} is not a robot profile")
+        return profile
+    return robot_profile(args.robot)
 
 
 def read_score(path: str) -> DuetScore:
@@ -32,7 +48,7 @@ def write_score(score: DuetScore, path: str) -> None:
 
 def cmd_check(args) -> int:
     score = read_score(args.score)
-    report = check_robot(score, robot_profile(args.robot))
+    report = check_robot(score, _robot(args))
     print(f"{score.meta.title}: {score.bar_count} bars, pianist level {pianist_difficulty(score)}")
     if report.ok:
         print("robot part: playable")
@@ -43,7 +59,7 @@ def cmd_check(args) -> int:
 
 
 def cmd_repair(args) -> int:
-    result = repair_robot(read_score(args.score), robot_profile(args.robot))
+    result = repair_robot(read_score(args.score), _robot(args))
     write_score(result.score, args.out)
     print(result.summary() or "nothing to repair")
     return 0
@@ -55,7 +71,7 @@ def cmd_convert(args) -> int:
 
 
 def cmd_play(args) -> int:
-    robot = robot_profile(args.robot)
+    robot = _robot(args)
     score = read_score(args.score)
     if not check_robot(score, robot).ok:
         result = repair_robot(score, robot)
@@ -99,10 +115,58 @@ def cmd_device_sim(args) -> int:
 
     from duet.device.sim_server import SimulatedDevice
 
-    device = SimulatedDevice(robot_profile(args.robot))
+    device = SimulatedDevice(_robot(args))
     print(f"simulated device listening on ws://{args.host}:{args.port}")
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(device.serve(args.host, args.port))
+    return 0
+
+
+def cmd_sweep(args) -> int:
+    from duet.calibration import plan_sweep
+
+    robot = _robot(args)
+    beat = 1.0  # one strike per second at 60 bpm
+    events = [
+        {
+            "part": "robot",
+            "bar": int(t // 4) + 1,
+            "beat": t % 4 + 1,
+            "dur": beat,
+            "pitch": robot.notes[i].midi,
+            "vel": 100,
+        }
+        for t, i in plan_sweep(robot, interval_s=beat)
+    ]
+    score = DuetScore.model_validate(
+        {"meta": {"title": "Calibration sweep", "tempo_bpm": 60}, "events": events}
+    )
+    write_score(score, args.out)
+    print(f"play {args.out} on the rig and record it, then run: duet calibrate <recording>")
+    return 0
+
+
+def cmd_calibrate(args) -> int:
+    from duet.audio.io import load_audio
+    from duet.calibration import calibrate_from_sweep, first_onset
+
+    robot = _robot(args)
+    audio, sr = load_audio(args.recording)
+    first = args.first
+    if first is None:  # start the first window a little before the first strike is heard
+        heard = first_onset(audio, sr)
+        if heard is None:
+            print("the recording is silent", file=sys.stderr)
+            return 1
+        first = max(0.0, heard - 0.05)
+    result = calibrate_from_sweep(audio, sr, robot, first_s=first, interval_s=args.interval)
+    save_profile_file(result.profile, args.out)
+    for m in result.bottles:
+        if m.heard:
+            print(f"bottle {m.index + 1} {m.name}: {m.hz:.1f} Hz, latency {m.latency_ms:g} ms")
+    for warning in result.warnings:
+        print("warning: " + warning)
+    print(f"saved calibration v{result.profile.calibration.version} to {args.out}")
     return 0
 
 
@@ -150,7 +214,9 @@ def cmd_transcribe(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="duet", description=__doc__)
-    parser.add_argument("--robot", default="bottles-v1", help="robot instrument profile")
+    parser.add_argument(
+        "--robot", default="bottles-v1", help="robot profile id or calibrated .yaml file"
+    )
     parser.add_argument("--piano", default="piano-88", help="keyboard profile")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -192,6 +258,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--realtime", action="store_true", help="run the clock in real time")
     p.add_argument("--device", help="play on a device at this WebSocket URL")
     p.set_defaults(func=cmd_play)
+    p = sub.add_parser("sweep", help="write the calibration sweep score")
+    p.add_argument("out")
+    p.set_defaults(func=cmd_sweep)
+
+    p = sub.add_parser("calibrate", help="new robot profile from a sweep recording")
+    p.add_argument("recording")
+    p.add_argument("--out", default="calibrated.yaml")
+    p.add_argument("--first", type=float, help="seconds into the recording of the first strike")
+    p.add_argument("--interval", type=float, default=1.0)
+    p.set_defaults(func=cmd_calibrate)
+
     p = sub.add_parser("device-sim", help="run a simulated rig device on a WebSocket")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)

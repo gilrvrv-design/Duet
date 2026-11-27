@@ -60,6 +60,12 @@ class Sound(_Model):
     decay_ms: float = Field(gt=0)
 
 
+class CalibrationInfo(_Model):
+    version: int = Field(ge=1)
+    date: str  # ISO 8601
+    source: str = ""
+
+
 class RobotProfile(_Model):
     id: str
     kind: Literal["robot.mallet.monophonic"]
@@ -67,6 +73,7 @@ class RobotProfile(_Model):
     kinematics: Kinematics
     striker: Striker
     sound: Sound
+    calibration: CalibrationInfo | None = None
 
     @model_validator(mode="after")
     def _check_notes(self) -> RobotProfile:
@@ -122,6 +129,11 @@ def _parse(data: dict) -> Profile:
 
 def load_profile_file(path: str | Path) -> Profile:
     return _parse(yaml.safe_load(Path(path).read_text(encoding="utf-8")))
+
+
+def save_profile_file(profile: Profile, path: str | Path) -> None:
+    data = profile.model_dump(mode="json", exclude_none=True)
+    Path(path).write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
 @cache
