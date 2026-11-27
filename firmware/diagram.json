@@ -1,0 +1,314 @@
+{
+  "version": 1,
+  "author": "Duet",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-a4988",
+      "id": "drv",
+      "top": 0,
+      "left": 240,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-stepper-motor",
+      "id": "motor",
+      "top": -120,
+      "left": 380,
+      "attrs": {
+        "size": "17",
+        "display": "steps",
+        "arrow": "orange"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "solenoid",
+      "top": 200,
+      "left": 260,
+      "attrs": {
+        "color": "red",
+        "label": "solenoid (pin 32)"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_sol",
+      "top": 250,
+      "left": 180,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_home",
+      "top": 300,
+      "left": -200,
+      "attrs": {
+        "color": "yellow",
+        "label": "home sensor",
+        "key": "h"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_home",
+      "top": 260,
+      "left": -200,
+      "attrs": {
+        "value": "10000"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_estop",
+      "top": 380,
+      "left": -200,
+      "attrs": {
+        "color": "red",
+        "label": "E-STOP",
+        "key": "e"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_estop",
+      "top": 340,
+      "left": -200,
+      "attrs": {
+        "value": "10000"
+      }
+    },
+    {
+      "type": "wokwi-led-strip",
+      "id": "strip",
+      "top": 480,
+      "left": -200,
+      "attrs": {
+        "pixels": "176",
+        "pixelSize": "2020"
+      }
+    },
+    {
+      "type": "wokwi-logic-analyzer",
+      "id": "logic",
+      "top": 200,
+      "left": 420,
+      "attrs": {
+        "channelNames": "STEP,DIR,SOLENOID,D3,D4,D5,D6,D7"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "esp:TX",
+      "$serialMonitor:RX",
+      "",
+      []
+    ],
+    [
+      "esp:RX",
+      "$serialMonitor:TX",
+      "",
+      []
+    ],
+    [
+      "esp:25",
+      "drv:STEP",
+      "green",
+      []
+    ],
+    [
+      "esp:26",
+      "drv:DIR",
+      "blue",
+      []
+    ],
+    [
+      "esp:27",
+      "drv:ENABLE",
+      "orange",
+      []
+    ],
+    [
+      "drv:SLEEP",
+      "drv:RESET",
+      "gray",
+      []
+    ],
+    [
+      "drv:MS1",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "drv:MS2",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "drv:MS3",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "drv:VDD",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "drv:GND",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "drv:1B",
+      "motor:B-",
+      "black",
+      []
+    ],
+    [
+      "drv:1A",
+      "motor:B+",
+      "green",
+      []
+    ],
+    [
+      "drv:2A",
+      "motor:A+",
+      "blue",
+      []
+    ],
+    [
+      "drv:2B",
+      "motor:A-",
+      "red",
+      []
+    ],
+    [
+      "esp:32",
+      "r_sol:1",
+      "violet",
+      []
+    ],
+    [
+      "r_sol:2",
+      "solenoid:A",
+      "violet",
+      []
+    ],
+    [
+      "solenoid:C",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:34",
+      "r_home:2",
+      "yellow",
+      []
+    ],
+    [
+      "r_home:1",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "esp:34",
+      "btn_home:1.l",
+      "yellow",
+      []
+    ],
+    [
+      "btn_home:2.l",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:35",
+      "r_estop:2",
+      "orange",
+      []
+    ],
+    [
+      "r_estop:1",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "esp:35",
+      "btn_estop:1.l",
+      "orange",
+      []
+    ],
+    [
+      "btn_estop:2.l",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:13",
+      "strip:DIN",
+      "green",
+      []
+    ],
+    [
+      "strip:VDD",
+      "esp:5V",
+      "red",
+      []
+    ],
+    [
+      "strip:VSS",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "logic:D0",
+      "esp:25",
+      "green",
+      []
+    ],
+    [
+      "logic:D1",
+      "esp:26",
+      "blue",
+      []
+    ],
+    [
+      "logic:D2",
+      "esp:32",
+      "violet",
+      []
+    ],
+    [
+      "logic:GND",
+      "esp:GND.1",
+      "black",
+      []
+    ]
+  ],
+  "serialMonitor": {
+    "display": "terminal"
+  },
+  "dependencies": {}
+}

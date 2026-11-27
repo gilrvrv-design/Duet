@@ -1,0 +1,11 @@
+# Wokwi simulator project (VS Code extension or wokwi-cli). See WOKWI.md.
+[wokwi]
+version = 1
+firmware = '.pio/build/wokwi/firmware.bin'
+elf = '.pio/build/wokwi/firmware.elf'
+rfc2217ServerPort = 4000  # the serial port (log and fallback link) on localhost:4000
+
+# The Hub connects to the simulated rig exactly as to the real one: ws://localhost:8765
+[[net.forward]]
+from = "localhost:8765"
+to = "target:8765"
