@@ -55,6 +55,13 @@ With an acoustic piano, add `--mic` (needs `pip install sounddevice`); the liste
 duet play examples/rain-on-the-bottles.json --sim --wait --mic
 ```
 
+Jam in call and response: you play a two-bar phrase, the robot answers with a variation of it
+(`--midi-in` or `--mic` for a real piano; without them a simulated pianist plays):
+
+```bash
+duet jam --turns 4 --tempo 90
+```
+
 Grade a MIDI recording of the pianist part:
 
 ```bash

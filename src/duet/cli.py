@@ -130,6 +130,45 @@ def _keys(args):
     return None
 
 
+DEMO_PHRASES = [
+    [(0, 60), (1, 64), (2, 67), (4, 72)],
+    [(0, 67), (1, 65), (2, 64), (3, 62), (6, 60)],
+    [(0, 64), (0.5, 65), (1, 67), (3, 64)],
+    [(0, 72), (2, 67), (4, 64), (6, 60)],
+]
+
+
+def cmd_jam(args) -> int:
+    """Call and response: you play a phrase, the robot answers."""
+    from duet.device.clock import hub_now_us
+    from duet.pitch import midi_to_name as pitch_name
+    from duet.session import PhrasePianist, call_and_response
+
+    robot = _robot(args)
+    live = args.midi_in or args.mic is not None
+    keys = _keys(args) if live else PhrasePianist(DEMO_PHRASES, args.tempo)
+    rig = SimulatedRig(robot)
+    clock = RealClock() if live else VirtualClock(hub_now_us())
+    session = call_and_response(
+        robot,
+        keyboard_profile(args.piano),
+        [rig],
+        clock,
+        keys,
+        tempo_bpm=args.tempo,
+        bars_per_turn=args.bars,
+        turns=args.turns,
+    )
+    rig.run()
+    for i, turn in enumerate(session.turns, start=1):
+        heard = " ".join(pitch_name(n.pitch) for n in turn.phrase) or "(nothing)"
+        reply = " ".join(pitch_name(n.pitch) for n in turn.reply) or "(rest)"
+        wait_ms = (turn.reply_start_us - turn.pianist_end_us) / 1000
+        print(f"turn {i}: you {heard} -> robot {turn.kind}: {reply} ({wait_ms:.0f} ms later)")
+    print(f"faults: {len(rig.faults)}")
+    return 0 if not rig.faults else 1
+
+
 def cmd_grade(args) -> int:
     """Grade a recorded MIDI performance of the pianist part against the score."""
     from duet.listening import Expected, PlayedNote, grade
@@ -364,6 +403,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--model", default=None)
     p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser("jam", help="call and response: you play, the robot answers")
+    p.add_argument("--turns", type=int, default=4)
+    p.add_argument("--bars", type=int, default=2, help="bars per turn")
+    p.add_argument("--tempo", type=float, default=90)
+    p.add_argument("--midi-in", help="MIDI keyboard port (default: a simulated pianist)")
+    p.add_argument("--mic", nargs="?", const="default", help="listen to an acoustic piano")
+    p.set_defaults(func=cmd_jam, wait=False, follow=False)
 
     p = sub.add_parser("grade", help="grade a recorded pianist performance (MIDI)")
     p.add_argument("score")

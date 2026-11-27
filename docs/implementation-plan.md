@@ -76,3 +76,7 @@ tests/
 | 22b | Follow mode: score following and tempo coupling | FR-H3, FR-H5 | Robot follows a pianist who speeds up and slows down | Done (sequential follower; online DTW later if needed) |
 | 22c | Microphone input with robot self-filtering | FR-H1, FR-H2 | Acoustic piano notes graded while bottles ring | Done (synthesized piano and glass; no real microphone tested) |
 | 23 | Composition evaluation set and gate | §9.3 | Pass rate reported per prompt-pack change | Done (30 cases; not yet run against the live API) |
+| 24 | Call and response: capture the pianist's phrase, answer on the bottles within one beat, recall earlier motifs | FR-H6, FR-G1, FR-G3 | Answers start within a beat and stay playable | Done (answers 62 ms after the turn) |
+| 25 | Skill model, difficulty-targeted composition, lesson paths, "teach me this song" | FR-E1–E3, FR-A26 | A pianist's estimate moves with their results; paths step up |  |
+| 26 | Variations as edits and a library with versions, forks and search | FR-C8, FR-B1–B5 | "Easier" lowers difficulty; versions and forks are kept |  |
+| 27 | Copyright guard: public-domain list and melody similarity | FR-C5 | A copied melody is flagged; public-domain tunes pass |  |

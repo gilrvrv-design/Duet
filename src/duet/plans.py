@@ -43,14 +43,15 @@ class RobotPlan:
     preroll_s: float  # time needed before bar 1 to reach the first bottle from home
 
 
-def robot_plan(score: DuetScore, profile: RobotProfile) -> RobotPlan:
+def robot_plan(score: DuetScore, profile: RobotProfile, start_steps: int = HOME_STEPS) -> RobotPlan:
+    """``start_steps``: where the carriage is now (home, or where the last piece ended)."""
     report = check_robot(score, profile)
     if not report.ok:
         raise InfeasibleScoreError(report.feedback())
     strikes, _ = robot_strikes(score, profile)
     latency = profile.striker.latency_ms / 1000
     commands = []
-    position = HOME_STEPS
+    position = start_steps
     for strike in strikes:
         target = profile.notes[strike.bottle].steps
         move = move_time_s(position, target, profile.kinematics)

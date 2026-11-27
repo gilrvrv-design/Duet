@@ -50,11 +50,16 @@ class RepairResult:
 
 
 def repair_robot(
-    score: DuetScore, profile: RobotProfile, margin_s: float = DEFAULT_MARGIN_S
+    score: DuetScore,
+    profile: RobotProfile,
+    margin_s: float = DEFAULT_MARGIN_S,
+    keep_tempo: bool = False,
 ) -> RepairResult:
+    """``keep_tempo``: never slow down (for live sessions); drop or shift notes instead."""
     robot_notes = sum(e.part == "robot" for e in score.events)
     result = _repair_once(score, profile, margin_s)
-    if robot_notes and result.count("drop") / robot_notes > MAX_DROP_RATIO:
+    too_many_dropped = robot_notes and result.count("drop") / robot_notes > MAX_DROP_RATIO
+    if too_many_dropped and not keep_tempo:
         slower = _slower_tempo(score, profile, margin_s)
         if slower is not None and slower < score.meta.tempo_bpm:
             retry = _repair_once(score.with_tempo(slower), profile, margin_s)

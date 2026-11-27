@@ -13,7 +13,7 @@ from typing import Protocol
 
 from duet.device.clock import hub_now_us
 from duet.listening import KeyInput
-from duet.plans import LedCue, led_plan, robot_plan
+from duet.plans import HOME_STEPS, LedCue, led_plan, robot_plan
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import Home, LedFrameAt, Message, MoveAt, StrikeAt, message_time_us
 from duet.score import DuetScore
@@ -81,6 +81,7 @@ class Performance:
     played: list = field(default_factory=list)  # what the pianist played, if heard
     follow_matches: list = field(default_factory=list)  # follow mode: (score us, clock us)
     final_rate: float = 1.0  # follow mode: clock time per score time at the end
+    end_steps: int = 0  # where the carriage is when the piece ends
 
     def expected_pianist(self):
         from duet.listening import Expected
@@ -88,18 +89,30 @@ class Performance:
         return [Expected(p.t_us, p.pitch, p.bar) for p in self.planned if p.part == "pianist"]
 
 
+def home_all(devices: list[Device], timeout_s: float = 30.0) -> None:
+    """Home every device and wait until each reports it is homed (FR-R5)."""
+    for device in devices:
+        device.send(Home())
+    for device in devices:  # a real carriage takes time to find home
+        wait_ready = getattr(device, "wait_ready", None)
+        if wait_ready is not None:
+            wait_ready(timeout_s)
+
+
 def build_messages(
     score: DuetScore,
     robot: RobotProfile,
     keyboard: KeyboardProfile,
     start_us: int,
+    start_steps: int = HOME_STEPS,
+    count_in: bool = True,
 ) -> tuple[list[Message], list[PlannedNote]]:
     """All device messages for one performance, sorted by time."""
 
     def us(seconds: float) -> int:
         return start_us + round(seconds * 1_000_000)
 
-    plan = robot_plan(score, robot)
+    plan = robot_plan(score, robot, start_steps)
     kin = robot.kinematics
     spb = seconds_per_beat(score.meta.tempo_bpm)
     messages: list[Message] = []
@@ -112,7 +125,7 @@ def build_messages(
         messages.append(StrikeAt(us(cmd.fire_s), cmd.pulse_us))
         bar = 1 + int(cmd.sound_s / spb // score.meta.beats_per_bar)
         planned.append(PlannedNote("robot", us(cmd.sound_s), robot.pitches[cmd.bottle], bar))
-    for cue in led_plan(score, keyboard):
+    for cue in led_plan(score, keyboard, count_in_bars=1 if count_in else 0):
         messages.extend(_led_messages(cue, us))
     planned += [
         PlannedNote("pianist", us(t.start_s), t.event.pitch, t.event.bar)
@@ -141,25 +154,35 @@ def perform(
     homing_timeout_s: float = 30.0,
     keys: KeyInput | None = None,
     mode: str = "wait",
+    home: bool = True,
+    count_in: bool = True,
+    start_steps: int = HOME_STEPS,
+    start_at_us: int | None = None,
 ) -> Performance:
     """Play a score: home, count in, then stream messages ``lookahead_s`` ahead of time.
 
     With ``keys``: in "wait" mode the performance pauses at every pianist note until the
     pianist plays it, and everything after shifts by the wait; in "follow" mode the robot
     follows the pianist's tempo.
+
+    For back-to-back pieces (call and response), pass ``home=False``, ``count_in=False``,
+    the carriage position the last piece ended at, and when to start.
     """
     perf = Performance()
     perf.states.append(State.PREPARING)
-    for device in devices:
-        device.send(Home())
-    for device in devices:  # a real carriage takes time to find home (FR-R5)
-        wait_ready = getattr(device, "wait_ready", None)
-        if wait_ready is not None:
-            wait_ready(homing_timeout_s)
-    count_in_s = score.meta.beats_per_bar * seconds_per_beat(score.meta.tempo_bpm)
-    preroll = robot_plan(score, robot).preroll_s
-    perf.start_us = clock.now_us() + round((buffer_s + max(count_in_s, preroll)) * 1_000_000)
-    messages, perf.planned = build_messages(score, robot, keyboard, perf.start_us)
+    if home:
+        home_all(devices, homing_timeout_s)
+        start_steps = HOME_STEPS
+    plan = robot_plan(score, robot, start_steps)
+    count_in_s = (
+        score.meta.beats_per_bar * seconds_per_beat(score.meta.tempo_bpm) if count_in else 0
+    )
+    earliest = clock.now_us() + round((buffer_s + max(count_in_s, plan.preroll_s)) * 1_000_000)
+    perf.start_us = earliest if start_at_us is None else max(start_at_us, earliest)
+    perf.end_steps = plan.commands[-1].target_steps if plan.commands else start_steps
+    messages, perf.planned = build_messages(
+        score, robot, keyboard, perf.start_us, start_steps, count_in
+    )
 
     perf.states.append(State.COUNT_IN)
     sender = _Sender(devices, keys, perf, robot)
