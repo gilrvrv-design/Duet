@@ -49,6 +49,12 @@ Or in follow mode, where the robot keeps your tempo (here a simulated pianist pl
 duet play examples/rain-on-the-bottles.json --sim --follow --stretch 1.1
 ```
 
+With an acoustic piano, add `--mic` (needs `pip install sounddevice`); the listener ignores the bottles:
+
+```bash
+duet play examples/rain-on-the-bottles.json --sim --wait --mic
+```
+
 Grade a MIDI recording of the pianist part:
 
 ```bash

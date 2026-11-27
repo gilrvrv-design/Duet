@@ -162,8 +162,9 @@ def perform(
     messages, perf.planned = build_messages(score, robot, keyboard, perf.start_us)
 
     perf.states.append(State.COUNT_IN)
+    sender = _Sender(devices, keys, perf, robot)
     if keys is not None and mode == "follow":
-        return _follow(perf, messages, score, robot, devices, clock, keys)
+        return _follow(perf, messages, score, robot, sender, clock, keys)
     gates = _gates(perf.planned) if keys is not None else []
     shifts: list[tuple[int, int]] = []  # (original gate time, total delay from then on)
     delay = 0
@@ -186,11 +187,7 @@ def perform(
         if not playing and clock.now_us() >= perf.start_us - lookahead_us:
             perf.states.append(State.PLAYING)
             playing = True
-        if delay:
-            msg = replace(msg, t_us=t)
-        for device in devices:
-            device.send(msg)
-        perf.messages_sent += 1
+        sender.send(replace(msg, t_us=t) if delay else msg)
     if not playing:
         perf.states.append(State.PLAYING)
     perf.waited_us = delay
@@ -201,11 +198,33 @@ def perform(
     return perf
 
 
+class _Sender:
+    """Sends to every device, and tells a listening key input when the robot will sound,
+    so a microphone can tell the bottles from the piano (FR-H2)."""
+
+    def __init__(self, devices, keys, perf: Performance, robot: RobotProfile) -> None:
+        self.devices = devices
+        self.perf = perf
+        self.hook = getattr(keys, "robot_strike", None)
+        self.pitches = [p.pitch for p in perf.planned if p.part == "robot"]
+        self.latency_us = round(robot.striker.latency_ms * 1000)
+        self.strikes = 0
+
+    def send(self, msg: Message) -> None:
+        for device in self.devices:
+            device.send(msg)
+        self.perf.messages_sent += 1
+        if isinstance(msg, StrikeAt):
+            if self.hook is not None and self.strikes < len(self.pitches):
+                self.hook(msg.t_us + self.latency_us, self.pitches[self.strikes])
+            self.strikes += 1
+
+
 EARLY_PRESS_US = 300_000  # a key pressed this soon before its cue still counts
 FOLLOW_LOOKAHEAD_US = 150_000  # short, so tempo changes reach the robot quickly
 
 
-def _follow(perf, messages, score, robot, devices, clock, keys) -> Performance:
+def _follow(perf, messages, score, robot, sender, clock, keys) -> Performance:
     """Follow mode: every command is timed through the follower's current tempo map."""
     from duet.follow import Follower, max_speed_up
 
@@ -246,9 +265,7 @@ def _follow(perf, messages, score, robot, devices, clock, keys) -> Performance:
         t = max(clock.now_us(), when(msg))
         if isinstance(msg, MoveAt):
             arrival = t + lead_of[msg.seq][1]
-        for device in devices:
-            device.send(replace(msg, t_us=t))
-        perf.messages_sent += 1
+        sender.send(replace(msg, t_us=t))
     perf.played = list(keys.played)
     perf.follow_matches = list(follower.matches)
     perf.final_rate = follower.rate

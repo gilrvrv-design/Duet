@@ -58,6 +58,9 @@ class Striker(_Model):
 
 class Sound(_Model):
     decay_ms: float = Field(gt=0)
+    # Overtones as multiples of the fundamental. Struck glass is not harmonic; the
+    # listener masks these while a bottle rings (FR-H2).
+    partials: tuple[float, ...] = (1.0, 2.0, 3.0)
 
 
 class CalibrationInfo(_Model):

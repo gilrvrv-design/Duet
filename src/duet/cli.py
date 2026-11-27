@@ -84,7 +84,8 @@ def cmd_play(args) -> int:
         return 2
     rig = SimulatedRig(robot)
     keys = _keys(args)
-    clock = RealClock() if args.realtime or args.midi_in else VirtualClock()
+    live = args.midi_in or args.mic is not None
+    clock = RealClock() if args.realtime or live else VirtualClock()
     mode = "follow" if args.follow else "wait"
     perf = perform(score, robot, keyboard_profile(args.piano), [rig], clock, keys=keys, mode=mode)
     rig.run()
@@ -107,6 +108,11 @@ def cmd_play(args) -> int:
 
 def _keys(args):
     """Wait and follow modes need someone at the keys: a MIDI keyboard or a simulated pianist."""
+    if args.mic is not None:
+        from duet.mic import MicKeys, MicListener, SoundDeviceSource
+
+        device = None if args.mic == "default" else args.mic
+        return MicKeys(MicListener(22050, robot=_robot(args)), SoundDeviceSource(device=device))
     if args.midi_in:
         import mido
 
@@ -345,6 +351,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--follow", action="store_true", help="follow mode: robot keeps your tempo")
     p.add_argument("--stretch", type=float, default=1.1, help="simulated pianist tempo factor")
     p.add_argument("--midi-in", help="MIDI keyboard port (default: a simulated pianist)")
+    p.add_argument(
+        "--mic", nargs="?", const="default", help="listen to an acoustic piano (input device)"
+    )
     p.add_argument("--reaction", type=float, default=0.3, help="simulated pianist delay (s)")
     p.set_defaults(func=cmd_play)
     p = sub.add_parser("eval", help="run the composition evaluation set (calls Claude)")

@@ -74,5 +74,5 @@ tests/
 | 21 | Calibration: bottle positions, measured pitch, strike latency | §5.11 | Recorded strikes update the profile | Done (tested on synthesized recordings) |
 | 22 | Listening engine: MIDI input, hit grading, wait mode | §5.6 | Recorded performance graded correctly | Done (MIDI path; real keyboard not tested here) |
 | 22b | Follow mode: score following and tempo coupling | FR-H3, FR-H5 | Robot follows a pianist who speeds up and slows down | Done (sequential follower; online DTW later if needed) |
-| 22c | Microphone input with robot self-filtering | FR-H1, FR-H2 | Acoustic piano notes graded while bottles ring |
+| 22c | Microphone input with robot self-filtering | FR-H1, FR-H2 | Acoustic piano notes graded while bottles ring | Done (synthesized piano and glass; no real microphone tested) |
 | 23 | Composition evaluation set and gate | §9.3 | Pass rate reported per prompt-pack change | Done (30 cases; not yet run against the live API) |

@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 llm = ["anthropic>=2.14"]
 audio = ["librosa>=0.10", "soundfile>=0.12"]
+mic = ["sounddevice>=0.4"]
 api = ["fastapi>=0.110", "python-multipart>=0.0.9", "uvicorn>=0.29", "httpx>=0.27"]
 dev = ["pytest>=8", "pytest-timeout>=2.3", "ruff>=0.6"]
 
