@@ -16,3 +16,6 @@ test:
 	pytest
 
 check: lint test
+
+install-llm:
+	uv pip install -q -e ".[dev,llm]"

@@ -76,6 +76,22 @@ def cmd_play(args) -> int:
     return 0 if not rig.faults and len(rig.sounds) == len(planned) else 1
 
 
+def cmd_compose(args) -> int:
+    from duet.compose import CompositionRequest, compose
+    from duet.compose.claude import ClaudeComposer
+
+    request = CompositionRequest(
+        prompt=args.prompt, difficulty=args.difficulty, bars=args.bars, lead=args.lead
+    )
+    result = compose(request, ClaudeComposer(model=args.model))
+    write_score(result.score, args.out)
+    print(f"{result.score.meta.title}: {result.score.bar_count} bars in {result.rounds} round(s)")
+    print(result.explanation)
+    for warning in result.warnings:
+        print("warning: " + warning)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="duet", description=__doc__)
     parser.add_argument("--robot", default="bottles-v1", help="robot instrument profile")
@@ -95,6 +111,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("score")
     p.add_argument("out")
     p.set_defaults(func=cmd_convert)
+
+    p = sub.add_parser("compose", help="write a duet from a text request (needs Claude)")
+    p.add_argument("prompt")
+    p.add_argument("out", help="output .json or .mid")
+    p.add_argument("--difficulty", type=int, default=2)
+    p.add_argument("--bars", type=int, default=8)
+    p.add_argument("--lead", choices=["robot", "pianist"], default="robot")
+    p.add_argument("--model", default=None, help="Claude model id (default: DUET_MODEL or Opus)")
+    p.set_defaults(func=cmd_compose)
 
     p = sub.add_parser("play", help="perform a score")
     p.add_argument("score")
