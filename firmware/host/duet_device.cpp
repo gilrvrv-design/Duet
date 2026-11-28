@@ -73,6 +73,13 @@ struct SocketSink : duet::Sink {
   void send(const char* json) override { send_line(json); }
 };
 
+int bound_port(int fd) {
+  sockaddr_in addr{};
+  socklen_t len = sizeof addr;
+  getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len);
+  return ntohs(addr.sin_port);
+}
+
 int listen_on(int port) {
   int fd = socket(AF_INET, SOCK_STREAM, 0);
   int yes = 1;
@@ -85,9 +92,7 @@ int listen_on(int port) {
     std::perror("duet_device");
     std::exit(1);
   }
-  socklen_t len = sizeof addr;
-  getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len);
-  std::printf("listening %d\n", ntohs(addr.sin_port));
+  std::printf("listening %d\n", bound_port(fd));
   std::fflush(stdout);
   return fd;
 }
@@ -146,6 +151,7 @@ int main(int argc, char** argv) {
   hal.now_us = now_us();
   hal.place(start_steps);
   int server = listen_on(port);
+  api.set_link("tcp://127.0.0.1:" + std::to_string(bound_port(server)));
   std::printf("http %d\n", http.listen_on(http_port));
   std::fflush(stdout);
 

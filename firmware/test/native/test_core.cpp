@@ -488,7 +488,7 @@ static void test_the_api_reports_the_device_and_plays_its_songs() {
   CHECK(info.body.find(R"({"hello":{"type":"hello")") == 0);  // as the Hub hears it
   CHECK(info.body.find(R"("features":["play_button"])") != std::string::npos);
   CHECK(info.body.find(R"("kind":"midi_out")") != std::string::npos);
-  CHECK(info.body.find(R"("state":"idle","slot":-1,"estopped":false,"network":"station"})") != std::string::npos);
+  CHECK(info.body.find(R"("state":"idle","slot":-1,"estopped":false,"network":"station","link":""})") != std::string::npos);
 
   CHECK(api.handle("GET", "/api/songs", "", 0).body == R"({"slots":8,"songs":[]})");
   upload(r, 2);

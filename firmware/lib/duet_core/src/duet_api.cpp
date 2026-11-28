@@ -175,10 +175,10 @@ Response Api::info() const {
                   device_.config());
     body += (ch ? "," : "") + std::string(buf);
   }
-  std::snprintf(buf, sizeof buf, "],\"state\":\"%s\",\"slot\":%d,\"estopped\":%s,\"network\":\"%s\"}",
+  std::snprintf(buf, sizeof buf, "],\"state\":\"%s\",\"slot\":%d,\"estopped\":%s,\"network\":\"%s\"",
                 device_.state_name(), device_.slot(), device_.estopped() ? "true" : "false",
                 network_ == Network::Setup ? "setup" : "station");
-  return {200, body + buf};
+  return {200, body + buf + ",\"link\":" + json_string(link_) + "}"};
 }
 
 Response Api::settings() const {

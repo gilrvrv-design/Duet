@@ -268,14 +268,117 @@ function duetRow(url, duet) {
   meta.className = "meta";
   meta.textContent = `${duet.bars} bars · level ${duet.difficulty}`;
   name.append(meta);
-  const put = document.createElement("button");
-  put.type = "button";
-  put.className = "secondary";
-  put.textContent = "Put on the rig";
-  put.setAttribute("aria-label", `Put ${duet.title} on the rig`);
-  put.addEventListener("click", () => putOnRig(url, duet));
-  li.append(name, put);
+  const put = button("Put on the rig", `Put ${duet.title} on the rig`, () => putOnRig(url, duet));
+  const practise = button("Practise", `Practise ${duet.title}`, () => choosePractice(url, duet));
+  const buttons = document.createElement("div");
+  buttons.className = "buttons";
+  buttons.append(practise, put);
+  li.append(name, buttons);
   return li;
+}
+
+function button(text, label, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "secondary";
+  b.textContent = text;
+  b.setAttribute("aria-label", label);
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+// Practice ------------------------------------------------------------------------
+// The server plays the duet on this rig, live, while it listens to the pianist through
+// an input on its own machine (docs/device-api.md, "Practice").
+
+let practice = null;  // {url, duet, view}: the practice chosen, and as the server last said
+
+const PRACTICE_STATES = {
+  connecting: "Connecting to the rig…",
+  playing: "Playing",
+  done: "Done",
+  stopped: "Stopped",
+  failed: "Could not play",
+};
+
+async function choosePractice(url, duet) {
+  if (practice?.view && !over(practice.view)) return;  // one at a time
+  practice = { url, duet, view: null };
+  $("practice").hidden = false;
+  $("practice-title").textContent = duet.title;
+  $("practice-status").textContent = "";
+  $("practice-result").hidden = true;
+  const { inputs } = await (await fetch(`${url}/v1/live/inputs`)).json();
+  $("practice-input").replaceChildren(
+    ...inputs.map((name) => {
+      const option = document.createElement("option");
+      option.value = option.textContent = name;
+      return option;
+    }),
+  );
+  const listens = inputs.length > 0;
+  $("practice-input").disabled = !listens;
+  for (const mode of ["wait", "follow"])
+    $("practice-mode").querySelector(`[value=${mode}]`).disabled = !listens;
+  if (!listens) $("practice-mode").value = "play";
+  $("practice-note").hidden = listens;
+  $("practice-note").textContent =
+    "This server has no MIDI keyboard or microphone, so it can only play together with you.";
+  $("practice").scrollIntoView({ block: "nearest" });
+}
+
+function over(view) {
+  return ["done", "stopped", "failed"].includes(view.state);
+}
+
+function showPractice(view) {
+  practice.view = view;
+  const mode = $("practice-mode").querySelector(`[value=${view.mode}]`).textContent;
+  $("practice-status").textContent =
+    view.state === "playing" ? `${PRACTICE_STATES.playing}: ${mode}` : PRACTICE_STATES[view.state];
+  $("practice-result").textContent = view.detail;
+  $("practice-result").hidden = !view.detail;
+  $("practice-start").hidden = !over(view);
+  $("practice-stop").hidden = over(view);
+}
+
+async function startPractice() {
+  const { url, duet } = practice;
+  const mode = $("practice-mode").value;
+  const reply = await fetch(`${url}/v1/live`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      duet_id: duet.id,
+      rig: shown.state.link,
+      profile: shown.state.hello.profile,
+      mode,
+      input: mode === "play" ? null : $("practice-input").value,
+    }),
+  });
+  const answer = await reply.json();
+  if (!reply.ok) {
+    say(`The server could not start it: ${answer.detail}`);
+    return;
+  }
+  say("");
+  showPractice(answer);
+}
+
+async function stopPractice() {
+  const { url, view } = practice;
+  showPractice(await (await fetch(`${url}/v1/live/${view.id}/stop`, { method: "POST" })).json());
+}
+
+// While a practice plays, the page follows it with every refresh.
+async function followPractice() {
+  if (!practice?.view || over(practice.view)) return;
+  const { url, view } = practice;
+  try {
+    showPractice(await (await fetch(`${url}/v1/live/${view.id}`)).json());
+  } catch {
+    $("practice-status").textContent = `${url} stopped answering.`;
+  }
 }
 
 // The slots to put a song into: the first free one is chosen.
@@ -398,6 +501,7 @@ async function refresh() {
     showSongs(songs.songs);
     shown.songs = songsKey;
   }
+  await followPractice();
   if (shown.state === null) showBoard(info);
   if (shown.state?.network !== info.network) placeSettings(info.network === "setup");
   shown.state = info;
@@ -407,6 +511,8 @@ async function refresh() {
 $("estop").addEventListener("click", () => command("/api/estop"));
 $("stop").addEventListener("click", () => command("/api/stop"));
 $("settings-form").addEventListener("submit", saveSettings);
+$("practice-start").addEventListener("click", startPractice);
+$("practice-stop").addEventListener("click", stopPractice);
 $("song-file").addEventListener("change", (event) => loadSongFile(event.target));
 $("wifi-ssid").addEventListener("input", showPasswordHint);
 refresh();

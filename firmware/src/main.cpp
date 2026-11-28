@@ -249,6 +249,12 @@ void start_network() {
 #endif
 }
 
+// How a Hub reaches this rig, for the page to tell a server (/api/info "link").
+void announce_link() {
+  IPAddress ip = setup_network && WiFi.status() != WL_CONNECTED ? WiFi.softAPIP() : WiFi.localIP();
+  api.set_link(std::string("ws://") + ip.toString().c_str() + ":" + std::to_string(WS_PORT));
+}
+
 void leave_setup_network_once_joined() {
   if (!setup_network || WiFi.status() != WL_CONNECTED) return;
   dns.stop();
@@ -256,6 +262,7 @@ void leave_setup_network_once_joined() {
   WiFi.mode(WIFI_STA);
   setup_network = false;
   api.set_network(duet::Network::Station);
+  announce_link();
   Serial.printf("duet: joined; the app on http://%s.local\n", DEVICE_ID);
 }
 
@@ -268,6 +275,7 @@ void setup() {
   pinMode(PIN_PLAY, INPUT_PULLUP);
   if (!songs.begin_fs()) Serial.println("duet: flash storage failed; songs cannot be stored");
   start_network();
+  announce_link();
   MDNS.begin(DEVICE_ID);
   MDNS.addService("duet", "tcp", WS_PORT);  // the Hub finds the rig as _duet._tcp
   MDNS.addService("http", "tcp", HTTP_PORT);

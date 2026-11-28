@@ -109,6 +109,14 @@ select {
   font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
   border-radius: 8px; padding: 0.35rem 0.5rem;
 }
+.buttons { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+.songs .buttons { margin-top: 0; }
+.practice-title { margin: 0.5rem 0 0; font-weight: 600; }
+#practice-status { margin: 0.75rem 0 0; }
+#practice-result {
+  margin: 0.5rem 0 0; padding: 0.6rem; border-radius: 8px; background: var(--bg);
+  white-space: pre-wrap; font: inherit; font-size: 0.9rem;
+}
 .songs .meta { display: block; color: var(--muted); font-size: 0.85rem; }
 
 form { display: grid; gap: 0.9rem; margin-top: 0.75rem; }
@@ -135,3 +143,4 @@ ul { list-style: none; margin: 0.75rem 0 0; padding: 0; }
 .abilities li[data-missing] .mark { color: var(--off); }
 label.inline { max-width: 100%; }
 label.inline select { flex: 1 1 auto; min-width: 0; }
+.songs .buttons button { white-space: nowrap; }

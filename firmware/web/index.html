@@ -46,6 +46,26 @@
       <ul id="duets" class="songs"></ul>
     </section>
 
+    <section id="practice" hidden>
+      <h2>Practice</h2>
+      <p id="practice-title" class="practice-title"></p>
+      <label class="inline">Mode
+        <select id="practice-mode">
+          <option value="play">Play together</option>
+          <option value="wait">Wait for me</option>
+          <option value="follow">Follow me</option>
+        </select>
+      </label>
+      <label class="inline">Listen with <select id="practice-input"></select></label>
+      <p id="practice-note" class="hint" hidden></p>
+      <div class="buttons">
+        <button id="practice-start" type="button">Start</button>
+        <button id="practice-stop" class="secondary" type="button" hidden>Stop</button>
+      </div>
+      <p id="practice-status" role="status"></p>
+      <pre id="practice-result" hidden></pre>
+    </section>
+
     <section>
       <h2>This board</h2>
       <ul id="abilities" class="abilities"></ul>

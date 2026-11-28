@@ -51,7 +51,7 @@ for people: it shows what the device is, and it plays the songs stored on it.
 
 | Request | Answer |
 |---|---|
-| `GET /api/info` | `{"hello":{..},"channels":[..],"state":"idle"\|"homing"\|"playing","slot":k,"estopped":bool,"network":"station"\|"setup"}`. `hello` and `channels` are the messages the Hub hears on connecting. `slot` is the song playing or last played (-1 before any). `network` is `setup` while the board serves its setup network. |
+| `GET /api/info` | `{"hello":{..},"channels":[..],"state":"idle"\|"homing"\|"playing","slot":k,"estopped":bool,"network":"station"\|"setup","link":".."}`. `hello` and `channels` are the messages the Hub hears on connecting. `slot` is the song playing or last played (-1 before any). `network` is `setup` while the board serves its setup network. `link` is how a Hub reaches the rig: `ws://<its address>:8765` on the ESP32, the serial link's `tcp://` address on the native device. |
 | `GET /api/songs` | `{"slots":8,"songs":[{"slot":k,"title":".."},..]}`: the slots that hold a song, and its title |
 | `PUT /api/songs/<k>` | Store a song in slot *k*. The body is a song file (below). A bad line refuses the whole song, `400 {"error":"bad song line 12"}`, and the old song stays. Refused (409) while the rig plays, or while the Hub is storing a song. |
 | `PUT /api/songs/<k>/midi?title=..` | On a board with the planner module: plan a MIDI file (the body, at most 32 KB) into slot *k*, as the Hub would (below). Answers `{"ok":true,"warnings":[..]}` (what the import ignored), or why not: `400` (not a MIDI file the device reads), `422` (the Hub refuses that score too, say a key off the keyboard). Without the module: `404 {"error":"this board has no MIDI planner"}`. |
@@ -106,6 +106,25 @@ encryption (with flash encryption) would close that gap; it is not enabled.
 
 The native device keeps settings in RAM and starts with none (`network` is `setup`).
 Saving a network stands for the restart that joins it.
+
+## Practice
+
+A server can also play a library duet on the rig live, while it listens to the pianist:
+- **Play together:** the bot plays in time.
+- **Wait for me:** the bot waits for each of the pianist's notes.
+- **Follow me:** the bot keeps the pianist's tempo.
+
+The listening needs a MIDI keyboard or a microphone on the **server's** machine. A page
+served over plain `http://` cannot use the browser's own microphone or MIDI. The server
+lists what it has (`GET /v1/live/inputs`); a server with neither can only play together.
+
+On "Practise" the page asks the server to start (`POST /v1/live`). It sends the duet, the
+mode, the input, and how to reach this rig: `link` from `/api/info`. The server connects
+to the rig over that link and plays (`duet.live`). The page follows it
+(`GET /v1/live/{id}`), and at the end shows how long the bot waited, or how it followed,
+and the grade of what was heard. Stop (`POST /v1/live/{id}/stop`) ends it and the rig
+goes quiet: the protocol's `stop` clears what the Hub has queued. A server runs one
+practice at a time, as a rig takes one Hub at a time.
 
 ## The native device
 

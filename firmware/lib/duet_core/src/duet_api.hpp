@@ -3,8 +3,9 @@
 // socket); every answer is decided here, so all boards answer alike.
 //
 //   GET  /api/info                {"hello":{..},"channels":[{..},..],"state":..,"slot":..,
-//                                  "estopped":..,"network":"station"|"setup"}: hello and
-//                                  channels as the Hub hears them
+//                                  "estopped":..,"network":"station"|"setup","link":..}:
+//                                  hello and channels as the Hub hears them; link: how a
+//                                  Hub reaches the rig (ws://ip:port or tcp://ip:port)
 //   GET  /api/songs               {"slots":8,"songs":[{"slot":k,"title":".."},..]}
 //   PUT  /api/songs/<k>           store a song in slot k. The body is a song file: its
 //                                 title line {"title":".."}, then one timed command per
@@ -68,6 +69,7 @@ class Api {
   Api(Device& device, SettingsStore& settings) : device_(device), settings_(settings) {}
 
   void set_network(Network network) { network_ = network; }
+  void set_link(const std::string& link) { link_ = link; }  // as the board serves it
   void install_planner(Planner& planner) { planner_ = &planner; }
   Response handle(const char* method, const char* path, const char* body, int64_t now_us);
 
@@ -92,6 +94,7 @@ class Api {
   Device& device_;
   SettingsStore& settings_;
   Network network_ = Network::Station;
+  std::string link_;
   Planner* planner_ = nullptr;  // none installed
 
   // The song being uploaded through the API: a song file, or a MIDI file to plan.

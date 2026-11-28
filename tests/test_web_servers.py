@@ -11,6 +11,7 @@ import uvicorn
 from playwright.sync_api import expect
 
 from duet.api.app import create_app
+from duet.listening import SimulatedPianist
 from duet.storage import MemoryStore
 from helpers import ROOT
 
@@ -24,8 +25,10 @@ def free_port() -> int:
 class LibraryServer:
     """The real server app, with the example duets in its library."""
 
-    def __init__(self) -> None:
-        app = create_app(store=MemoryStore(), examples_dir=ROOT / "examples")
+    def __init__(self, live_inputs=None) -> None:
+        app = create_app(
+            store=MemoryStore(), examples_dir=ROOT / "examples", live_inputs=live_inputs or {}
+        )
         self.url = f"http://127.0.0.1:{free_port()}"
         port = int(self.url.rsplit(":", 1)[1])
         self._server = uvicorn.Server(uvicorn.Config(app, port=port, log_level="warning"))
@@ -145,3 +148,57 @@ def test_a_server_that_goes_away(page, device):
         "No server can be reached. The rig still plays the songs stored on it."
     )
     assert device.api("GET", "/api/songs")[1]["songs"] == []
+
+
+# Practice: the server plays a duet on the rig, live, listening to the pianist ----------
+
+PIANIST = "Simulated pianist"
+
+
+@pytest.fixture
+def listening():
+    """A library server that hears the pianist (here a simulated one)."""
+    server = LibraryServer({PIANIST: lambda _robot: SimulatedPianist(reaction_s=0.2)})
+    yield server.url
+    server.stop()
+
+
+def poll_until(page, locator, text, timeout_s=60):
+    deadline = time.monotonic() + timeout_s
+    while text not in (locator.text_content() or ""):
+        assert time.monotonic() < deadline, f"no {text!r}: {locator.text_content()!r}"
+        page.clock.run_for(1000)  # the page follows the practice with each refresh
+        time.sleep(0.2)
+
+
+def test_practise_with_the_rig_waiting_for_me(page, device, listening):
+    use_servers(device, listening)
+    page.goto(device.http_url)
+    page.get_by_role("button", name="Practise Rain on the Bottles").click()
+    expect(page.locator("#practice-title")).to_have_text("Rain on the Bottles")
+    expect(page.locator("#practice-input")).to_have_value(PIANIST)
+    page.locator("#practice-mode").select_option("wait")
+    page.get_by_role("button", name="Start").click()
+    poll_until(page, page.locator("#practice-status"), "Done")
+    result = page.locator("#practice-result").text_content()
+    assert result.startswith("waited ") and "notes" in result  # how long, and the grade
+    expect(page.get_by_role("button", name="Start")).to_be_visible()  # ready to go again
+
+
+def test_stop_a_practice(page, device, listening):
+    use_servers(device, listening)
+    page.goto(device.http_url)
+    page.get_by_role("button", name="Practise Rain on the Bottles").click()
+    page.get_by_role("button", name="Start").click()  # play together
+    poll_until(page, page.locator("#practice-status"), "Playing: Play together")
+    page.get_by_role("button", name="Stop", exact=True).last.click()
+    poll_until(page, page.locator("#practice-status"), "Stopped")
+
+
+def test_a_server_that_cannot_listen_only_plays_together(page, device, library):
+    use_servers(device, library)
+    page.goto(device.http_url)
+    page.get_by_role("button", name="Practise Rain on the Bottles").click()
+    expect(page.locator("#practice-note")).to_contain_text("can only play together")
+    expect(page.locator("#practice-mode option[value=wait]")).to_be_disabled()
+    expect(page.locator("#practice-mode")).to_have_value("play")
