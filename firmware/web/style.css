@@ -89,6 +89,19 @@ button.secondary { background: transparent; color: var(--accent); }
 .servers li[data-state="up"] .dot { background: var(--ok); }
 .servers li[data-state="failing"] .dot { background: var(--danger); }
 .servers .detail { color: var(--muted); font-size: 0.85rem; margin-left: auto; flex: none; }
+.load {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 0.75rem; margin-top: 0.75rem;
+}
+.load label.inline { margin-top: 0; }
+label.file {
+  font-weight: 400; cursor: pointer; border-radius: 8px; padding: 0.45rem 1rem;
+  border: 1px solid var(--accent); color: var(--accent);
+}
+label.file input {
+  position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden;
+}
+label.file:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
 label.inline {
   display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; white-space: nowrap;
 }
@@ -120,3 +133,5 @@ ul { list-style: none; margin: 0.75rem 0 0; padding: 0; }
 .abilities .mark { flex: none; width: 1.2rem; text-align: center; color: var(--ok); }
 .abilities li[data-missing] { color: var(--muted); }
 .abilities li[data-missing] .mark { color: var(--off); }
+label.inline { max-width: 100%; }
+label.inline select { flex: 1 1 auto; min-width: 0; }

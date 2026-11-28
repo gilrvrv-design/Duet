@@ -39,8 +39,12 @@ flowchart LR
   the app checks each configured server's `/v1/health` when it starts.
 - **With a server:** results reach the device as stored songs (`song` upload) or as a
   live performance (the gateway).
-- **Without one:** play stored songs, or upload a MIDI file to the device, where the
-  offline planner (on boards that have it) makes it playable.
+- **Without one:** play stored songs, or load a song from the page. Every board takes a
+  **song file**: one the Hub prepared (`duet song`), already planned for the rig. A
+  board built with the optional **planner module** also takes a MIDI file, and plans it
+  itself. The planner costs flash and RAM, so whoever builds the firmware chooses
+  whether to install it. The board reports it as the `planner` feature, and the page
+  offers MIDI files only where it is.
 - **First boot:** the device opens a setup network ("Duet-setup") with a page for the
   Wi-Fi and server addresses.
 - **Browser limit:** a page served over plain `http://` cannot use the microphone or
@@ -104,5 +108,5 @@ not fit a board is switched off for that board, explicitly. CI builds every boar
 | 2 | Protocol channels; multi-channel executor; MIDI-out mechanism; a bot plays the piano (done, in slices 2a–2c) | native tests, full loop |
 | 3 | Device web server, web app, device API (docs/device-api.md), Wi-Fi setup (done, in slices 3a–3d) | the native device serves the same API; browser tests |
 | 4 | The app finds and uses servers, and falls back (done, in slices 4a–4d) | browser tests with servers up, down, failing |
-| 5 | Offline MIDI → song on the device | contract tests against the Python planner |
+| 5 | Offline songs: song files from the Hub on every board; the optional planner module (MIDI → song on the device) | browser tests; contract tests against the Python planner |
 | 6 | Wait and follow modes started from the app | full loop |

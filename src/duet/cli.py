@@ -304,6 +304,30 @@ def describe(hello) -> str:
     return f"{hello.device_id} ({hello.board}: {features})"
 
 
+def cmd_song(args) -> int:
+    """Write a song file: the score made playable and compiled for the rig, for its web
+    page to load with no server (docs/device-api.md, "Song files")."""
+    from duet.sim import RIG_CHANNELS
+    from duet.songs import SongError, compile_song
+
+    robot = _robot(args)
+    score = read_score(args.score)
+    if args.only:
+        score = score.only(args.only)
+    score = _playable(score, args)
+    try:
+        song = compile_song(score, robot, keyboard_profile(args.piano), RIG_CHANNELS)
+    except SongError as exc:
+        print(f"cannot make a song of it: {exc}", file=sys.stderr)
+        return 2
+    Path(args.out).write_text(song.song_file(), encoding="utf-8")
+    print(
+        f"wrote {song.title!r} to {args.out}: {len(song.commands)} commands, "
+        f"{song.duration_s:.1f} s; load it on the rig's page"
+    )
+    return 0
+
+
 def cmd_upload(args) -> int:
     """Store a song on the device, to play without the Hub (press its play button)."""
     from duet.device.gateway import DeviceFault, DeviceGateway
@@ -605,6 +629,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--only", metavar="PART", help="store one part alone")
     p.add_argument("--play", action="store_true", help="play it right away")
     p.set_defaults(func=cmd_upload)
+
+    p = sub.add_parser("song", help="write a song file for the rig's page to load")
+    p.add_argument("score")
+    p.add_argument("-o", "--out", required=True, help="the song file to write (say rain.song)")
+    p.add_argument("--only", metavar="PART", help="one part alone")
+    p.set_defaults(func=cmd_song)
 
     p = sub.add_parser("device-sim", help="run a simulated rig device on a WebSocket")
     p.add_argument("--host", default="127.0.0.1")

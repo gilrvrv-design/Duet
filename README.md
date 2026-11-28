@@ -88,6 +88,13 @@ compiles the song at upload time; the ESP32 homes and plays it on its own:
 duet upload examples/rain-on-the-bottles.json --device ws://duet-rig-1.local:8765 --slot 0
 ```
 
+Or write a song file, and load it from the rig's own page (`http://duet-rig-1.local`, "Load
+a song file"), with no Hub or server running:
+
+```bash
+duet song examples/rain-on-the-bottles.json -o rain.song
+```
+
 Make a variation: `slower`, `faster`, `easier` and `swap` are instant; anything else ("in a minor key") asks Claude to edit the duet:
 
 ```bash

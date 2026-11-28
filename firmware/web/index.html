@@ -26,9 +26,15 @@
         <button id="stop" type="button" hidden>Stop</button>
       </div>
       <ul id="songs" class="songs"></ul>
-      <p id="no-songs" class="muted" hidden>
-        No songs are stored yet. Upload one from the Hub:
-        <code>duet upload song.json --device ws://duet-rig-1.local:8765 --slot 0</code>
+      <p id="no-songs" class="muted" hidden>No songs are stored yet.</p>
+      <div class="load">
+        <label class="inline">Put songs into <select id="slot"></select></label>
+        <label class="file">Load a song file
+          <input id="song-file" type="file" accept=".song,.txt">
+        </label>
+      </div>
+      <p class="hint">
+        The Hub makes song files: <code>duet song score.json -o score.song</code>
       </p>
     </section>
 
@@ -36,9 +42,6 @@
       <h2>Library</h2>
       <ul id="server-list" class="servers"></ul>
       <p id="library-note" class="muted"></p>
-      <label id="library-slot" class="inline" hidden>Put songs into
-        <select id="slot"></select>
-      </label>
       <ul id="duets" class="songs"></ul>
     </section>
 

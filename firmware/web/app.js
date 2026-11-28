@@ -231,7 +231,6 @@ function showServers() {
 async function showLibrary(url) {
   library = url;
   $("duets").replaceChildren();
-  $("library-slot").hidden = true;
   if (url === null) {
     $("library-note").textContent = saved.servers.length
       ? "No server can be reached. The rig still plays the songs stored on it."
@@ -252,7 +251,6 @@ async function showLibrary(url) {
   $("library-note").textContent = duets.length
     ? `From ${url}`
     : `The library on ${url} is empty.`;
-  $("library-slot").hidden = duets.length === 0;
   $("duets").replaceChildren(...duets.map((duet) => duetRow(url, duet)));
 }
 
@@ -270,7 +268,7 @@ function duetRow(url, duet) {
   put.className = "secondary";
   put.textContent = "Put on the rig";
   put.setAttribute("aria-label", `Put ${duet.title} on the rig`);
-  put.addEventListener("click", () => putOnRig(url, duet, Number($("slot").value)));
+  put.addEventListener("click", () => putOnRig(url, duet));
   li.append(name, put);
   return li;
 }
@@ -291,8 +289,39 @@ function showSlots() {
   select.value = chosen !== "" && chosen < slots ? chosen : String(free ?? 0);
 }
 
+// Store a song file in the chosen slot; true if the rig took it.
+async function storeSong(file, title) {
+  const slot = Number($("slot").value);
+  const stored = await fetch(`/api/songs/${slot}`, {
+    method: "PUT",
+    headers: { "Content-Type": "text/plain" },
+    body: file,
+  });
+  if (stored.ok) {
+    say(`“${title}” is on the rig, in slot ${slot}.`, "ok");
+    $("slot").value = "";  // the next song goes into the next free slot
+  } else {
+    say(`The rig refused “${title}”: ${(await stored.json()).error}.`);
+  }
+  await refresh();
+}
+
+// A song file made by the Hub (duet song): its first line is its title.
+async function loadSongFile(input) {
+  const [chosen] = input.files;
+  input.value = "";  // the same file can be chosen again
+  const text = await chosen.text();
+  let title = chosen.name;
+  try {
+    title = JSON.parse(text.slice(0, text.indexOf("\n"))).title || chosen.name;
+  } catch {
+    // not a song file: the rig says why when it refuses it
+  }
+  await storeSong(text, title);
+}
+
 // The server makes a song file of the duet for this rig; the rig stores it.
-async function putOnRig(url, duet, slot) {
+async function putOnRig(url, duet) {
   const { hello, channels } = shown.state;
   const rig = {
     profile: hello.profile,
@@ -316,19 +345,7 @@ async function putOnRig(url, duet, slot) {
     await checkServers();
     return;
   }
-  const stored = await fetch(`/api/songs/${slot}`, {
-    method: "PUT",
-    headers: { "Content-Type": "text/plain" },
-    body: file,
-  });
-  if (stored.ok) {
-    say(`“${duet.title}” is on the rig, in slot ${slot}.`, "ok");
-    $("slot").value = "";  // the next song goes into the next free slot
-  }
-  else {
-    say(`The rig refused: ${(await stored.json()).error}.`);
-  }
-  await refresh();
+  await storeSong(file, duet.title);
 }
 
 // The page ------------------------------------------------------------------------
@@ -357,6 +374,7 @@ async function refresh() {
 $("estop").addEventListener("click", () => command("/api/estop"));
 $("stop").addEventListener("click", () => command("/api/stop"));
 $("settings-form").addEventListener("submit", saveSettings);
+$("song-file").addEventListener("change", (event) => loadSongFile(event.target));
 $("wifi-ssid").addEventListener("input", showPasswordHint);
 refresh();
 setInterval(refresh, POLL_MS);

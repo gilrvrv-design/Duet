@@ -3,6 +3,9 @@ device. Set DUET_CHROMIUM to a Chromium binary to use it instead of Playwright's
 
 from playwright.sync_api import Page, expect
 
+from duet.cli import main
+from helpers import ROOT
+
 
 def poll(page: Page) -> None:
     page.clock.run_for(1000)  # one poll of the device
@@ -100,3 +103,27 @@ def test_a_refused_setting_says_why(page, device):
     page.get_by_role("button", name="Save").click()
     expect(page.locator("#message")).to_contain_text("Not saved: a Wi-Fi password is 8-63")
     assert device.api("GET", "/api/settings")[1]["wifi_ssid"] == ""
+
+
+def test_a_song_file_from_the_hub_goes_onto_the_rig(page, device, tmp_path):
+    """No server and no planner needed: the Hub made the file (duet song)."""
+    song = tmp_path / "rain.song"
+    assert main(["song", str(ROOT / "examples" / "rain-on-the-bottles.json"), "-o", str(song)]) == 0
+    page.goto(device.http_url)
+    expect(page.locator("#slot")).to_have_value("0")
+    page.get_by_label("Load a song file").set_input_files(song)
+    expect(page.locator("#message")).to_have_text("“Rain on the Bottles” is on the rig, in slot 0.")
+    assert device.api("GET", "/api/songs")[1]["songs"] == [
+        {"slot": 0, "title": "Rain on the Bottles"}
+    ]
+    page.get_by_role("button", name="Play Rain on the Bottles").click()
+    expect(page.locator("#state")).not_to_have_text("Ready")
+
+
+def test_a_broken_song_file_is_refused(page, device, tmp_path):
+    broken = tmp_path / "broken.song"
+    broken.write_text('{"title":"Broken"}\n{"type":"strike_at","seq":0,"ch":0,"t_us":-1}\n')
+    page.goto(device.http_url)
+    page.get_by_label("Load a song file").set_input_files(broken)
+    expect(page.locator("#message")).to_have_text("The rig refused “Broken”: bad song line 2.")
+    assert device.api("GET", "/api/songs")[1]["songs"] == []
