@@ -39,6 +39,7 @@ needed. Part numbers in the other rows are suggestions; equivalents work.
 | **STEMMA JST PH 3-pin to female socket cable (#3894)** — ordered | MOSFET driver to ESP32 and 12 V | V+, GND, In |
 | LJ12A3-4-Z/BX inductive sensor (NPN, normally open, 6–36 V) + 4.7 kΩ, 27 kΩ, 10 kΩ | home position | pull-up to 12 V and a divider into GPIO 34; see below |
 | Emergency stop button (normally open) + 10 kΩ | stops everything | pull-up to 3.3 V; see the note on GPIO 35 |
+| Play button (normally open, any momentary push button) | plays a stored song without a PC | between GPIO 33 and GND; no resistor (internal pull-up) |
 | WS2812B strip, 144 LEDs/m, 1.22 m (176 LEDs) | lights over the keys | |
 | 74AHCT125 quad buffer + 330 Ω | LED data, 3.3 V to 5 V | one channel used; the other three tied off |
 | 1000 µF capacitor | across 5 V at the strip | |
@@ -61,6 +62,7 @@ ribbon cable (motor wires) and a 6-pin JST PH cable pair.
 | GPIO 32 | MOSFET Driver **In** (STEMMA cable) | out | high = solenoid on; the board's pull-down keeps it off during boot |
 | GPIO 34 | home sensor, through the divider | in | active low (`HOME_ACTIVE_LOW = true`) |
 | GPIO 35 | emergency stop button | in | active low; **external** 10 kΩ pull-up to 3.3 V |
+| GPIO 33 | play button, other side to GND | in | active low; internal pull-up; plays the next stored song, or stops it |
 | GPIO 13 | 74AHCT125 1A → 1Y → 330 Ω → strip DIN | out | |
 | 3V3 | TMC2209 VDD, MS1, MS2, e-stop pull-up | — | |
 | GND | every ground | — | 12 V, 5 V, ESP32, TMC2209, MOSFET Driver, sensor, strip |

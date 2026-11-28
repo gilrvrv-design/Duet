@@ -10,7 +10,9 @@
 #include <esp_timer.h>
 
 #include "board.h"
+#include "duet_device.hpp"
 #include "duet_executor.hpp"
+#include "flash_songs.h"
 #include "serial_link.h"
 #ifdef DUET_WOKWI
 #include "wokwi.h"  // simulator build: Wokwi's open Wi-Fi and a virtual home sensor
@@ -96,6 +98,23 @@ class Link : public duet::Sink {
 Esp32Hal hal;
 Link link;
 duet::Executor executor(hal, link);
+FlashSongStore songs;
+duet::Device device(executor, songs, link);  // songs stored in flash, played without the Hub
+
+// The play button: a press (stable low for PLAY_DEBOUNCE_MS) plays the next stored song,
+// or stops the one playing.
+void read_play_button() {
+  static bool pressed = false;
+  static uint32_t changed_ms = 0;
+  bool low = digitalRead(PIN_PLAY) == LOW;
+  uint32_t now = millis();
+  if (low == pressed) {
+    changed_ms = now;
+  } else if (now - changed_ms >= PLAY_DEBOUNCE_MS) {
+    pressed = low;
+    if (pressed) device.button(now_us());
+  }
+}
 
 void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
@@ -111,13 +130,13 @@ void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
       break;
     case WStype_TEXT: {
       if (length > duet::kMaxMessage) {  // never act on a cut-off message
-        executor.on_oversize(now_us());
+        device.on_oversize(now_us());
         break;
       }
       char buf[duet::kMaxMessage + 1];
       memcpy(buf, payload, length);
       buf[length] = '\0';
-      executor.on_message(buf, now_us());
+      device.on_message(buf, now_us());
       break;
     }
     default:
@@ -131,6 +150,8 @@ void setup() {
   Serial.begin(115200);
   hal.begin();
   pinMode(PIN_ESTOP, INPUT);  // GPIO 34-39 have no internal pull-up: fit 10 kOhm to 3.3 V
+  pinMode(PIN_PLAY, INPUT_PULLUP);
+  if (!songs.begin_fs()) Serial.println("duet: flash storage failed; songs cannot be stored");
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);  // power saving adds tens of ms of latency
 #ifdef DUET_WOKWI
@@ -148,9 +169,10 @@ void setup() {
 
 void loop() {
   server.loop();
-  read_serial(executor, now_us());
+  read_serial(device, now_us());
+  read_play_button();
   if (digitalRead(PIN_ESTOP) == LOW && !executor.estopped()) {
-    executor.on_message("{\"type\":\"estop\",\"seq\":0}", now_us());
+    device.on_message("{\"type\":\"estop\",\"seq\":0}", now_us());  // also ends a song
   }
-  executor.poll(now_us());
+  device.poll(now_us());
 }

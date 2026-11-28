@@ -105,6 +105,17 @@
       "attrs": {
         "channelNames": "STEP,DIR,SOLENOID,D3,D4,D5,D6,D7"
       }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_play",
+      "top": 460,
+      "left": -200,
+      "attrs": {
+        "color": "green",
+        "label": "PLAY",
+        "key": "p"
+      }
     }
   ],
   "connections": [
@@ -302,6 +313,18 @@
     ],
     [
       "logic:GND",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:33",
+      "btn_play:1.l",
+      "green",
+      []
+    ],
+    [
+      "btn_play:2.l",
       "esp:GND.1",
       "black",
       []

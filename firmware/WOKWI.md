@@ -28,6 +28,7 @@ flowchart LR
 | Solenoid + MOSFET driver | red LED on pin 32 | Lights for each strike pulse (15 to 30 ms) |
 | LJ12A3 home sensor | virtual sensor in firmware, plus a button | See below |
 | E-stop button | red button on pin 35, key **E** | Latches the e-stop, as on the rig: restart the simulation to clear it |
+| Play button | green button on pin 33, key **P** | Plays the next stored song, or stops it (see below) |
 | LED strip | `wokwi-led-strip`, 176 pixels on pin 13 | |
 | Wi-Fi network | `Wokwi-GUEST` | Open network on channel 6 |
 
@@ -85,6 +86,15 @@ The `wokwi` build does not need `src/secrets.h`.
 - **Limits:** the Hub checks the limits in the device's `hello` against the profile. To
   see a mismatch, change `travel_steps` in `lib/duet_core/src/duet_config.hpp` and
   rebuild. Connecting is then refused with `DeviceMismatch`.
+
+- **Play from memory:** store a song, then stop the Hub and press **P**. The carriage
+  homes and plays the song on its own:
+
+  ```bash
+  duet upload examples/rain-on-the-bottles.json --device ws://localhost:8765
+  ```
+
+  If the song is gone after restarting the simulation, upload it again.
 
 ## Limits of the simulation
 
