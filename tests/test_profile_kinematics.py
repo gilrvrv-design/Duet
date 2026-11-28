@@ -27,7 +27,8 @@ def test_builtin_profiles_load():
 def test_profile_from_file(tmp_path):
     path = tmp_path / "p.yaml"
     path.write_text(
-        "id: k\nkind: keyboard\nlow: C4\nhigh: C5\nled: {leds_per_m: 60, white_key_mm: 23}\n"
+        "schema: duet-instrument/1\nid: k\nname: Keys\nrange: [C4, C5]\n"
+        "human: {guide: {guide: led_strip, leds_per_m: 60, white_key_mm: 23}}\n"
     )
     assert isinstance(load_profile_file(path), KeyboardProfile)
 

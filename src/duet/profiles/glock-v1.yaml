@@ -1,24 +1,28 @@
 # A robot glockenspiel: 15 metal bars, C6..C8 (two diatonic octaves), on the same kind of
 # belt-driven carriage. Bars are closer together than bottles and the striker is lighter,
 # so it moves and repeats faster. Placeholder numbers until calibrated.
+schema: duet-instrument/1
 id: glock-v1
-kind: robot.mallet.monophonic
+name: Glockenspiel
 notes:
-  - { name: C6, hz: 1046.50, steps: 1200 }
-  - { name: D6, hz: 1174.66, steps: 4400 }
-  - { name: E6, hz: 1318.51, steps: 7600 }
-  - { name: F6, hz: 1396.91, steps: 10800 }
-  - { name: G6, hz: 1567.98, steps: 14000 }
-  - { name: A6, hz: 1760.00, steps: 17200 }
-  - { name: B6, hz: 1975.53, steps: 20400 }
-  - { name: C7, hz: 2093.00, steps: 23600 }
-  - { name: D7, hz: 2349.32, steps: 26800 }
-  - { name: E7, hz: 2637.02, steps: 30000 }
-  - { name: F7, hz: 2793.83, steps: 33200 }
-  - { name: G7, hz: 3135.96, steps: 36400 }
-  - { name: A7, hz: 3520.00, steps: 39600 }
-  - { name: B7, hz: 3951.07, steps: 42800 }
-  - { name: C8, hz: 4186.01, steps: 46000 }
-kinematics: { steps_per_mm: 80, v_max_mm_s: 800, a_max_mm_s2: 8000, settle_ms: 10, travel_steps: 48000 }
-striker: { pulse_us: [8000, 15000], recovery_ms: 40, latency_ms: 8, duty_limit: 0.25 }
+  - { name: C6, hz: 1046.50 }
+  - { name: D6, hz: 1174.66 }
+  - { name: E6, hz: 1318.51 }
+  - { name: F6, hz: 1396.91 }
+  - { name: G6, hz: 1567.98 }
+  - { name: A6, hz: 1760.00 }
+  - { name: B6, hz: 1975.53 }
+  - { name: C7, hz: 2093.00 }
+  - { name: D7, hz: 2349.32 }
+  - { name: E7, hz: 2637.02 }
+  - { name: F7, hz: 2793.83 }
+  - { name: G7, hz: 3135.96 }
+  - { name: A7, hz: 3520.00 }
+  - { name: B7, hz: 3951.07 }
+  - { name: C8, hz: 4186.01 }
 sound: { decay_ms: 2500, partials: [1.0, 2.76, 5.40] }
+bot:
+  mechanism: carriage_striker
+  positions: [1200, 4400, 7600, 10800, 14000, 17200, 20400, 23600, 26800, 30000, 33200, 36400, 39600, 42800, 46000]
+  kinematics: { steps_per_mm: 80, v_max_mm_s: 800, a_max_mm_s2: 8000, settle_ms: 10, travel_steps: 48000 }
+  striker: { pulse_us: [8000, 15000], recovery_ms: 40, latency_ms: 8, duty_limit: 0.25 }

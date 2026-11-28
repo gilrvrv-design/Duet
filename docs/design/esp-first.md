@@ -62,6 +62,13 @@ flowchart LR
   play (travel times, polyphony, duty cycle); a human's skill level decides what they
   can play (today's difficulty rules, generalised). Repair, difficulty and planning
   run per part against that rule.
+- **Instrument files** (`src/duet/profiles/*.yaml`, schema `duet-instrument/1`) say
+  what sounds (notes, measured pitch, sound) and how it can be played: a `bot:` section
+  (a mechanism and its limits) and/or a `human:` section (how notes are shown). An
+  instrument offers only the performers it has a section for.
+- **Temporary, until step 1e:** `RobotProfile` and `KeyboardProfile` remain as views
+  built from instruments (and saved as instruments), so code moves over slice by slice.
+  Step 1e removes them.
 - **The device exposes channels** (carriage-striker, LED strip, MIDI out, ...) in its
   greeting; commands name a channel. Today's commands are channel 0.
 

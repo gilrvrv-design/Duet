@@ -1,9 +1,12 @@
-# A standard 88-key piano with a 144 LED/m strip above the keys (spec §5.4).
+# A standard 88-key piano, played by a person who follows a 144 LED/m strip above the
+# keys (spec §5.4).
+schema: duet-instrument/1
 id: piano-88
-kind: keyboard
-low: A0
-high: C8
-led:
-  leds_per_m: 144
-  white_key_mm: 23.5
-  first_led_mm: 0.0    # distance from the strip's first LED to the left edge of the lowest key
+name: Piano (88 keys)
+range: [A0, C8]
+human:
+  guide:
+    guide: led_strip
+    leds_per_m: 144
+    white_key_mm: 23.5
+    first_led_mm: 0.0    # distance from the strip's first LED to the left edge of the lowest key
