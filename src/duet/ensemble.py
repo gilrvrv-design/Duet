@@ -107,42 +107,19 @@ def build_score(
     """One score, one part per member that plays: a bot part per robot (its track's top
     line, made playable at the written tempo), a human part per person (on
     ``keyboard``). Returns the score and the robots' instruments in use."""
-    per_bar = time_signature[0]
+    playing: dict[str, Instrument] = {}
     parts: dict[str, PartInfo] = {}
     events: list[dict] = []
-    playing: dict[str, Instrument] = {}
-    for member in members:
-        if member.name not in assignment.parts:
-            continue
+    for member in (m for m in members if m.name in assignment.parts):
         track, octave = assignment.parts[member.name]
-        notes = skyline(tracks[track]) if member.is_robot else tracks[track]
         if member.is_robot:
             instrument = member.robot.instrument
             if playing.setdefault(instrument.id, instrument) != instrument:
                 raise ValueError(f"two different robots both call themselves {instrument.id!r}")
-            parts[member.name] = PartInfo(instrument=instrument.id, performer="bot")
-        else:
-            parts[member.name] = PartInfo(
-                instrument=keyboard,
-                performer="human",
-                role="accompaniment",
-                range=(member.low, member.high),
-            )
-        for n in notes:
-            bar, beat = bar_and_beat(n.beat, per_bar)
-            pitch = n.pitch + assignment.transpose + octave
-            if beat >= per_bar + 1 or not member.fits(pitch):
-                continue
-            events.append(
-                {
-                    "part": member.name,
-                    "bar": bar,
-                    "beat": beat,
-                    "dur": n.dur,
-                    "pitch": pitch,
-                    "vel": n.vel,
-                }
-            )
+        parts[member.name] = _part_info(member, keyboard)
+        notes = skyline(tracks[track]) if member.is_robot else tracks[track]
+        shift = assignment.transpose + octave
+        events += _member_events(member, notes, shift, time_signature[0])
     score = DuetScore.model_validate(
         {
             "meta": {
@@ -158,3 +135,35 @@ def build_score(
         if member.is_robot and member.name in parts:
             score = repair_robot(score, member.robot, part=member.name, keep_tempo=True).score
     return score, playing
+
+
+def _part_info(member: Member, keyboard: str) -> PartInfo:
+    if member.is_robot:
+        return PartInfo(instrument=member.robot.id, performer="bot")
+    return PartInfo(
+        instrument=keyboard,
+        performer="human",
+        role="accompaniment",
+        range=(member.low, member.high),
+    )
+
+
+def _member_events(member: Member, notes: list[TrackNote], shift: int, per_bar: int) -> list[dict]:
+    """A member's notes as score events, moved by ``shift``; what it cannot play is left out."""
+    events = []
+    for n in notes:
+        pitch = n.pitch + shift
+        if not member.fits(pitch):
+            continue
+        bar, beat = bar_and_beat(n.beat, per_bar)
+        events.append(
+            {
+                "part": member.name,
+                "bar": bar,
+                "beat": beat,
+                "dur": n.dur,
+                "pitch": pitch,
+                "vel": n.vel,
+            }
+        )
+    return events

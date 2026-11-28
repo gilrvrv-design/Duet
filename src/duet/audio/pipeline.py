@@ -7,6 +7,7 @@ from pathlib import Path
 
 import mido
 
+from duet.audio import fullmix  # its tools (Demucs, Basic Pitch) load only when used
 from duet.audio.analysis import estimate_key, estimate_tempo, quantize
 from duet.audio.io import DEFAULT_SR, load_audio
 from duet.audio.melody import PyinTranscriber
@@ -42,11 +43,16 @@ class Transcription:
 def transcribe(
     audio, sr: int, transcriber: Transcriber | None = None, route: str = "melody"
 ) -> Transcription:
+    """The melody route: one voice, followed by pitch."""
     transcriber = transcriber or PyinTranscriber()
     notes = transcriber.transcribe(audio, sr)
-    warnings = []
-    if not notes:
-        warnings.append("no notes found; is the recording silent or very noisy?")
+    silent = "no notes found; is the recording silent or very noisy?"
+    return _transcription(notes, audio, sr, transcriber.name, route, silent)
+
+
+def _transcription(notes, audio, sr: int, model: str, route: str, silent: str) -> Transcription:
+    """The result of either route, with what a person should know about it."""
+    warnings = [] if notes else [silent]
     low = [n for n in notes if n.confidence < LOW_CONFIDENCE]
     if low:
         warnings.append(f"{len(low)} note(s) have low confidence")
@@ -55,7 +61,7 @@ def transcribe(
         tempo_bpm=estimate_tempo(notes, audio, sr),
         key=estimate_key(notes)[0],
         duration_s=round(audio.size / sr, 3),
-        model=transcriber.name,
+        model=model,
         route=route,
         warnings=warnings,
     )
@@ -73,47 +79,38 @@ def transcribe_file(
     "auto" picks the full-mix route for chords or bands when it is installed, else the
     melody route with a warning.
     """
-    from duet.audio import fullmix
-
     progress("decoding", 0.0)
     audio, sr = load_audio(path, DEFAULT_SR)
     progress("analysing", 0.1)
-    if route == "auto":
-        polyphonic = fullmix.looks_polyphonic(audio, sr)
-        available = full_mix is not None or fullmix.full_mix_available()
-        route = "full" if polyphonic and available else "melody"
-        if polyphonic and not available:
-            progress("transcribing:melody", 0.2)
-            result = transcribe(audio, sr, transcriber)
-            result.warnings.append(
-                "this sounds like more than one voice; "
-                "install the full-mix route for better results"
-            )
-            progress("ready", 1.0)
-            return result
+    route, caution = _route(route, audio, sr, full_mix is not None or fullmix.full_mix_available())
     if route == "melody":
         progress("transcribing:melody", 0.2)
         result = transcribe(audio, sr, transcriber)
-        progress("ready", 1.0)
-        return result
-    if route != "full":
-        raise ValueError(f"unknown route: {route}")
-    full_mix = full_mix or fullmix.default_full_mix()
-    progress("separating", 0.2)
-    notes, stems = full_mix.transcribe_path(Path(path))
-    progress("rhythm", 0.9)
-    result = Transcription(
-        notes=notes,
-        tempo_bpm=estimate_tempo(notes, audio, sr),
-        key=estimate_key(notes)[0],
-        duration_s=round(audio.size / sr, 3),
-        model=", ".join(stems) or full_mix.name,
-        route="full",
-    )
-    if not notes:
-        result.warnings.append("no notes found in any stem")
+    else:
+        full_mix = full_mix or fullmix.default_full_mix()
+        progress("separating", 0.2)
+        notes, stems = full_mix.transcribe_path(Path(path))
+        progress("rhythm", 0.9)
+        model = ", ".join(stems) or full_mix.name
+        result = _transcription(notes, audio, sr, model, "full", "no notes found in any stem")
+    if caution:
+        result.warnings.append(caution)
     progress("ready", 1.0)
     return result
+
+
+def _route(route: str, audio, sr: int, full_available: bool) -> tuple[str, str | None]:
+    """The route to take, and what to tell the person about the choice (or None)."""
+    if route not in ("auto", "melody", "full"):
+        raise ValueError(f"unknown route: {route}")
+    if route != "auto":
+        return route, None
+    if not fullmix.looks_polyphonic(audio, sr):
+        return "melody", None
+    if full_available:
+        return "full", None
+    caution = "this sounds like more than one voice; install the full-mix route for better results"
+    return "melody", caution
 
 
 def transcription_to_midi(

@@ -7,10 +7,10 @@ from collections.abc import Sequence
 import numpy as np
 
 from duet.audio.notes import NoteEvent
+from duet.pitch import PITCH_CLASSES
 
 _MAJOR = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
 _MINOR = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
-_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
 def estimate_key(notes: Sequence[NoteEvent]) -> tuple[str, int, str]:
@@ -29,7 +29,7 @@ def estimate_key(notes: Sequence[NoteEvent]) -> tuple[str, int, str]:
         key=lambda r: r[0],
     )
     _, tonic, mode = best
-    return f"{_NAMES[tonic]} {mode}", tonic, mode
+    return f"{PITCH_CLASSES[tonic]} {mode}", tonic, mode
 
 
 def estimate_tempo(

@@ -76,11 +76,9 @@ def compose(
     guard: CopyrightGuard | None = None,
 ) -> CompositionResult:
     """``guard``: an optional copyright guard; its problems are fed back too (FR-C5)."""
-    robot = robot or robot_profile()
-    keyboard = keyboard or keyboard_profile()
-    return _converse(
-        request, _request_text(request), composer, robot, keyboard, max_rounds, progress, guard
-    )
+    robot, keyboard = robot or robot_profile(), keyboard or keyboard_profile()
+    talk = _Conversation(request, composer, robot, keyboard, guard, progress, max_rounds)
+    return talk.run(_request_text(request))
 
 
 def _request_text(request: CompositionRequest) -> str:
@@ -128,55 +126,77 @@ def revise(
         f"Change it: {instruction}. Keep everything you are not asked to change. "
         "Answer with the full JSON object."
     )
-    return _converse(request, text, composer, robot, keyboard, max_rounds, progress, guard)
+    talk = _Conversation(request, composer, robot, keyboard, guard, progress, max_rounds)
+    return talk.run(text)
 
 
-def _converse(request, first_message, composer, robot, keyboard, max_rounds, progress, guard=None):
-    """Ask, check, feed problems back, repeat; then repair deterministically."""
-    system = system_prompt(robot)
-    messages: list[dict] = [{"role": "user", "content": first_message}]
-    best: tuple[DuetScore, str] | None = None
-    history: list[list[str]] = []
-    for round_no in range(1, max_rounds + 2):  # first draft plus feedback rounds
-        total = max_rounds + 1
-        progress("drafting" if round_no == 1 else f"revising:{round_no}", (round_no - 1) / total)
-        text = composer.write(system, messages)
-        progress("checking", (round_no - 0.5) / total)
-        messages.append({"role": "assistant", "content": text})
+@dataclass
+class _Conversation:
+    """Ask the composer, check its draft, feed the problems back, repeat; then, if it
+    never gets there, repair its best draft deterministically."""
+
+    request: CompositionRequest
+    composer: Composer
+    robot: RobotProfile
+    keyboard: KeyboardProfile
+    guard: CopyrightGuard | None
+    progress: Progress
+    max_rounds: int
+
+    def run(self, first_message: str) -> CompositionResult:
+        messages: list[dict] = [{"role": "user", "content": first_message}]
+        best: tuple[DuetScore, str] | None = None
+        history: list[list[str]] = []
+        total = self.max_rounds + 1  # the first draft, then the feedback rounds
+        for round_no in range(1, total + 1):
+            stage = "drafting" if round_no == 1 else f"revising:{round_no}"
+            self.progress(stage, (round_no - 1) / total)
+            text = self.composer.write(system_prompt(self.robot), messages)
+            self.progress("checking", (round_no - 0.5) / total)
+            messages.append({"role": "assistant", "content": text})
+            draft, problems = self._check(text)
+            if draft is not None:
+                best = draft
+                if not problems:
+                    self.progress("ready", 1.0)
+                    return CompositionResult(*draft, round_no, history)
+                messages[-1]["content"] = score_to_draft(*draft)
+            history.append(problems)
+            if round_no < total:
+                messages.append({"role": "user", "content": feedback_message(problems)})
+        return self._last_resort(best, history)
+
+    def _check(self, text: str) -> tuple[tuple[DuetScore, str] | None, list[str]]:
+        """The draft read from the composer's answer (None if it is not one), and its
+        problems: what the performers cannot play, and protected melodies."""
         try:
             score, explanation = draft_to_score(
                 text,
-                prompt=request.prompt,
-                difficulty=request.difficulty,
-                pianist_range=request.pianist_range,
-                duo=_duo(robot, keyboard),
+                prompt=self.request.prompt,
+                difficulty=self.request.difficulty,
+                pianist_range=self.request.pianist_range,
+                duo=_duo(self.robot, self.keyboard),
             )
         except DraftError as exc:
-            problems = [str(exc)]
-        else:
-            best = (score, explanation)
-            found = score_problems(score, in_use(robot, keyboard)).values()
-            problems = [p for part_problems in found for p in part_problems]
-            if guard is not None:
-                problems += guard.check(score).problems()
-            if not problems:
-                progress("ready", 1.0)
-                return CompositionResult(score, explanation, round_no, history)
-            messages[-1]["content"] = score_to_draft(score, explanation)
-        history.append(problems)
-        if round_no <= max_rounds:
-            messages.append({"role": "user", "content": feedback_message(problems)})
-    if best is None:
-        raise CompositionError(
-            "the composer never produced a valid score:\n" + "\n".join(history[-1])
-        )
-    progress("repairing", None)
-    result = _finish(best, robot, keyboard, rounds=max_rounds + 1, history=history)
-    if guard is not None and guard.check(result.score).status == "protected":
-        # Repair fixes physics, not authorship: never hand back a copied melody.
-        raise CompositionError("the composer kept copying a protected melody")
-    progress("ready", 1.0)
-    return result
+            return None, [str(exc)]
+        found = score_problems(score, in_use(self.robot, self.keyboard)).values()
+        problems = [p for part_problems in found for p in part_problems]
+        if self.guard is not None:
+            problems += self.guard.check(score).problems()
+        return (score, explanation), problems
+
+    def _last_resort(self, best, history: list[list[str]]) -> CompositionResult:
+        if best is None:
+            raise CompositionError(
+                "the composer never produced a valid score:\n" + "\n".join(history[-1])
+            )
+        self.progress("repairing", None)
+        result = _finish(best, self.robot, self.keyboard, self.max_rounds + 1, history)
+        if self.guard is not None and self.guard.check(result.score).status == "protected":
+            # Repair fixes physics, not authorship: never hand back a copied melody.
+            raise CompositionError("the composer kept copying a protected melody")
+        self.progress("ready", 1.0)
+        return result
 
 
 def _duo(robot: RobotProfile, keyboard: KeyboardProfile) -> Duo:
@@ -184,7 +204,7 @@ def _duo(robot: RobotProfile, keyboard: KeyboardProfile) -> Duo:
     return Duo(bot_instrument=robot.id, human_instrument=keyboard.id)
 
 
-def _finish(best, robot, keyboard, rounds, history) -> CompositionResult:
+def _finish(best, robot, keyboard, rounds: int, history) -> CompositionResult:
     """Deterministic last resort: repair the bot's part, drop the person's notes that are
     off the keyboard or out of their range."""
     score, explanation = best

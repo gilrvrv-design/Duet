@@ -15,6 +15,7 @@ from duet.audio.analysis import estimate_key, quantize
 from duet.audio.notes import NoteEvent
 from duet.audio.pipeline import Transcription
 from duet.pitch import (
+    PITCH_CLASSES,
     best_transpose,
     cents_between,
     coverage,
@@ -37,7 +38,6 @@ MINOR_TRIADS = (
     (3, False),
     (10, False),
 )  # i iv V VI III VII
-_PC_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
 
 
 @dataclass(frozen=True)
@@ -126,7 +126,7 @@ def _bar_chords(placed, tonic: int, mode: str, bars: int) -> list[tuple[str, tup
     """Pick, for each bar, the triad that covers the most melody time. Ties go to the
     earlier chord in the list (tonic first)."""
     options = [
-        (f"{_PC_NAMES[(tonic + r) % 12]}{'m' if minor else ''}", _triad(tonic + r, minor))
+        (f"{PITCH_CLASSES[(tonic + r) % 12]}{'m' if minor else ''}", _triad(tonic + r, minor))
         for r, minor in (MAJOR_TRIADS if mode == "major" else MINOR_TRIADS)
     ]
     chords = []
@@ -153,50 +153,28 @@ def arrange(
     pianist_range: tuple[str, str] = ("C3", "C5"),
     title: str = "Transcribed duet",
 ) -> Arrangement:
+    """A playable duet from a transcription: its melody for the bot, moved to where the
+    instrument has the most of its notes, and an accompaniment at ``difficulty`` for the
+    person, from the chords of everything heard."""
     robot = robot or robot_profile()
     keyboard = keyboard or keyboard_profile()
     duo = Duo(bot_instrument=robot.id, human_instrument=keyboard.id)
     melody = melody_track(t)
     pitches = [n.pitch for n in melody]
-    before = coverage(pitches, robot.pitches)
     shift = best_transpose(pitches, robot.pitches)
-    moved = [
-        NoteEvent(n.start_s, n.end_s, n.pitch + shift, n.velocity, n.confidence, n.track)
-        for n in melody
-    ]
-    after = coverage([n.pitch for n in moved], robot.pitches)
-
+    moved = _shifted(melody, shift)
     melody_name = melody[0].track if melody else "melody"
-    backing = [
-        NoteEvent(n.start_s, n.end_s, n.pitch + shift, n.velocity, n.confidence, n.track)
-        for n in t.notes
-        if n.track != melody_name
-    ]
-    origin = min((n.start_s for n in moved), default=0.0)
-    placed = quantize(moved, t.tempo_bpm, origin_s=origin)
-    harmony = quantize(moved + backing, t.tempo_bpm, origin_s=origin)
-    events = []
-    for start, dur, n in placed:
-        bar, beat = int(start // BEATS_PER_BAR) + 1, start % BEATS_PER_BAR + 1
-        events.append(
-            {
-                "part": duo.bot,
-                "bar": bar,
-                "beat": round(beat, 6),
-                "dur": dur,
-                "pitch": n.pitch,
-                "vel": n.velocity,
-                "confidence": n.confidence,
-            }
-        )
-    bars = max((e["bar"] for e in events), default=1)
+    backing = _shifted([n for n in t.notes if n.track != melody_name], shift)
+    key_name, tonic, mode = estimate_key(moved + backing)
 
-    _, tonic, mode = estimate_key(moved + backing)
+    origin = min((n.start_s for n in moved), default=0.0)
+    events = _melody_events(duo.bot, quantize(moved, t.tempo_bpm, origin_s=origin))
+    bars = max((e["bar"] for e in events), default=1)
+    harmony = quantize(moved + backing, t.tempo_bpm, origin_s=origin)
     chords = _bar_chords(harmony, tonic, mode, bars)
     low, high = (name_to_midi(p) for p in pianist_range)
     events += _pianist_part(duo.human, chords, difficulty, low, high)
 
-    key_name = estimate_key(moved + backing)[0]
     score = DuetScore.model_validate(
         {
             "meta": {
@@ -215,12 +193,38 @@ def arrange(
     return Arrangement(
         score=repaired.score,
         transpose=shift,
-        coverage_before=round(before, 3),
-        coverage_after=round(after, 3),
+        coverage_before=round(coverage(pitches, robot.pitches), 3),
+        coverage_after=round(coverage([n.pitch for n in moved], robot.pitches), 3),
         chords=[name for name, _ in chords],
         repairs=repaired.changes,
         retuning=suggest_retuning([n.pitch for n in moved], robot),
     )
+
+
+def _shifted(notes: list[NoteEvent], semitones: int) -> list[NoteEvent]:
+    return [
+        NoteEvent(n.start_s, n.end_s, n.pitch + semitones, n.velocity, n.confidence, n.track)
+        for n in notes
+    ]
+
+
+def _melody_events(part: str, placed) -> list[dict]:
+    """The bot's part: each quantized melody note at its bar and beat."""
+    events = []
+    for start, dur, n in placed:
+        bar, beat = int(start // BEATS_PER_BAR) + 1, start % BEATS_PER_BAR + 1
+        events.append(
+            {
+                "part": part,
+                "bar": bar,
+                "beat": round(beat, 6),
+                "dur": dur,
+                "pitch": n.pitch,
+                "vel": n.velocity,
+                "confidence": n.confidence,
+            }
+        )
+    return events
 
 
 def _pianist_part(part: str, chords, difficulty: int, low: int, high: int) -> list[dict]:

@@ -13,7 +13,8 @@ A4_HZ = 440.0
 
 _STEPS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 _ACCIDENTALS = {"": 0, "#": 1, "##": 2, "b": -1, "bb": -2}
-_SHARP_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+# Pitch-class names, as the project spells them everywhere: notes, keys and chords.
+PITCH_CLASSES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 _NAME_RE = re.compile(r"^([A-Ga-g])(##|#|bb|b)?(-?\d+)$")
 
 
@@ -40,7 +41,7 @@ def midi_to_name(midi: int) -> str:
     """Convert a MIDI number to a pitch name, spelled with sharps."""
     if not 0 <= midi <= 127:
         raise PitchError(f"MIDI number out of range: {midi}")
-    return f"{_SHARP_NAMES[midi % 12]}{midi // 12 - 1}"
+    return f"{PITCH_CLASSES[midi % 12]}{midi // 12 - 1}"
 
 
 def to_midi(pitch: str | int) -> int:

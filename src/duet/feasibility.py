@@ -149,56 +149,51 @@ def check_robot(
     tolerance_cents: float | None = None,
 ) -> Report:
     """What a carriage-striker bot cannot play in ``part``."""
-    report = Report()
     strikes, unmapped = robot_strikes(score, profile, part=part, tolerance_cents=tolerance_cents)
+    violations = (
+        _unmapped(score, profile, unmapped)
+        + _too_close(strikes, profile, margin_s)
+        + _check_duty(strikes, profile)
+    )
+    return Report(sorted(violations, key=lambda v: (v.bar, v.beat, v.code)))
+
+
+def _unmapped(score: DuetScore, profile: RobotProfile, unmapped: list[int]) -> list[Violation]:
+    """Notes the instrument does not have."""
     available = ", ".join(midi_to_name(p) for p in profile.pitches)
-
-    for i in unmapped:
-        event = score.events[i]
-        report.violations.append(
-            Violation(
-                Code.NOT_ON_BOTTLE,
-                i,
-                event.bar,
-                event.beat,
-                f"robot has no bottle for {midi_to_name(event.pitch)} (bottles: {available})",
-            )
+    return [
+        Violation(
+            Code.NOT_ON_BOTTLE,
+            i,
+            score.events[i].bar,
+            score.events[i].beat,
+            f"robot has no bottle for {midi_to_name(score.events[i].pitch)} (bottles: {available})",
         )
+        for i in unmapped
+    ]
 
+
+def _too_close(strikes, profile: RobotProfile, margin_s: float) -> list[Violation]:
+    """Notes that start together, or too soon after the one before for the carriage."""
+    found = []
     for gap in strike_gaps(strikes, profile, margin_s):
         prev, cur, needed = gap.prev, gap.cur, gap.needed_s
         target = midi_to_name(profile.pitches[cur.bottle])
         if gap.simultaneous:
-            report.violations.append(
-                Violation(
-                    Code.SIMULTANEOUS,
-                    cur.index,
-                    cur.bar,
-                    cur.beat,
-                    f"robot can only play one note at a time; {target} starts with another note",
-                    needed_s=needed,
-                    available_s=0.0,
-                )
+            message = f"robot can only play one note at a time; {target} starts with another note"
+            found.append(
+                Violation(Code.SIMULTANEOUS, cur.index, cur.bar, cur.beat, message, needed, 0.0)
             )
-            continue
-        if gap.gap_s < needed - EPSILON:  # as repair: float noise is not a shortfall
+        elif gap.gap_s < needed - EPSILON:  # as repair: float noise is not a shortfall
             source = midi_to_name(profile.pitches[prev.bottle])
-            report.violations.append(
-                Violation(
-                    Code.TOO_FAST,
-                    cur.index,
-                    cur.bar,
-                    cur.beat,
-                    f"robot needs {needed:.2f} s to go from {source} to {target} "
-                    f"but has {gap.gap_s:.2f} s",
-                    needed_s=needed,
-                    available_s=gap.gap_s,
-                )
+            message = (
+                f"robot needs {needed:.2f} s to go from {source} to {target} "
+                f"but has {gap.gap_s:.2f} s"
             )
-
-    report.violations.extend(_check_duty(strikes, profile))
-    report.violations.sort(key=lambda v: (v.bar, v.beat, v.code))
-    return report
+            found.append(
+                Violation(Code.TOO_FAST, cur.index, cur.bar, cur.beat, message, needed, gap.gap_s)
+            )
+    return found
 
 
 def _check_duty(strikes: list[_Strike], profile: RobotProfile) -> list[Violation]:
