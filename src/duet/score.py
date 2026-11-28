@@ -186,6 +186,16 @@ class DuetScore(_Model):
     def with_events(self, events: list[Event] | tuple[Event, ...]) -> DuetScore:
         return self.revised({"events": tuple(events)})
 
+    def only(self, part: PartName) -> DuetScore:
+        """One part alone: the robot solo, or the pianist practising alone. Turns (who
+        plays when) mean nothing for one part and are dropped, as are sections that end
+        after the remaining notes do."""
+        events = tuple(e for e in self.events if e.part == part)
+        solo = self.revised({"events": events, "turns": (), "sections": ()})
+        last = solo.bar_count
+        sections = tuple(s for s in self.sections if last and s.bars[1] <= last)
+        return solo.revised({"sections": sections}) if sections else solo
+
     def with_tempo(self, tempo_bpm: float) -> DuetScore:
         return self.revised({"meta": self.meta.revised({"tempo_bpm": tempo_bpm})})
 

@@ -66,6 +66,13 @@ With an acoustic piano, add `--mic` (needs `pip install sounddevice`); the liste
 duet play examples/rain-on-the-bottles.json --sim --wait --mic
 ```
 
+Play one part alone: `--only robot` for the bottles solo, `--only piano` to practise
+your part with the light guide (and grading, in wait or follow mode):
+
+```bash
+duet play examples/rain-on-the-bottles.json --sim --only piano --wait
+```
+
 Make a variation: `slower`, `faster`, `easier` and `swap` are instant; anything else ("in a minor key") asks Claude to edit the duet:
 
 ```bash

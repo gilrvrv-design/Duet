@@ -101,3 +101,17 @@ def test_changed_copies_are_validated():
     with pytest.raises(ValidationError):
         score.with_tempo(1000)
     assert score.with_tempo(120).meta.tempo_bpm == 120
+
+
+def test_one_part_alone():
+    score = make_score(
+        robot=[(1, 1, 1, "C5"), (3, 1, 1, "E5")],
+        pianist=[(1, 1, 4, "C4")],
+    )
+    score = score.revised({"sections": ({"name": "A", "bars": (1, 3)},)})
+    robot = score.only("robot")
+    assert {e.part for e in robot.events} == {"robot"} and len(robot.events) == 2
+    assert robot.sections == score.sections and robot.meta == score.meta
+    piano = score.only("pianist")
+    assert [e.pitch for e in piano.events] == [60]
+    assert piano.sections == ()  # bar 3 is gone with the robot's last note

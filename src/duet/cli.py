@@ -74,6 +74,10 @@ def cmd_convert(args) -> int:
 def cmd_play(args) -> int:
     robot = _robot(args)
     score = read_score(args.score)
+    if args.only:
+        part = ONLY[args.only]
+        score = score.only(part)
+        print(f"playing the {args.only} part only ({len(score.events)} notes)")
     if not check_robot(score, robot).ok:
         result = repair_robot(score, robot)
         print(f"repaired {len(result.changes)} problem(s) so the robot can play it")
@@ -105,6 +109,9 @@ def cmd_play(args) -> int:
     for fault in rig.faults:
         print("  " + fault)
     return 0 if not rig.faults and len(rig.sounds) == len(planned) else 1
+
+
+ONLY = {"robot": "robot", "piano": "pianist"}  # --only choices -> score parts
 
 
 def _keys(args):
@@ -449,7 +456,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("score")
     p.add_argument("--sim", action="store_true", help="use the simulated rig")
     p.add_argument("--realtime", action="store_true", help="run the clock in real time")
-    p.add_argument("--device", help="play on a device at this WebSocket URL")
+    p.add_argument(
+        "--device", help="play on a device: ws://host:port (the rig) or tcp://host:port (serial)"
+    )
+    p.add_argument(
+        "--only",
+        choices=sorted(ONLY),
+        help="play one part alone: the robot solo, or the piano part to practise alone",
+    )
     p.add_argument("--wait", action="store_true", help="wait mode: pause for each pianist note")
     p.add_argument("--follow", action="store_true", help="follow mode: robot keeps your tempo")
     p.add_argument("--stretch", type=float, default=1.1, help="simulated pianist tempo factor")
