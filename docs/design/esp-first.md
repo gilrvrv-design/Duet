@@ -87,7 +87,7 @@ app and the Hub decide from those, never from the board's name.
 
 | Board | Flash layout | Notes |
 |---|---|---|
-| `esp32-classic` (ESP32 DevKitC, 4 MB) | `huge_app`: 3 MB program, 896 KB storage, no OTA, once the web app arrives | the rig as wired today |
+| `esp32-classic` (ESP32 DevKitC, 4 MB) | `huge_app`: 3 MB program, 896 KB storage, no OTA | the rig as wired today |
 | `esp32-s3` (ESP32-S3 DevKitC-1 N16R8) | `default_16MB`: 6.25 MB program ×2, 3.4 MB storage | everything, plus USB MIDI in later |
 | `wokwi` | as `esp32-classic` | simulated parts |
 | `qemu`, `native` | — | test boards: the core, the device API and the planner in tests |

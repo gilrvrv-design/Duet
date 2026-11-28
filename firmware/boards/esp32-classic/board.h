@@ -11,7 +11,8 @@ constexpr const char* BOARD = "wokwi";  // the same board, in the Wokwi simulato
 #else
 constexpr const char* BOARD = "esp32-classic";
 #endif
-constexpr uint32_t FEATURES = duet::kWifi | duet::kFlash | duet::kPlayButton | duet::kEstopButton;
+constexpr uint32_t FEATURES =
+    duet::kWifi | duet::kFlash | duet::kPlayButton | duet::kEstopButton | duet::kWeb;
 
 constexpr int PIN_STEP = 25;
 constexpr int PIN_DIR = 26;

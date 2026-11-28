@@ -61,7 +61,7 @@ A board (needs [PlatformIO](https://platformio.org)); for the boards with Wi-Fi,
 cd firmware && pio run -e esp32-classic -t upload
 ```
 
-Then, on the Hub:
+The rig's page is then at `http://duet-rig-1.local` (docs/device-api.md). On the Hub:
 
 ```bash
 duet play examples/rain-on-the-bottles.json --device ws://duet-rig-1.local:8765

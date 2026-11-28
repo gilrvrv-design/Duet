@@ -249,10 +249,14 @@ flowchart TD
     s --> p["Install PlatformIO"]
     p --> f["cd firmware &&<br/>pio run -e esp32-classic -t upload"]
     f --> m["pio device monitor"]
-    m --> ok{"Prints<br/>duet: duet-rig-1 on ws://IP:8765 ?"}
+    m --> ok{"Prints<br/>duet: duet-rig-1 on ws://IP:8765,<br/>the app on http://duet-rig-1.local ?"}
     ok -->|"yes"| next["Bench test over serial"]
     ok -->|"no, stuck"| wifi["Check SSID and password;<br/>the ESP32 needs 2.4 GHz Wi-Fi"]
 ```
+
+The rig's own page is at `http://duet-rig-1.local`. Open it from a phone or laptop on the
+same network. It shows what the board can do, plays the songs stored on the rig and has
+an emergency stop (docs/device-api.md).
 
 Commands, in order:
 

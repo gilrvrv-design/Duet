@@ -13,6 +13,7 @@ enum Feature : uint32_t {
   kFlash = 1u << 1,        // stored songs survive power-off
   kPlayButton = 1u << 2,   // a button that plays stored songs without the Hub
   kEstopButton = 1u << 3,  // a hardware emergency stop
+  kWeb = 1u << 4,          // the web app and the device API over HTTP (docs/device-api.md)
 };
 
 struct FeatureName {
@@ -25,6 +26,7 @@ constexpr FeatureName kFeatureNames[] = {
     {kFlash, "flash"},
     {kPlayButton, "play_button"},
     {kEstopButton, "estop_button"},
+    {kWeb, "web"},
 };
 
 // Room for every feature at once in hello: `"name",` for each.

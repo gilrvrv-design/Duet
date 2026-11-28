@@ -1,20 +1,23 @@
-// ESP32 entry point: real hardware behind duet::Hal, the WebSocket and serial links, and
-// the main loop. All decisions live in the tested core (lib/duet_core); this file only
+// ESP32 entry point: real hardware behind duet::Hal, the WebSocket and serial links, the
+// web app and device API (docs/device-api.md), and the main loop. All decisions live in the tested core (lib/duet_core); this file only
 // connects it to the hardware.
 #include <Adafruit_NeoPixel.h>
 #include <Arduino.h>
 #include <ESPmDNS.h>
 #include <FastAccelStepper.h>
+#include <WebServer.h>
 #include <WebSocketsServer.h>
 #include <WiFi.h>
 #include <esp_timer.h>
 
 #include "board.h"  // from boards/<name>/, chosen by the PlatformIO environment
 #include "rig.h"
+#include "duet_api.hpp"
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "flash_songs.h"
 #include "serial_link.h"
+#include "web_assets.h"  // generated from firmware/web/ (tools/embed_web.py)
 #ifdef DUET_WOKWI
 #include "wokwi.h"  // simulator build: Wokwi's open Wi-Fi and a virtual home sensor
 #else
@@ -108,6 +111,28 @@ Link link;
 duet::Executor executor(hal, link, BOARD_CHANNELS);
 FlashSongStore songs;
 duet::Device device(executor, songs, link);  // songs stored in flash, played without the Hub
+duet::Api api(device, IDENTITY);
+WebServer web(HTTP_PORT);
+
+// Every request: the device API under /api/, else a file of the web app. Requests are
+// small and quick (the page asks once a second), so the main loop is not held up.
+void serve_web() {
+  const String& path = web.uri();
+  if (path.startsWith("/api/")) {
+    const char* method = web.method() == HTTP_GET ? "GET" : web.method() == HTTP_POST ? "POST" : "";
+    duet::Response r = api.handle(method, path.c_str(), now_us());
+    web.sendHeader("Cache-Control", "no-store");
+    web.send(r.status, "application/json", r.body.c_str());
+    return;
+  }
+  const duet::WebAsset* asset = duet::find_asset(duet::kWebAssets, path.c_str());
+  if (asset == nullptr) {
+    web.send(404, "text/plain", "not found");
+    return;
+  }
+  web.sendHeader("Content-Encoding", "gzip");
+  web.send_P(200, asset->type, reinterpret_cast<const char*>(asset->gzip), asset->size);
+}
 
 // The play button: a press (stable low for PLAY_DEBOUNCE_MS) plays the next stored song,
 // or stops the one playing.
@@ -168,13 +193,18 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED) delay(100);
   MDNS.begin(DEVICE_ID);
   MDNS.addService("duet", "tcp", WS_PORT);  // the Hub finds the rig as _duet._tcp
+  MDNS.addService("http", "tcp", HTTP_PORT);
   server.begin();
   server.onEvent(on_ws_event);
-  Serial.printf("duet: %s on ws://%s:%u\n", DEVICE_ID, WiFi.localIP().toString().c_str(), WS_PORT);
+  web.onNotFound(serve_web);
+  web.begin();
+  Serial.printf("duet: %s on ws://%s:%u, the app on http://%s.local\n", DEVICE_ID,
+                WiFi.localIP().toString().c_str(), WS_PORT, DEVICE_ID);
 }
 
 void loop() {
   server.loop();
+  web.handleClient();
   read_serial(device, now_us());
   read_play_button();
   if (digitalRead(PIN_ESTOP) == LOW && !executor.estopped()) {

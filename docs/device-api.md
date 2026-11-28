@@ -28,5 +28,8 @@ Success is `200 {"ok":true}`. Errors are `{"error":"..."}` with one of these sta
 - 409: the device cannot do it now (`already playing`, `no song in that slot`,
   `emergency stop`).
 
+On the ESP32 the app is at `http://duet-rig-1.local` (port 80, announced over mDNS).
+Boards that serve it report the `web` feature; QEMU's serial-only board does not.
+
 The native device prints `http <port>` as its second line, and `--http-port N` chooses
 the port. The tests in `tests/test_device_api.py` run against it.

@@ -1,5 +1,6 @@
 // The firmware as a Linux process (host/duet_device.cpp), for tests: stubbed hardware,
-// the serial link over TCP, songs in RAM, and "press" on stdin as the play button.
+// the serial link over TCP, the web app over HTTP, songs in RAM, and "press" on stdin as
+// the play button.
 #pragma once
 #include <cstdint>
 
@@ -8,7 +9,7 @@
 #include "rig.h"
 
 constexpr const char* BOARD = "native";
-constexpr uint32_t FEATURES = duet::kPlayButton;
+constexpr uint32_t FEATURES = duet::kPlayButton | duet::kWeb;
 
 // Channel 0: the carriage and its striker; 1: the LED strip over the keys; 2: MIDI out.
 constexpr duet::Channel CHANNELS[] = {
