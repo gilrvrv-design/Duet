@@ -6,10 +6,11 @@ The contract between the **Hub** (Python, `src/duet/protocol.py`,
 (`tests/test_firmware_contract.py`) runs the Hub's real command stream through the C++
 core and checks that it agrees with the Python simulator.
 
-**Protocol version: 4** (sent by the device in `hello`). Version 3 added channels: the
+**Protocol version: 5** (sent by the device in `hello`). Version 3 added channels: the
 device describes what it drives, and every timed command names the channel that plays
 it. Version 4 added `greet`: on a serial link, which has no "connect", the Hub asks for
-the greeting instead of hoping to catch the one sent at boot.
+the greeting instead of hoping to catch the one sent at boot. Version 5: `stop` also
+clears what the Hub has queued, so a live performance can be stopped.
 
 ## Channels
 
@@ -109,7 +110,7 @@ reported with the plan's number.
 | `heartbeat` | — | no | none | Only resets the watchdog |
 | `song` | `slot` (0–7), `lines`, `title` (optional: one line, at most 64 bytes) | no | one `ack`, after the last line | The next `lines` timed commands are stored as a song (below) |
 | `play` | `slot` | no | `ack` | Homes, then plays the stored song on its own (below) |
-| `stop` | — | no | `ack` | Stops playing a stored song; LEDs off |
+| `stop` | — | no | `ack` | Stops playing: a stored song, or the Hub's queued commands (a live performance stopped from the page). Clears the queue, stops the carriage, LEDs and MIDI notes off |
 | `greet` | — | no | `hello`, then the `channel`s | The Hub's first message on a serial link (below) |
 
 ### Device → Hub
@@ -126,7 +127,7 @@ reported with the plan's number.
 ### Examples
 
 ```json
-{"type":"hello","seq":0,"protocol":4,"device_id":"duet-rig-1","board":"esp32-classic","profile":"bottles-v1","features":["wifi","flash","play_button","estop_button","web"],"channels":3}
+{"type":"hello","seq":0,"protocol":5,"device_id":"duet-rig-1","board":"esp32-classic","profile":"bottles-v1","features":["wifi","flash","play_button","estop_button","web"],"channels":3}
 {"type":"channel","seq":0,"ch":0,"kind":"carriage_striker","steps_per_mm":80.000,"travel_steps":48000,"duty_limit":0.200,"duty_window_us":10000000,"max_pulse_us":50000}
 {"type":"channel","seq":0,"ch":1,"kind":"led_strip","count":176}
 {"type":"channel","seq":0,"ch":2,"kind":"midi_out","count":0}
@@ -162,7 +163,7 @@ sequenceDiagram
     participant D as Device
 
     H->>D: open WebSocket (on a serial link: send greet)
-    D-->>H: hello {protocol 4, device_id, board, profile, features, channels 3}
+    D-->>H: hello {protocol 5, device_id, board, profile, features, channels 3}
     D-->>H: channel {ch 0, carriage_striker, limits}
     D-->>H: channel {ch 1, led_strip, count 176}
     D-->>H: channel {ch 2, midi_out}

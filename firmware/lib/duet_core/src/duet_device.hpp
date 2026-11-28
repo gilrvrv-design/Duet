@@ -6,7 +6,7 @@
 //       from 0. The title is optional (at most kMaxTitle bytes).
 //       Acked once, with seq S, after the last line (ok, or why it was refused).
 //   {"type":"play","seq":S,"slot":k}   home, then play slot k
-//   {"type":"stop","seq":S}            stop playing
+//   {"type":"stop","seq":S}            stop playing: a stored song, or the Hub's queue
 //
 // A stored song plays through the executor's queue, half a second ahead, as the Hub's
 // conductor sends it, so every safety rule (homing, travel, duty, e-stop) still applies.
@@ -44,7 +44,7 @@ class Device {
 
   // Play a stored song: nullptr if it starts, else why not ("already playing", ...).
   const char* request_play(int slot, int64_t now_us);
-  void stop();  // stop playing; nothing if idle
+  void stop();  // stop playing: a stored song, or the Hub's queued commands
   const char* delete_song(int slot);  // nullptr if gone, else why not
 
   // Storing a song, from the Hub (the song message) or the device API (a song file), one

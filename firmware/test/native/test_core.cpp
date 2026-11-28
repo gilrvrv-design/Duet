@@ -200,7 +200,7 @@ static void test_greeting_hello_then_channels_and_oversize_is_rejected() {
     dev.greet();
     CHECK(out.sent.size() == 4);  // hello, then one message per channel
     CHECK(out.sent[0] ==
-          R"({"type":"hello","seq":0,"protocol":4,"device_id":"duet-rig-1","board":"esp32-classic",)"
+          R"({"type":"hello","seq":0,"protocol":5,"device_id":"duet-rig-1","board":"esp32-classic",)"
           R"("profile":"bottles-v1","features":["wifi","play_button"],"channels":3})");
     CHECK(out.sent[1].find(R"({"type":"channel","seq":0,"ch":0,"kind":"carriage_striker")") == 0);
     CHECK(out.sent[1].find(R"("travel_steps":48000)") != std::string::npos);
@@ -368,6 +368,24 @@ static void test_the_button_plays_the_next_song_and_stops() {
   r.run_until(r.hal.now_us + 5000000);
   r.dev.button(r.hal.now_us);
   CHECK(r.dev.slot() == 1);  // and round again
+}
+
+static void test_stop_clears_what_the_hub_queued() {
+  Rig r;
+  r.hal.place(0);
+  r.msg(R"({"type":"home","seq":1})");
+  r.run_until(500000);
+  CHECK(r.ex.homed());
+  // A live performance: a move now and strikes later, from the Hub.
+  r.msg(R"({"type":"move_at","seq":2,"ch":0,"t_us":600000,"target_steps":6400,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0})");
+  r.msg(R"({"type":"strike_at","seq":3,"ch":0,"t_us":2000000,"pulse_us":20000})");
+  r.msg(R"({"type":"heartbeat","seq":0})");
+  r.run_until(700000);
+  CHECK(r.ex.queued() == 1);
+  r.msg(R"({"type":"stop","seq":4})");  // the page stopped the practice
+  CHECK(r.out.has(R"({"type":"ack","seq":4,"status":"ok"})") && r.ex.queued() == 0);
+  r.run_until(3000000);
+  CHECK(r.strikes() == 0);  // nothing more plays
 }
 
 static void test_no_watchdog_stop_while_playing_from_memory() {
@@ -1001,6 +1019,7 @@ int main() {
   test_a_bad_song_is_refused_whole();
   test_a_stalled_upload_is_dropped();
   test_the_button_plays_the_next_song_and_stops();
+  test_stop_clears_what_the_hub_queued();
   test_no_watchdog_stop_while_playing_from_memory();
   test_playing_from_memory_keeps_the_rig_safe();
   test_the_api_reports_the_device_and_plays_its_songs();

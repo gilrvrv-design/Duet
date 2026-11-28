@@ -74,6 +74,13 @@ With an acoustic piano, add `--mic` (needs `pip install sounddevice`); the liste
 duet play examples/rain-on-the-bottles.json --sim --wait --mic
 ```
 
+On the rig, the same modes work with `--device` in place of `--sim` (Ctrl-C stops it, and
+the rig goes quiet):
+
+```bash
+duet play examples/rain-on-the-bottles.json --device ws://duet-rig-1.local:8765 --wait --midi-in "<port name>"
+```
+
 Play one part alone: `--only robot` for the bottles solo, `--only pianist` to practise
 your part with the light guide (and grading, in wait or follow mode):
 

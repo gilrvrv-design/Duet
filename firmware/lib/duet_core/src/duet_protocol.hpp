@@ -11,7 +11,7 @@ namespace duet {
 // Longest message either side may send, in bytes (the Hub checks this too:
 // duet.protocol.MAX_MESSAGE_BYTES).
 constexpr size_t kMaxMessage = 255;
-constexpr int kProtocol = 4;  // 4: on a serial link the Hub asks for the greeting (greet)
+constexpr int kProtocol = 5;  // 5: stop also clears what the Hub queued (a live performance)
 
 // Who the device is, for hello. `features` is a set of duet::Feature bits.
 struct Identity {

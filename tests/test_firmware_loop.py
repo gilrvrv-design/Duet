@@ -20,6 +20,7 @@ import select
 import shutil
 import socket
 import subprocess
+import threading
 import time
 
 import pytest
@@ -408,3 +409,78 @@ def test_the_firmware_plays_a_digital_piano_over_midi(device_url):
 def midi_out(gateway: DeviceGateway) -> list[tuple[int, tuple[int, int, int]]]:
     found = (MIDI.match(line) for line in gateway.console)
     return [(int(m[1]), (int(m[2]), int(m[3]), int(m[4]))) for m in found if m]
+
+
+# Live practice (duet.live) -----------------------------------------------------------
+
+SHORT = {
+    "meta": {"tempo_bpm": 120},
+    "events": [
+        {"part": "robot", "bar": 1, "beat": b, "dur": 1, "pitch": p}
+        for b, p in [(1, "C5"), (2, "D5"), (3, "E5"), (4, "F5")]
+    ]
+    + [{"part": "pianist", "bar": 2, "beat": b, "dur": 1, "pitch": "C4"} for b in (1, 3)],
+}
+
+
+def test_the_rig_waits_for_the_pianist(device_url):
+    from duet.listening import SimulatedPianist
+    from duet.live import StoppableClock, play_live, summary
+
+    keys = SimulatedPianist(reaction_s=0.4)
+    perf = play_live(
+        load_score(SHORT), device_url, robot_profile(), in_use(robot_profile(), keyboard_profile()),
+        mode="wait", keys=keys, clock=StoppableClock(),
+    )  # fmt: skip
+    assert perf.waited_us > 0  # it waited for each of the pianist's two notes
+    assert [n.pitch for n in keys.played] == [60, 60]
+    assert summary(perf, "wait").startswith("waited ")
+
+
+def test_a_live_performance_stops_and_the_rig_goes_quiet():
+    """Stopped mid-piece: the rig clears what the Hub queued, and no strike follows."""
+    from duet.live import StoppableClock, Stopped, play_live
+
+    device = native_device.start()
+    heard: list[float] = []  # when each strike was reported, Hub time
+    playing = threading.Event()
+
+    def listen() -> None:
+        for line in device.process.stdout:
+            if STRIKE.match(line):
+                heard.append(time.monotonic())
+                playing.set()
+
+    threading.Thread(target=listen, daemon=True).start()
+    long = load_score(
+        {
+            "meta": {"tempo_bpm": 60},
+            "events": [
+                {"part": "robot", "bar": 1 + i // 4, "beat": 1 + i % 4, "dur": 1, "pitch": "C5"}
+                for i in range(20)
+            ],
+        }
+    )
+    clock = StoppableClock()
+    stopped_at: list[float] = []
+
+    def stop_soon(gateway) -> None:
+        def stop() -> None:  # a second and a half into the music
+            playing.wait(timeout=30)
+            time.sleep(1.5)
+            stopped_at.append(time.monotonic())
+            clock.stop()
+
+        threading.Thread(target=stop, daemon=True).start()
+
+    try:
+        with pytest.raises(Stopped):
+            play_live(
+                long, device.serial_url, robot_profile(), in_use(robot_profile()),
+                mode="play", keys=None, clock=clock, on_connect=stop_soon,
+            )  # fmt: skip
+        time.sleep(2)  # the strikes queued half a second ahead would have played by now
+    finally:
+        device.stop()
+    assert heard, "it played before it was stopped"
+    assert all(t < stopped_at[0] + 0.2 for t in heard), "a strike after the stop"

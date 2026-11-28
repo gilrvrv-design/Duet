@@ -98,8 +98,9 @@ def cmd_play(args) -> int:
         score = score.only(args.only)
         print(f"playing the {args.only} part only ({len(score.events)} notes)")
     score = _playable(score, args)
+    mode = "follow" if args.follow else "wait" if args.wait or args.midi_in or args.mic else "play"
     if args.device:
-        return _play_on_device(score, robot, _in_use(args), args.device)
+        return _play_on_device(score, robot, _in_use(args), args.device, mode, _keys(args))
     if not args.sim:
         print("choose --sim or --device ws://host:port", file=sys.stderr)
         return 2
@@ -107,9 +108,13 @@ def cmd_play(args) -> int:
     keys = _keys(args)
     live = args.midi_in or args.mic is not None
     clock = RealClock() if args.realtime or live else VirtualClock()
-    mode = "follow" if args.follow else "wait"
     perf = perform(
-        score, one_rig(score, [rig]), clock, instruments=_in_use(args), keys=keys, mode=mode
+        score,
+        one_rig(score, [rig]),
+        clock,
+        instruments=_in_use(args),
+        keys=keys,
+        mode="follow" if mode == "follow" else "wait",
     )
     rig.run()
     if keys is not None:
@@ -360,17 +365,29 @@ def cmd_upload(args) -> int:
     return 0
 
 
-def _play_on_device(score, robot, instruments, url: str) -> int:
-    from duet.device.gateway import DeviceGateway
+def _play_on_device(score, robot, instruments, url: str, mode: str, keys) -> int:
+    """A live performance on a rig (duet.live), in play, wait or follow mode."""
+    from duet.device.gateway import DeviceFault
+    from duet.live import StoppableClock, Stopped, play_live, summary
 
-    with DeviceGateway(url, profile=robot) as gateway:
+    def connected(gateway) -> None:
         sync = gateway.sync
         print(f"connected to {describe(gateway.hello)}")
         print(f"clock offset {sync.offset_us} us (+/- {sync.error_bound_us:.0f} us)")
-        perf = perform(score, one_rig(score, [gateway]), RealClock(), instruments=instruments)
-        gateway.wait_acked()
-        print(f"sent {perf.messages_sent} commands, errors: {len(gateway.errors)}")
-        return 0 if not gateway.errors else 1
+
+    try:
+        perf = play_live(
+            score, url, robot, instruments, mode=mode, keys=keys, clock=StoppableClock(),
+            on_connect=connected,
+        )  # fmt: skip
+    except (Stopped, KeyboardInterrupt):
+        print("stopped; the rig is quiet")
+        return 1
+    except DeviceFault as exc:
+        print(f"the rig refused it: {exc}", file=sys.stderr)
+        return 1
+    print(summary(perf, mode))
+    return 0
 
 
 def cmd_device_sim(args) -> int:

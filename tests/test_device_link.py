@@ -143,7 +143,7 @@ def test_cli_play_on_device(device, capsys):
     score = ROOT / "tests" / "data" / "two-notes.json"
     assert main(["play", str(score), "--device", url]) == 0
     out = capsys.readouterr().out
-    assert "connected to sim-1" in out and "errors: 0" in out
+    assert "connected to sim-1" in out and "played 12 commands" in out  # errors would raise
 
 
 def test_drift_estimate_maths():
@@ -294,5 +294,5 @@ def test_line_links_need_a_host_and_port():
 @pytest.mark.parametrize("device", [{"protocol": 2}], indirect=True)
 def test_a_device_on_another_protocol_is_refused_at_connect(device):
     _, url = device
-    with pytest.raises(ConnectionError, match="protocol 2; this Hub speaks 4"):
+    with pytest.raises(ConnectionError, match="protocol 2; this Hub speaks 5"):
         DeviceGateway(url).connect()

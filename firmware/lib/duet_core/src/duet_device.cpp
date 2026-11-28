@@ -263,10 +263,9 @@ void Device::button(int64_t now_us) {
 }
 
 void Device::stop() {
-  if (state_ == State::Idle) return;
   state_ = State::Idle;
   have_next_ = false;
-  ex_.cancel();
+  ex_.cancel();  // a stored song, or what the Hub has queued: the rig goes quiet
 }
 
 void Device::ack(int64_t seq, const char* status) {

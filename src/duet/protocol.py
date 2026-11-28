@@ -13,7 +13,7 @@ from typing import ClassVar
 
 MAX_MESSAGE_BYTES = 255  # same as kMaxMessage in firmware/lib/duet_core/src/duet_protocol.hpp
 TITLE_BYTES = 64  # a stored song's title; same as kMaxTitle in duet_songs.hpp
-PROTOCOL = 4  # same as kProtocol; 4: on a serial link the Hub asks for the greeting (Greet)
+PROTOCOL = 5  # same as kProtocol; 5: Stop also clears what the Hub queued (live play)
 CARRIAGE_STRIKER, LED_STRIP, MIDI_OUT = "carriage_striker", "led_strip", "midi_out"
 
 # A timed command's channel is the device's business: the conductor fills it in for each
@@ -176,7 +176,7 @@ class Play(Message):
 
 @dataclass(frozen=True)
 class Stop(Message):
-    """Stop playing a stored song."""
+    """Stop playing: a stored song, or the commands the Hub has queued (protocol 5)."""
 
     type: ClassVar[str] = "stop"
 
