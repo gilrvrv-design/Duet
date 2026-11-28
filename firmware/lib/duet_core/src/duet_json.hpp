@@ -16,6 +16,10 @@ struct JsonObject {
 // False unless `json` is exactly one such object (whitespace aside).
 bool read_object(const char* json, JsonObject& out);
 
+// The string value of "key" in a flat JSON object (the protocol's messages, whose other
+// values are numbers). False if there is none, or it is not a valid string.
+bool string_field(const char* json, const char* key, std::string& out);
+
 // `text` as a JSON string: quoted, with quotes, backslashes and control characters escaped.
 std::string json_string(const std::string& text);
 

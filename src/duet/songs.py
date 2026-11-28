@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from duet.conductor import build_messages
 from duet.performers import Bot, in_use, performers
 from duet.profile import KeyboardProfile, RobotProfile
-from duet.protocol import CHANNEL_KIND, Message, message_time_us
+from duet.protocol import CHANNEL_KIND, TITLE_BYTES, Message, message_time_us
 from duet.score import DuetScore
 
 SLOTS = 8  # firmware kSongSlots
@@ -33,6 +33,15 @@ class CompiledSong:
     @property
     def duration_s(self) -> float:
         return message_time_us(self.commands[-1]) / 1e6 if self.commands else 0.0
+
+
+def song_title(title: str) -> str:
+    """The title as the device keeps it: one line, at most TITLE_BYTES of UTF-8."""
+    line = " ".join(title.split())
+    if len(line.encode()) <= TITLE_BYTES:
+        return line
+    cut = line.encode()[: TITLE_BYTES - len("…".encode())].decode(errors="ignore")
+    return cut.rstrip() + "…"
 
 
 def compile_song(
@@ -60,7 +69,7 @@ def compile_song(
         replace(m, t_us=message_time_us(m) - first, seq=i, ch=channels[CHANNEL_KIND[type(m)]])
         for i, m in enumerate(messages)
     ]
-    return CompiledSong(score.meta.title, commands)
+    return CompiledSong(song_title(score.meta.title), commands)
 
 
 def check_slot(slot: int) -> int:

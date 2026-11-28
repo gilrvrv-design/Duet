@@ -319,7 +319,7 @@ def cmd_upload(args) -> int:
         with DeviceGateway(args.device, profile=robot) as gateway:
             print(f"connected to {describe(gateway.hello)}")
             song = compile_song(score, robot, keyboard_profile(args.piano), gateway.channels)
-            gateway.upload(slot, song.commands)
+            gateway.upload(slot, song)
             print(
                 f"stored {song.title!r} in slot {slot}: {len(song.commands)} commands, "
                 f"{song.duration_s:.1f} s"

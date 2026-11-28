@@ -46,7 +46,7 @@ def upload(device, slot):
     song = compile_song(score, robot_profile(), keyboard_profile(), RIG_CHANNELS)
     gateway = DeviceGateway(device.serial_url, profile=robot_profile()).connect()
     try:
-        gateway.upload(slot, song.commands)
+        gateway.upload(slot, song)
     finally:
         gateway.close()
 
@@ -74,9 +74,9 @@ def test_play_a_stored_song_and_stop_it(page, device):
     upload(device, 3)
     poll(page)  # the app sees the new song
     expect(page.locator("#no-songs")).to_be_hidden()
-    page.get_by_role("button", name="Play slot 3").click()
-    expect(page.locator("#state")).to_have_text("Homing for slot 3")
-    expect(page.get_by_role("button", name="Play slot 3")).to_be_disabled()
+    page.get_by_role("button", name="Play Rain on the Bottles").click()
+    expect(page.locator("#state")).to_have_text("Getting ready…")
+    expect(page.get_by_role("button", name="Play Rain on the Bottles")).to_be_disabled()
     assert device.api("GET", "/api/info")[1]["state"] != "idle"
 
     page.get_by_role("button", name="Stop", exact=True).click()
@@ -89,10 +89,10 @@ def test_emergency_stop_and_a_refusal(page, device):
     upload(device, 1)
     page.goto(device.http_url)
     device.api("POST", "/api/estop")  # someone else stops the rig; the page has not polled
-    page.get_by_role("button", name="Play slot 1").click()
+    page.get_by_role("button", name="Play Rain on the Bottles").click()
     expect(page.locator("#message")).to_have_text("The rig refused: emergency stop.")
     expect(page.locator("#state")).to_have_text("Emergency stop")
-    expect(page.get_by_role("button", name="Play slot 1")).to_be_disabled()
+    expect(page.get_by_role("button", name="Play Rain on the Bottles")).to_be_disabled()
 
 
 def test_the_estop_button_stops_the_rig(page, device):

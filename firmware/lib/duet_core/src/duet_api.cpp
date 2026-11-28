@@ -103,7 +103,8 @@ Response Api::songs() const {
   bool first = true;
   for (int slot = 0; slot < kSongSlots; ++slot) {
     if (!device_.songs().has(slot)) continue;
-    body += (first ? "{\"slot\":" : ",{\"slot\":") + std::to_string(slot) + "}";
+    body += (first ? "{\"slot\":" : ",{\"slot\":") + std::to_string(slot) +
+            ",\"title\":" + json_string(device_.songs().title(slot)) + "}";
     first = false;
   }
   return {200, body + "]}"};

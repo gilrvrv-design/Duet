@@ -1,22 +1,23 @@
-// Songs in the ESP32's flash (LittleFS), so they survive power-off. One file per slot,
-// one JSON line per command. A new song is written to a temporary file and renamed over
+// Songs in the ESP32's flash (LittleFS), so they survive power-off. One file per slot:
+// the title ({"title":".."}), then one JSON line per command. A new song is written to a temporary file and renamed over
 // the old one only when complete: a failed upload never damages the stored song.
 #pragma once
 #include <Arduino.h>
 #include <LittleFS.h>
 
+#include "duet_json.hpp"
 #include "duet_songs.hpp"
 
 class FlashSongStore : public duet::SongStore {
  public:
   bool begin_fs() { return LittleFS.begin(true); }  // formats the partition on first use
 
-  bool begin(int slot) override {
+  bool begin(int slot, const std::string& title) override {
     if (slot < 0 || slot >= duet::kSongSlots) return false;
     abort();
     writing_ = slot;
     out_ = LittleFS.open(kTemp, "w");
-    return static_cast<bool>(out_);
+    return out_ && append(("{\"title\":" + duet::json_string(title) + "}").c_str());
   }
   bool append(const char* line) override {
     if (writing_ < 0 || !out_) return false;
@@ -42,9 +43,17 @@ class FlashSongStore : public duet::SongStore {
     File f = LittleFS.open(path_of(slot), "r");
     return f && f.size() > 0;
   }
+  std::string title(int slot) const override {
+    File f = LittleFS.open(path_of(slot), "r");
+    String first = f.readStringUntil('\n');
+    std::string title;
+    duet::string_field(first.c_str(), "title", title);
+    return title;
+  }
   bool open(int slot) override {
     if (in_) in_.close();
     in_ = LittleFS.open(path_of(slot), "r");
+    if (in_) in_.readStringUntil('\n');  // the title
     return static_cast<bool>(in_);
   }
   bool next(char* buf, size_t size) override {

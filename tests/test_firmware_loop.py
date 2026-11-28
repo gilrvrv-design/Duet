@@ -34,7 +34,7 @@ from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import Estop, Greet, Heartbeat, Home, MoveAt, StrikeAt, parse_message
 from duet.score import load_score
 from duet.sim import RIG_CHANNELS
-from duet.songs import compile_song
+from duet.songs import CompiledSong, compile_song
 from helpers import ROOT
 
 FIRMWARE = ROOT / "firmware"
@@ -306,7 +306,7 @@ def test_a_stored_song_plays_from_memory(device_url):
     song = example_song()
     gateway = connect(device_url)
     try:
-        gateway.upload(3, song.commands)
+        gateway.upload(3, song)
         assert strikes(gateway) == []  # stored, not played
         gateway.play(3)
         heard = wait_for_strikes(gateway, 9, timeout_s=song.duration_s + 10)
@@ -327,7 +327,7 @@ def test_bad_songs_and_plays_are_refused(device_url):
     try:
         bad = [StrikeAt(-1, 20000, ch=0)]  # before the song starts
         with pytest.raises(DeviceFault, match="bad song line"):
-            gateway.upload(0, bad)
+            gateway.upload(0, CompiledSong("bad", bad))
     finally:
         gateway.close()
 
@@ -338,7 +338,7 @@ def test_the_play_button_plays_without_the_hub():
     song = example_song()
     try:
         gateway = connect(url)
-        gateway.upload(0, song.commands)
+        gateway.upload(0, song)
         gateway.close()  # no Hub from here on
         process.stdin.write("press\n")
         process.stdin.flush()

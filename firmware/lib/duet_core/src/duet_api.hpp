@@ -5,7 +5,7 @@
 //   GET  /api/info                {"hello":{..},"channels":[{..},..],"state":..,"slot":..,
 //                                  "estopped":..,"network":"station"|"setup"}: hello and
 //                                  channels as the Hub hears them
-//   GET  /api/songs               {"slots":8,"songs":[{"slot":k},..]}: the stored songs
+//   GET  /api/songs               {"slots":8,"songs":[{"slot":k,"title":".."},..]}
 //   POST /api/songs/<k>/play      play stored song k
 //   POST /api/stop                stop playing
 //   POST /api/estop               emergency stop (latched, as the button)

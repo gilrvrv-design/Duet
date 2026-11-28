@@ -27,7 +27,7 @@ def upload(device, slot):
     song = compile_song(score, robot_profile(), keyboard_profile(), RIG_CHANNELS)
     gateway = DeviceGateway(device.serial_url, profile=robot_profile()).connect()
     try:
-        gateway.upload(slot, song.commands)
+        gateway.upload(slot, song)
     finally:
         gateway.close()
 
@@ -52,7 +52,9 @@ def test_info_is_what_the_hub_hears(device):
 def test_the_app_plays_a_stored_song_and_stops_it(device):
     assert device.api("GET", "/api/songs") == (200, {"slots": 8, "songs": []})
     upload(device, 4)
-    assert device.api("GET", "/api/songs")[1]["songs"] == [{"slot": 4}]
+    assert device.api("GET", "/api/songs")[1]["songs"] == [
+        {"slot": 4, "title": "Rain on the Bottles"}
+    ]
 
     assert device.api("POST", "/api/songs/4/play") == (200, {"ok": True})
     info = wait_for_state(device, "playing")

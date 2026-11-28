@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace duet {
 namespace {
@@ -92,6 +93,14 @@ bool read_object(const char* json, JsonObject& out) {
   }
   r.space();
   return *r.p == '\0';
+}
+
+bool string_field(const char* json, const char* key, std::string& out) {
+  std::string pattern = "\"" + std::string(key) + "\"";
+  const char* at = std::strstr(json, pattern.c_str());
+  if (at == nullptr) return false;
+  Reader r{at + pattern.size()};
+  return r.take(':') && r.string(out);
 }
 
 std::string json_string(const std::string& text) {

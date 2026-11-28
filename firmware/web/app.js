@@ -54,8 +54,8 @@ function showState(info) {
     pill.dataset.state = info.state;
     pill.textContent = {
       idle: "Ready",
-      homing: `Homing for slot ${info.slot}`,
-      playing: `Playing slot ${info.slot}`,
+      homing: "Getting ready…",
+      playing: `Playing ${songTitle(info.slot)}`,
     }[info.state];
   }
   $("stop").hidden = !playing;
@@ -66,20 +66,27 @@ function showState(info) {
   }
 }
 
+let titles = {};  // slot -> title, of the songs shown
+
+function songTitle(slot) {
+  return titles[slot] || `slot ${slot}`;
+}
+
 function showSongs(songs) {
+  titles = Object.fromEntries(songs.map((s) => [s.slot, s.title]));
   const list = $("songs");
   list.replaceChildren(
-    ...songs.map(({ slot }) => {
+    ...songs.map(({ slot, title }) => {
       const li = document.createElement("li");
       li.dataset.slot = slot;
       const name = document.createElement("span");
       name.className = "name";
-      name.textContent = `Song in slot ${slot}`;
+      name.textContent = title || `Song in slot ${slot}`;
       const play = document.createElement("button");
       play.type = "button";
       play.className = "secondary";
       play.textContent = "Play";
-      play.setAttribute("aria-label", `Play slot ${slot}`);
+      play.setAttribute("aria-label", `Play ${title || `slot ${slot}`}`);
       play.addEventListener("click", () => command(`/api/songs/${slot}/play`));
       li.append(name, play);
       return li;

@@ -107,7 +107,7 @@ reported with the plan's number.
 | `estop` | — | no | `ack` | Stops motion, solenoid off, clears the queue, latches |
 | `time_ping` | `t1` (Hub clock) | no | `time_pong` | Answers immediately |
 | `heartbeat` | — | no | none | Only resets the watchdog |
-| `song` | `slot` (0–7), `lines` | no | one `ack`, after the last line | The next `lines` timed commands are stored as a song (below) |
+| `song` | `slot` (0–7), `lines`, `title` (optional: one line, at most 64 bytes) | no | one `ack`, after the last line | The next `lines` timed commands are stored as a song (below) |
 | `play` | `slot` | no | `ack` | Homes, then plays the stored song on its own (below) |
 | `stop` | — | no | `ack` | Stops playing a stored song; LEDs off |
 | `greet` | — | no | `hello`, then the `channel`s | The Hub's first message on a serial link (below) |

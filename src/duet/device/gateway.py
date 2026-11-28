@@ -47,6 +47,7 @@ from duet.protocol import (
     TimePong,
     parse_message,
 )
+from duet.songs import CompiledSong
 
 log = logging.getLogger(__name__)
 
@@ -313,15 +314,15 @@ class DeviceGateway:
         self._call(self._ws.send(dataclasses.replace(msg, seq=wire).to_json()))
 
     # songs stored on the device ---------------------------------------------
-    def upload(self, slot: int, commands: list[Message]) -> None:
+    def upload(self, slot: int, song: CompiledSong) -> None:
         """Store a compiled song (duet.songs) in a slot on the device. Its times are
         song times, not Hub times, so it bypasses send(): no clock conversion."""
         wire = self._next_wire_seq()
         with self._state:
             self._check()
             self._unacked[wire] = wire
-        lines = [Song(slot=slot, lines=len(commands), seq=wire).to_json()]
-        lines += [m.to_json() for m in commands]
+        header = Song(slot=slot, lines=len(song.commands), title=song.title, seq=wire)
+        lines = [header.to_json()] + [m.to_json() for m in song.commands]
         self._call(self._send_lines(lines))
         self.wait_acked()
 

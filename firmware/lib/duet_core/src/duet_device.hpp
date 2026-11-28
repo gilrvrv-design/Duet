@@ -2,7 +2,8 @@
 // Hub ("play from memory"). Every message goes through here; anything that is not about
 // songs passes to the executor unchanged.
 //
-//   {"type":"song","seq":S,"slot":k,"lines":N}  then N timed commands, t_us from 0.
+//   {"type":"song","seq":S,"slot":k,"lines":N,"title":".."}  then N timed commands, t_us
+//       from 0. The title is optional (at most kMaxTitle bytes).
 //       Acked once, with seq S, after the last line (ok, or why it was refused).
 //   {"type":"play","seq":S,"slot":k}   home, then play slot k
 //   {"type":"stop","seq":S}            stop playing
@@ -50,7 +51,7 @@ class Device {
  private:
   enum class State { Idle, Homing, Playing };
 
-  void begin_upload(const Command& c, int64_t now_us);
+  void begin_upload(const Command& c, const char* json, int64_t now_us);
   void receive_line(const Command& c, const char* json, int64_t now_us);
   void end_upload(const char* status);
   void play(int slot, int64_t now_us);

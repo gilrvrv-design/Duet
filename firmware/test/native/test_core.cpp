@@ -298,6 +298,27 @@ static void test_upload_then_play_from_memory() {
   CHECK(!r.out.has("fault"));
 }
 
+static void test_a_song_keeps_its_title() {
+  Rig r;
+  r.msg(R"({"type":"song","seq":3,"slot":1,"lines":1,"title":"Rain \"on\" the Bottles \u00e9"})");
+  r.msg(kSong[0]);
+  CHECK(r.out.has(R"({"type":"ack","seq":3,"status":"ok"})"));
+  CHECK(r.store.title(1) == "Rain \"on\" the Bottles \xc3\xa9");
+
+  const char* bad[] = {
+      R"({"type":"song","seq":4,"slot":1,"lines":1,"title":"two\nlines"})",
+      R"({"type":"song","seq":4,"slot":1,"lines":1,"title":"x)"
+      R"(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"})",  // 65 bytes
+      R"({"type":"song","seq":4,"slot":1,"lines":1,"title":5})",
+  };
+  for (const char* header : bad) {
+    r.out.sent.clear();
+    r.msg(header);
+    CHECK(r.out.has(R"({"type":"ack","seq":4,"status":"error: bad song title"})"));
+  }
+  CHECK(r.store.title(1) == "Rain \"on\" the Bottles \xc3\xa9");  // the stored song stays
+}
+
 static void test_a_bad_song_is_refused_whole() {
   Rig r;
   r.msg(R"({"type":"song","seq":3,"slot":0,"lines":2})");
@@ -450,7 +471,7 @@ static void test_the_api_reports_the_device_and_plays_its_songs() {
   upload(r, 2);
   upload(r, 5, 9);
   CHECK(api.handle("GET", "/api/songs", "", 0).body ==
-        R"({"slots":8,"songs":[{"slot":2},{"slot":5}]})");
+        R"({"slots":8,"songs":[{"slot":2,"title":""},{"slot":5,"title":""}]})");
 
   Response none = api.handle("POST", "/api/songs/0/play", "", r.hal.now_us);
   CHECK(none.status == 409 && none.body == R"({"error":"no song in that slot"})");
@@ -555,6 +576,7 @@ int main() {
   test_midi_notes_play_and_are_silenced_when_the_hub_goes_quiet();
   test_midi_notes_off_and_estop_and_boards_without_midi();
   test_upload_then_play_from_memory();
+  test_a_song_keeps_its_title();
   test_a_bad_song_is_refused_whole();
   test_a_stalled_upload_is_dropped();
   test_the_button_plays_the_next_song_and_stops();

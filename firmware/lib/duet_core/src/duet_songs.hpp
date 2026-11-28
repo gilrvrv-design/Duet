@@ -1,6 +1,7 @@
-// Songs stored on the device, to play without the Hub. A song is a list of timed
-// commands (move_at, strike_at, led_frame_at), one JSON line each, with t_us counted
-// from the start of the song. The Hub compiles and uploads them; duet::Device plays them.
+// Songs stored on the device, to play without the Hub. A song is a title and a list of
+// timed commands (move_at, strike_at, led_frame_at, note_at), one JSON line each, with
+// t_us counted from the start of the song. The Hub compiles and uploads them;
+// duet::Device plays them.
 #pragma once
 #include <cstddef>
 #include <cstring>
@@ -11,15 +12,18 @@ namespace duet {
 
 constexpr int kSongSlots = 8;
 constexpr int32_t kMaxSongLines = 4000;  // about ten minutes of a dense piece
+constexpr size_t kMaxTitle = 64;         // bytes of UTF-8
 
 class SongStore {
  public:
   virtual ~SongStore() = default;
-  virtual bool begin(int slot) = 0;  // start writing; the old song stays until finish()
+  virtual bool begin(int slot, const std::string& title) = 0;  // start writing; the old
+                                                               // song stays until finish()
   virtual bool append(const char* line) = 0;
   virtual bool finish() = 0;  // the new song replaces the old one
   virtual void abort() = 0;   // forget what was written; the old song stays
   virtual bool has(int slot) const = 0;
+  virtual std::string title(int slot) const = 0;  // of a stored song
   virtual bool open(int slot) = 0;                // start reading
   virtual bool next(char* buf, size_t size) = 0;  // the next line; false at the end
 };
@@ -27,9 +31,10 @@ class SongStore {
 // Songs in RAM: for tests, QEMU and the native device. Lost at power-off.
 class MemorySongStore : public SongStore {
  public:
-  bool begin(int slot) override {
+  bool begin(int slot, const std::string& title) override {
     if (slot < 0 || slot >= kSongSlots) return false;
     writing_ = slot;
+    pending_title_ = title;
     pending_.clear();
     return true;
   }
@@ -41,6 +46,7 @@ class MemorySongStore : public SongStore {
   bool finish() override {
     if (writing_ < 0) return false;
     songs_[writing_] = pending_;
+    titles_[writing_] = pending_title_;
     pending_.clear();
     writing_ = -1;
     return true;
@@ -52,6 +58,7 @@ class MemorySongStore : public SongStore {
   bool has(int slot) const override {
     return slot >= 0 && slot < kSongSlots && !songs_[slot].empty();
   }
+  std::string title(int slot) const override { return titles_[slot]; }
   bool open(int slot) override {
     if (!has(slot)) return false;
     reading_ = slot;
@@ -68,7 +75,9 @@ class MemorySongStore : public SongStore {
 
  private:
   std::vector<std::string> songs_[kSongSlots];
+  std::string titles_[kSongSlots];
   std::vector<std::string> pending_;
+  std::string pending_title_;
   int writing_ = -1;
   int reading_ = -1;
   size_t line_ = 0;

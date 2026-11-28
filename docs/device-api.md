@@ -17,7 +17,7 @@ for people: it shows what the device is, and it plays the songs stored on it.
 | Request | Answer |
 |---|---|
 | `GET /api/info` | `{"hello":{..},"channels":[..],"state":"idle"\|"homing"\|"playing","slot":k,"estopped":bool,"network":"station"\|"setup"}`. `hello` and `channels` are the messages the Hub hears on connecting. `slot` is the song playing or last played (-1 before any). `network` is `setup` while the board serves its setup network. |
-| `GET /api/songs` | `{"slots":8,"songs":[{"slot":k},..]}`: the slots that hold a song |
+| `GET /api/songs` | `{"slots":8,"songs":[{"slot":k,"title":".."},..]}`: the slots that hold a song, and its title |
 | `POST /api/songs/<k>/play` | Home, then play stored song *k* |
 | `POST /api/stop` | Stop playing |
 | `POST /api/estop` | Emergency stop, latched as with the hardware button |

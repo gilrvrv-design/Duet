@@ -1,6 +1,10 @@
 #include "duet_device.hpp"
 
 #include <cstdio>
+#include <cstring>
+#include <string>
+
+#include "duet_json.hpp"
 
 namespace duet {
 
@@ -15,7 +19,7 @@ void Device::on_message(const char* json, int64_t now_us) {
     switch (c.type) {
       case Type::Song:
         ex_.keepalive(now_us);
-        begin_upload(c, now_us);
+        begin_upload(c, json, now_us);
         return;
       case Type::Play:
         ex_.keepalive(now_us);
@@ -70,7 +74,18 @@ void Device::on_oversize(int64_t now_us) {
   ex_.on_oversize(now_us);
 }
 
-void Device::begin_upload(const Command& c, int64_t now_us) {
+// A song's title: optional; short, and no control characters (it is shown as one line).
+static bool song_title(const char* json, std::string& title) {
+  title.clear();
+  if (std::strstr(json, "\"title\"") && !string_field(json, "title", title)) return false;
+  if (title.size() > kMaxTitle) return false;
+  for (char ch : title)
+    if (static_cast<unsigned char>(ch) < 0x20) return false;
+  return true;
+}
+
+void Device::begin_upload(const Command& c, const char* json, int64_t now_us) {
+  std::string title;
   if (receiving_) {
     store_.abort();
     ack(upload_seq_, "error: upload replaced");
@@ -80,7 +95,9 @@ void Device::begin_upload(const Command& c, int64_t now_us) {
     ack(c.seq, "error: playing from memory");
   } else if (c.lines < 1 || c.lines > kMaxSongLines) {
     ack(c.seq, "error: bad song length");
-  } else if (!store_.begin(c.slot)) {
+  } else if (!song_title(json, title)) {
+    ack(c.seq, "error: bad song title");
+  } else if (!store_.begin(c.slot, title)) {
     ack(c.seq, "error: bad song slot");
   } else {
     receiving_ = true;
