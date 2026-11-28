@@ -79,7 +79,7 @@ def wait_for_boot(port: int) -> None:
     sent to a chip that is still booting crash QEMU (not a real ESP32), so nothing is
     sent until then; QEMU then takes the tests' own connection."""
     with (
-        connect("127.0.0.1", port, BOOT_TIMEOUT_S) as link,
+        open_link("127.0.0.1", port, BOOT_TIMEOUT_S) as link,
         link.makefile("r", errors="replace") as console,
     ):
         for line in console:
