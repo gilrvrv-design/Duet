@@ -97,6 +97,16 @@ bool parse(const char* json, Command& out) {
       return false;
     out.pulse_us = static_cast<int32_t>(i);
     out.type = Type::StrikeAt;
+  } else if (type_is(json, "note_at")) {
+    int64_t midi = 0, pitch = 0, vel = 0;
+    if (!get_ch(json, out) || !get_int(json, "t_us", out.t_us) || !get_int(json, "midi", midi) ||
+        !get_int(json, "pitch", pitch) || !get_int(json, "vel", vel))
+      return false;
+    if (midi < 0 || midi > 15 || pitch < 0 || pitch > 127 || vel < 0 || vel > 127) return false;
+    out.midi = static_cast<uint8_t>(midi);
+    out.pitch = static_cast<uint8_t>(pitch);
+    out.vel = static_cast<uint8_t>(vel);
+    out.type = Type::NoteAt;
   } else if (type_is(json, "led_frame_at")) {
     int64_t first = 0, count = 0;
     if (!get_ch(json, out) || !get_int(json, "t_us", out.t_us) ||

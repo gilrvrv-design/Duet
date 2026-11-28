@@ -20,11 +20,13 @@ from duet.protocol import (
     CARRIAGE_STRIKER,
     CHANNEL_KIND,
     LED_STRIP,
+    MIDI_OUT,
     Estop,
     Home,
     LedFrameAt,
     Message,
     MoveAt,
+    NoteAt,
     StrikeAt,
     message_time_us,
 )
@@ -55,19 +57,20 @@ class SimFault:
         return f"t={self.t_us}: {self.code}: {self.detail}"
 
 
-RIG_CHANNELS = {CARRIAGE_STRIKER: 0, LED_STRIP: 1}  # as firmware/boards/*/board.h
+RIG_CHANNELS = {CARRIAGE_STRIKER: 0, LED_STRIP: 1, MIDI_OUT: 2}  # as firmware/boards/*/board.h
 RIG_LEDS = 176  # as LED_COUNT in firmware/src/rig.h
 
 
 @dataclass
 class SimulatedRig:
-    """The rig: a carriage-striker on channel 0 and an LED strip on channel 1, like the
-    boards in firmware/boards/ (the contract test keeps them the same)."""
+    """The rig: a carriage-striker on channel 0, an LED strip on 1 and MIDI out on 2, like
+    the boards in firmware/boards/ (the contract test keeps them the same)."""
 
     profile: RobotProfile
     limits: DeviceLimits | None = None  # default: what the profile says
     sounds: list[Sound] = field(default_factory=list)
     led_frames: list[LedFrame] = field(default_factory=list)
+    notes: list[NoteAt] = field(default_factory=list)  # MIDI out, on and off
     faults: list[SimFault] = field(default_factory=list)
     received: list[Message] = field(default_factory=list)
     position: int = HOME_STEPS
@@ -123,6 +126,8 @@ class SimulatedRig:
             self._strike(msg)
         elif isinstance(msg, LedFrameAt):
             self.led_frames.append(LedFrame(msg.t_us, msg.first, msg.count, msg.rgb))
+        elif isinstance(msg, NoteAt):  # no carriage, no homing needed
+            self.notes.append(msg)
 
     def _move(self, msg: MoveAt) -> None:
         if not self.homed:

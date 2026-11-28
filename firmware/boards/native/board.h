@@ -10,10 +10,11 @@
 constexpr const char* BOARD = "native";
 constexpr uint32_t FEATURES = duet::kPlayButton;
 
-// Channel 0: the carriage and its striker; channel 1: the LED strip over the keys.
+// Channel 0: the carriage and its striker; 1: the LED strip over the keys; 2: MIDI out.
 constexpr duet::Channel CHANNELS[] = {
     {duet::ChannelKind::CarriageStriker, 0},
     {duet::ChannelKind::LedStrip, LED_COUNT},
+    {duet::ChannelKind::MidiOut, 0},
 };
 static_assert(duet::at_most_one_carriage(CHANNELS), "one carriage per board");
 constexpr duet::Channels BOARD_CHANNELS{CHANNELS, sizeof CHANNELS / sizeof CHANNELS[0]};

@@ -18,6 +18,7 @@ class Hal {
   virtual void led_fill(int first, int count, uint8_t r, uint8_t g, uint8_t b) = 0;
   virtual void led_show() = 0;
   virtual void led_clear() = 0;  // every LED off, shown at once
+  virtual void midi(uint8_t status, uint8_t data1, uint8_t data2) = 0;  // one MIDI message
 };
 
 }  // namespace duet

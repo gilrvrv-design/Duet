@@ -11,7 +11,7 @@
 namespace duet {
 
 struct SimEvent {
-  const char* kind;  // "strike", "led" or "clear"
+  const char* kind;  // "strike", "led", "clear" or "midi"
   int64_t t_us;
   int32_t a;  // strike: position; led: first
   int32_t b;  // led: count
@@ -51,6 +51,9 @@ class SimHal : public Hal {
   }
   void led_show() override {}
   void led_clear() override { events.push_back({"clear", now_us, 0, 0}); }
+  void midi(uint8_t status, uint8_t data1, uint8_t data2) override {
+    events.push_back({"midi", now_us, status << 8 | data1, data2});
+  }
 
   void place(int32_t s) { from_ = to_ = s; }
 

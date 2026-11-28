@@ -13,7 +13,7 @@ from typing import ClassVar
 
 MAX_MESSAGE_BYTES = 255  # same as kMaxMessage in firmware/lib/duet_core/src/duet_protocol.hpp
 PROTOCOL = 3  # same as kProtocol; 3: the greeting is hello, then one message per channel
-CARRIAGE_STRIKER, LED_STRIP = "carriage_striker", "led_strip"  # channel kinds
+CARRIAGE_STRIKER, LED_STRIP, MIDI_OUT = "carriage_striker", "led_strip", "midi_out"
 
 # A timed command's channel is the device's business: the conductor fills it in for each
 # device it sends to (its channel of the right kind). Until then it is None, which a
@@ -70,6 +70,18 @@ class LedFrameAt(Message):
 
 
 @dataclass(frozen=True)
+class NoteAt(Message):
+    """A MIDI note on (``vel`` > 0) or off (``vel`` 0) on MIDI channel ``midi`` (0-15)."""
+
+    type: ClassVar[str] = "note_at"
+    t_us: int
+    midi: int
+    pitch: int
+    vel: int
+    ch: int | None = _CH
+
+
+@dataclass(frozen=True)
 class Estop(Message):
     type: ClassVar[str] = "estop"
 
@@ -103,7 +115,7 @@ class Channel(Message):
 
     type: ClassVar[str] = "channel"
     ch: int = 0
-    kind: str = ""  # CARRIAGE_STRIKER or LED_STRIP
+    kind: str = ""  # CARRIAGE_STRIKER, LED_STRIP or MIDI_OUT
     count: int = 0
     steps_per_mm: float = 0.0
     travel_steps: int = 0
@@ -174,8 +186,13 @@ class Fault(Message):
     detail: str = ""
 
 
-TIMED = (MoveAt, StrikeAt, LedFrameAt)
-CHANNEL_KIND = {MoveAt: CARRIAGE_STRIKER, StrikeAt: CARRIAGE_STRIKER, LedFrameAt: LED_STRIP}
+TIMED = (MoveAt, StrikeAt, LedFrameAt, NoteAt)
+CHANNEL_KIND = {
+    MoveAt: CARRIAGE_STRIKER,
+    StrikeAt: CARRIAGE_STRIKER,
+    LedFrameAt: LED_STRIP,
+    NoteAt: MIDI_OUT,
+}
 MESSAGE_TYPES = {cls.type: cls for cls in Message.__subclasses__()}  # every message, by name
 
 

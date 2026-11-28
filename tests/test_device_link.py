@@ -255,9 +255,9 @@ def test_a_device_with_other_limits_is_refused_at_connect(device):
 def test_the_simulated_device_reports_the_firmware_limits():
     from duet.device.limits import DeviceLimits, mismatches
 
-    hello, carriage, strip = SimulatedDevice().greeting()
+    hello, carriage, strip, midi = SimulatedDevice().greeting()
     assert hello.board == "sim"
-    assert hello.channels == 2 and strip.kind == "led_strip"
+    assert hello.channels == 3 and strip.kind == "led_strip" and midi.kind == "midi_out"
     assert mismatches(DeviceLimits.from_channel(carriage), robot_profile()) == []
 
 

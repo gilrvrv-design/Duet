@@ -20,6 +20,7 @@ from duet.profile import RobotProfile, robot_profile
 from duet.protocol import (
     CARRIAGE_STRIKER,
     LED_STRIP,
+    MIDI_OUT,
     PROTOCOL,
     TIMED,
     Ack,
@@ -103,7 +104,7 @@ class SimulatedDevice:
 
     def greeting(self) -> list[Message]:
         """What the firmware sends on connect (Device::greet): hello, then its channels,
-        the same two as the rig: the carriage, then the LED strip."""
+        the rig's: the carriage, the LED strip, MIDI out."""
         hello = Hello(
             protocol=self.protocol,
             device_id=self.device_id,
@@ -115,7 +116,8 @@ class SimulatedDevice:
             RIG_CHANNELS[CARRIAGE_STRIKER]
         )
         strip = Channel(ch=RIG_CHANNELS[LED_STRIP], kind=LED_STRIP, count=RIG_LEDS)
-        return [hello, carriage, strip]
+        midi = Channel(ch=RIG_CHANNELS[MIDI_OUT], kind=MIDI_OUT)
+        return [hello, carriage, strip, midi]
 
     async def serve_lines(self, host: str = "127.0.0.1", port: int = 5555, ready=None) -> None:
         """The same device on a serial-style line link (``tcp://``), like the QEMU build.

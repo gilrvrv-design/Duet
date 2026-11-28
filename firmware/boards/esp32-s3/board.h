@@ -22,10 +22,13 @@ constexpr int PIN_PLAY = 17;   // play button to GND; internal pull-up
 constexpr int PIN_ESTOP = 16;  // e-stop button to GND; every S3 GPIO has an internal pull-up
 constexpr bool ESTOP_NEEDS_EXTERNAL_PULLUP = false;
 
-// Channel 0: the carriage and its striker; channel 1: the LED strip over the keys.
+constexpr int PIN_MIDI_TX = 8;  // MIDI out, 31250 baud: free on the DevKitC-1, not a strapping pin
+
+// Channel 0: the carriage and its striker; 1: the LED strip over the keys; 2: MIDI out.
 constexpr duet::Channel CHANNELS[] = {
     {duet::ChannelKind::CarriageStriker, 0},
     {duet::ChannelKind::LedStrip, LED_COUNT},
+    {duet::ChannelKind::MidiOut, 0},
 };
 static_assert(duet::at_most_one_carriage(CHANNELS), "one carriage per board");
 constexpr duet::Channels BOARD_CHANNELS{CHANNELS, sizeof CHANNELS / sizeof CHANNELS[0]};

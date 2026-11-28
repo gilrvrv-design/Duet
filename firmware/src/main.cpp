@@ -36,6 +36,7 @@ class Esp32Hal : public duet::Hal {
     pinMode(PIN_SOLENOID, OUTPUT);
     digitalWrite(PIN_SOLENOID, LOW);
     pinMode(PIN_HOME, INPUT);
+    Serial2.begin(31250, SERIAL_8N1, -1, PIN_MIDI_TX);  // MIDI out: transmit only
     strip_.begin();
     strip_.setBrightness(LED_BRIGHTNESS);
     strip_.clear();
@@ -74,6 +75,10 @@ class Esp32Hal : public duet::Hal {
   void led_clear() override {
     strip_.clear();
     strip_.show();
+  }
+  void midi(uint8_t status, uint8_t data1, uint8_t data2) override {
+    const uint8_t bytes[] = {status, data1, data2};
+    Serial2.write(bytes, sizeof bytes);
   }
 
  private:

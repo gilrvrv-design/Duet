@@ -2,6 +2,7 @@
 // without a rig (QEMU and the native device process). Tests read these lines:
 //   # strike t_us=<device us> position=<steps>
 //   # led t_us=<device us> first=<led> count=<n> rgb=<r>,<g>,<b>
+//   # midi t_us=<device us> bytes=<status>,<data1>,<data2>
 // The carriage always arrives and the home sensor trips at the motor end: stubs that
 // assume the hardware works, so the loop tests the logic, not the parts.
 #pragma once
@@ -27,6 +28,12 @@ class ReportingHal : public SimHal {
     char line[96];
     std::snprintf(line, sizeof line, "# led t_us=%lld first=%d count=%d rgb=%u,%u,%u",
                   (long long)now_us, first, count, r, g, b);
+    out_(line);
+  }
+  void midi(uint8_t status, uint8_t data1, uint8_t data2) override {
+    char line[64];
+    std::snprintf(line, sizeof line, "# midi t_us=%lld bytes=%u,%u,%u", (long long)now_us,
+                  status, data1, data2);
     out_(line);
   }
   void led_clear() override {

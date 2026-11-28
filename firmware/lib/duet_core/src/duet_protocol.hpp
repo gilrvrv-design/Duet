@@ -30,6 +30,7 @@ enum class Type : uint8_t {
   MoveAt,
   StrikeAt,
   LedFrameAt,
+  NoteAt,  // a MIDI note on (vel > 0) or off (vel 0)
   Estop,
   TimePing,
   Heartbeat,  // proof of life from the Hub; keeps the watchdog quiet, never acked
@@ -51,14 +52,20 @@ struct Command {
   int32_t count = 0;
   uint8_t rgb[3] = {0, 0, 0};
   int64_t t1 = 0;
+  uint8_t midi = 0;   // note_at: MIDI channel 0-15
+  uint8_t pitch = 0;  // note_at: 0-127
+  uint8_t vel = 0;    // note_at: 0-127; 0 is note off
   int32_t slot = 0;   // song, play
   int32_t lines = 0;  // song
 
   bool timed() const {
-    return type == Type::MoveAt || type == Type::StrikeAt || type == Type::LedFrameAt;
+    return type == Type::MoveAt || type == Type::StrikeAt || type == Type::LedFrameAt ||
+           type == Type::NoteAt;
   }
   ChannelKind channel_kind() const {  // timed commands only
-    return type == Type::LedFrameAt ? ChannelKind::LedStrip : ChannelKind::CarriageStriker;
+    return type == Type::LedFrameAt ? ChannelKind::LedStrip
+           : type == Type::NoteAt   ? ChannelKind::MidiOut
+                                    : ChannelKind::CarriageStriker;
   }
 };
 

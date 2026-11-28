@@ -13,10 +13,12 @@
 
 using namespace duet;
 
-// The rig's channels: 0 the carriage and striker, 1 the LED strip (as boards/*/board.h).
+// The rig's channels, as boards/*/board.h: 0 the carriage and striker, 1 the LED strip,
+// 2 MIDI out.
 static constexpr Channel kRigChannels[] = {{ChannelKind::CarriageStriker, 0},
-                                           {ChannelKind::LedStrip, 176}};
-static constexpr Channels kRig{kRigChannels, 2};
+                                           {ChannelKind::LedStrip, 176},
+                                           {ChannelKind::MidiOut, 0}};
+static constexpr Channels kRig{kRigChannels, 3};
 
 static int failures = 0;
 #define CHECK(cond)                                                    \
@@ -188,14 +190,15 @@ static void test_greeting_hello_then_channels_and_oversize_is_rejected() {
     MemorySongStore store;
     Device dev(ex, store, out);
     dev.greet(Identity{"duet-rig-1", "esp32-classic", "bottles-v1", kWifi | kPlayButton, kRig});
-    CHECK(out.sent.size() == 3);  // hello, then one message per channel
+    CHECK(out.sent.size() == 4);  // hello, then one message per channel
     CHECK(out.sent[0] ==
           R"({"type":"hello","seq":0,"protocol":3,"device_id":"duet-rig-1","board":"esp32-classic",)"
-          R"("profile":"bottles-v1","features":["wifi","play_button"],"channels":2})");
+          R"("profile":"bottles-v1","features":["wifi","play_button"],"channels":3})");
     CHECK(out.sent[1].find(R"({"type":"channel","seq":0,"ch":0,"kind":"carriage_striker")") == 0);
     CHECK(out.sent[1].find(R"("travel_steps":48000)") != std::string::npos);
     CHECK(out.sent[1].find(R"("duty_limit":0.200)") != std::string::npos);
     CHECK(out.sent[2] == R"({"type":"channel","seq":0,"ch":1,"kind":"led_strip","count":176})");
+    CHECK(out.sent[3] == R"({"type":"channel","seq":0,"ch":2,"kind":"midi_out","count":0})");
   }
   // The longest hello possible (every feature, long names) still fits one message.
   char buf[kMaxMessage + 1];
@@ -375,6 +378,54 @@ static void test_commands_must_name_a_channel_of_their_kind() {
   CHECK(out.has(R"({"type":"ack","seq":4,"status":"ok"})") && ex.queued() == 1);
 }
 
+static int midi_count(const SimHal& hal, int status_and_data1) {
+  int n = 0;
+  for (auto& e : hal.events) n += e.kind[0] == 'm' && e.a == status_and_data1;
+  return n;
+}
+
+static void test_midi_notes_play_and_are_silenced_when_the_hub_goes_quiet() {
+  SimHal hal;
+  Capture out;
+  Executor ex(hal, out, kRig);
+  ex.on_message(R"({"type":"note_at","seq":1,"ch":2,"t_us":1000,"midi":0,"pitch":60,"vel":90})", 0);
+  CHECK(out.has(R"({"type":"ack","seq":1,"status":"ok"})"));  // no homing needed
+  hal.now_us = 1000;
+  ex.poll(1000);
+  CHECK(midi_count(hal, 0x90 << 8 | 60) == 1);  // note on, MIDI channel 1
+  // The note is held and the Hub goes silent: the watchdog stops everything.
+  for (hal.now_us = 1000; hal.now_us < 1'200'000; hal.now_us += 1000) ex.poll(hal.now_us);
+  CHECK(out.has("WATCHDOG"));
+  CHECK(midi_count(hal, 0xB0 << 8 | 123) == 1);   // All Notes Off on MIDI channel 1...
+  CHECK(midi_count(hal, 0xBF << 8 | 123) == 1);   // ...and on channel 16
+}
+
+static void test_midi_notes_off_and_estop_and_boards_without_midi() {
+  SimHal hal;
+  Capture out;
+  Executor ex(hal, out, kRig);
+  ex.on_message(R"({"type":"note_at","seq":1,"ch":2,"t_us":0,"midi":3,"pitch":64,"vel":80})", 0);
+  ex.on_message(R"({"type":"note_at","seq":2,"ch":2,"t_us":5,"midi":3,"pitch":64,"vel":0})", 0);
+  ex.poll(10);
+  CHECK(midi_count(hal, 0x93 << 8 | 64) == 1 && midi_count(hal, 0x83 << 8 | 64) == 1);
+  // A note released in time: silence for a whole second does not trip the watchdog.
+  for (hal.now_us = 10; hal.now_us < 2'000'000; hal.now_us += 1000) ex.poll(hal.now_us);
+  CHECK(!out.has("WATCHDOG"));
+  ex.on_message(R"({"type":"estop","seq":3})", hal.now_us);
+  CHECK(midi_count(hal, 0xB3 << 8 | 123) == 1);  // the e-stop silences MIDI too
+  ex.on_message(R"({"type":"note_at","seq":4,"ch":2,"t_us":0,"midi":0,"pitch":99,"vel":200})", 0);
+  CHECK(out.has(R"({"type":"ack","seq":4,"status":"error: cannot parse"})"));  // vel > 127
+
+  static constexpr Channel kNoMidi[] = {{ChannelKind::CarriageStriker, 0}};
+  SimHal hal2;
+  Capture out2;
+  Executor plain(hal2, out2, Channels{kNoMidi, 1});
+  plain.on_message(R"({"type":"note_at","seq":5,"ch":2,"t_us":0,"midi":0,"pitch":60,"vel":90})", 0);
+  CHECK(out2.has(R"({"type":"ack","seq":5,"status":"error: no such channel"})"));
+  plain.on_message(R"({"type":"estop","seq":6})", 0);
+  CHECK(midi_count(hal2, 0xB0 << 8 | 123) == 0);  // no MIDI port: nothing sent to it
+}
+
 int main() {
   test_parse();
   test_queue_orders_by_time();
@@ -386,6 +437,8 @@ int main() {
   test_greeting_hello_then_channels_and_oversize_is_rejected();
   test_time_ping();
   test_commands_must_name_a_channel_of_their_kind();
+  test_midi_notes_play_and_are_silenced_when_the_hub_goes_quiet();
+  test_midi_notes_off_and_estop_and_boards_without_midi();
   test_upload_then_play_from_memory();
   test_a_bad_song_is_refused_whole();
   test_a_stalled_upload_is_dropped();

@@ -20,10 +20,12 @@
 
 using namespace duet;
 
-// The rig's channels: 0 the carriage and striker, 1 the LED strip (as boards/*/board.h).
+// The rig's channels, as boards/*/board.h: 0 the carriage and striker, 1 the LED strip,
+// 2 MIDI out.
 static constexpr Channel kRigChannels[] = {{ChannelKind::CarriageStriker, 0},
-                                           {ChannelKind::LedStrip, 176}};
-static constexpr Channels kRig{kRigChannels, 2};
+                                           {ChannelKind::LedStrip, 176},
+                                           {ChannelKind::MidiOut, 0}};
+static constexpr Channels kRig{kRigChannels, 3};
 
 struct Print : Sink {
   void send(const char* json) override {

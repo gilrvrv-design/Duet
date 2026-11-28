@@ -67,6 +67,8 @@ class Executor {
   void ack(int64_t seq, const char* status);
   void report();  // telemetry: homed, position, queue depth
   void finish_homing();
+  void silence();  // MIDI out: All Notes Off on every MIDI channel, nothing sounding
+  bool sounding() const { return sounding_ > 0; }
 
   Hal& hal_;
   Sink& sink_;
@@ -80,6 +82,8 @@ class Executor {
   int64_t last_message_us_ = 0;
   int64_t pulse_end_us_ = -1;
   int32_t target_steps_ = 0;
+  uint16_t notes_[128] = {};  // MIDI out: per pitch, a bit per MIDI channel sounding it
+  uint32_t sounding_ = 0;     // how many notes are sounding
   int64_t duty_time_[kDutySlots] = {};
   int32_t duty_pulse_[kDutySlots] = {};
   size_t duty_next_ = 0;

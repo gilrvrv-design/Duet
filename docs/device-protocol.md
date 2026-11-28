@@ -22,10 +22,11 @@ or of the wrong kind (`error: no such channel`).
 |---|---|---|
 | `carriage_striker` | `move_at`, `strike_at` | the safety limits it enforces |
 | `led_strip` | `led_frame_at` | `count`: its number of LEDs |
+| `midi_out` | `note_at` | — (a MIDI out port, 31250 baud) |
 
 The Hub never assumes channel numbers: the conductor sends each message on the target
-device's channel of that message's kind. Today's boards have the carriage on 0 and the
-strip on 1.
+device's channel of that message's kind. Today's boards have the carriage on 0, the
+strip on 1 and MIDI out on 2.
 
 ## At a glance
 
@@ -99,6 +100,7 @@ reported with the plan's number.
 | `home` | — | no | `ack`, then `telemetry` when homed | Clears the queue, drives toward the sensor, sets position 0 |
 | `move_at` | `ch`, `t_us`, `target_steps`, `v_max_mm_s`, `a_max_mm_s2` | yes | `ack` on receipt | At `t_us`, moves the carriage with a trapezoid profile |
 | `strike_at` | `ch`, `t_us`, `pulse_us` | yes | `ack` on receipt | At `t_us`, pulses the solenoid, if the carriage has arrived |
+| `note_at` | `ch`, `t_us`, `midi` (MIDI channel 0–15), `pitch`, `vel` (0 = note off) | yes | `ack` on receipt | At `t_us`, sends the MIDI note on (or off). Needs no homing |
 | `led_frame_at` | `ch`, `t_us`, `first`, `count`, `rgb` | yes | `ack` on receipt | At `t_us`, fills LEDs `first … first+count−1` with `rgb` and shows |
 | `estop` | — | no | `ack` | Stops motion, solenoid off, clears the queue, latches |
 | `time_ping` | `t1` (Hub clock) | no | `time_pong` | Answers immediately |
@@ -247,7 +249,7 @@ stateDiagram-v2
     HOMING --> READY: sensor triggers<br/>(telemetry homed true)
     HOMING --> NOT_HOMED: 20 s timeout<br/>(fault HOMING_TIMEOUT)
     READY --> READY: timed commands run in time order
-    READY --> NOT_HOMED: 1 s silent while moving<br/>(fault WATCHDOG, telemetry homed false)
+    READY --> NOT_HOMED: 1 s silent while moving or holding a note<br/>(fault WATCHDOG, telemetry homed false)
     READY --> HOMING: home
     NOT_HOMED --> ESTOPPED: estop / button
     HOMING --> ESTOPPED: estop / button
@@ -304,7 +306,7 @@ stateDiagram-v2
 | `MOVE_OVERLAP` | A move began before the last one ended | starts the new move | the plan is too tight; check the profile's speed numbers |
 | `NOT_ARRIVED` | Strike while the carriage was still moving | skips the strike | recalibrate; the real carriage is slower than the profile says |
 | `DUTY_CYCLE` | Solenoid over 20% on-time in 10 s | skips the strike | the score is too dense; repair should have caught it |
-| `WATCHDOG` | 1 s with no message while moving | stops, clears the queue, un-homes | check Wi-Fi; re-home and restart |
+| `WATCHDOG` | 1 s with no message while moving or holding a MIDI note | stops, silences MIDI, clears the queue, un-homes | check Wi-Fi; re-home and restart |
 | `HOMING_TIMEOUT` | The sensor never triggered within 20 s | stops | check the sensor wiring and its distance to the carriage |
 | `SONG_CORRUPT` | A stored song line cannot be read back | stops playing | upload the song again |
 | `PLAY_FAILED` | A stored command was refused (queue full or e-stop) | stops playing | check the e-stop; upload a less dense song |
@@ -347,6 +349,10 @@ Rules the device keeps:
   QEMU build and the native device keep them in RAM.
 
 ## Safety rules the device keeps on its own
+
+- **MIDI out never hangs a note.** Stopping a song, an emergency stop and the watchdog
+  send All Notes Off (controller 123) on all 16 MIDI channels; the watchdog also fires
+  when the Hub goes silent while a note is held.
 
 These hold whatever the Hub sends:
 

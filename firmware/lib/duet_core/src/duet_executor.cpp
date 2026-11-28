@@ -62,6 +62,7 @@ void Executor::on_message(const char* json, int64_t now_us) {
       estopped_ = true;  // latched until power cycle: safety first
       hal_.stop();
       hal_.solenoid(false);
+      silence();
       queue_.clear();
       ack(c.seq, "ok");
       return;
@@ -119,11 +120,19 @@ void Executor::cancel() {
   hal_.stop();
   hal_.solenoid(false);
   hal_.led_clear();  // a stopped song must not leave a key lit
+  silence();         // nor a note sounding
   pulse_end_us_ = -1;
   homing_ = false;
 }
 
 void Executor::keepalive(int64_t now_us) { last_message_us_ = now_us; }
+
+void Executor::silence() {
+  if (!channels_.any(ChannelKind::MidiOut)) return;  // no MIDI port: nothing to silence
+  for (uint8_t ch = 0; ch < 16; ++ch) hal_.midi(static_cast<uint8_t>(0xB0 | ch), 123, 0);
+  for (uint16_t& n : notes_) n = 0;
+  sounding_ = 0;
+}
 
 void Executor::poll(int64_t now_us) {
   if (pulse_end_us_ >= 0 && now_us >= pulse_end_us_) {
@@ -141,11 +150,12 @@ void Executor::poll(int64_t now_us) {
     }
     return;
   }
-  if (hal_.is_moving() && now_us - last_message_us_ > cfg_.watchdog_us) {
+  if ((hal_.is_moving() || sounding()) && now_us - last_message_us_ > cfg_.watchdog_us) {
     hal_.stop();
+    silence();
     queue_.clear();
     homed_ = false;  // position is no longer trusted
-    fault("WATCHDOG", "hub silent while moving");
+    fault("WATCHDOG", "hub silent while playing");
     report();
     return;
   }
@@ -173,6 +183,15 @@ void Executor::run(const Command& c, int64_t now_us) {
       hal_.led_fill(c.first, c.count, c.rgb[0], c.rgb[1], c.rgb[2]);
       hal_.led_show();
       break;
+    case Type::NoteAt: {  // note on, or off (velocity 0): no carriage, no homing needed
+      uint16_t bit = static_cast<uint16_t>(1u << c.midi);
+      bool was = notes_[c.pitch] & bit;
+      if (c.vel && !was) ++sounding_;
+      if (!c.vel && was) --sounding_;
+      notes_[c.pitch] = c.vel ? (notes_[c.pitch] | bit) : (notes_[c.pitch] & ~bit);
+      hal_.midi(static_cast<uint8_t>((c.vel ? 0x90 : 0x80) | c.midi), c.pitch, c.vel);
+      break;
+    }
     default:
       break;
   }

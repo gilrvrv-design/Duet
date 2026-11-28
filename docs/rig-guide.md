@@ -40,6 +40,7 @@ needed. Part numbers in the other rows are suggestions; equivalents work.
 | LJ12A3-4-Z/BX inductive sensor (NPN, normally open, 6–36 V) + 4.7 kΩ, 27 kΩ, 10 kΩ | home position | pull-up to 12 V and a divider into GPIO 34; see below |
 | Emergency stop button (normally open) + 10 kΩ | stops everything | pull-up to 3.3 V; see the note on GPIO 35 |
 | Play button (normally open, any momentary push button) | plays a stored song without a PC | between GPIO 33 and GND; no resistor (internal pull-up) |
+| **Adafruit MIDI FeatherWing Kit (#4740)** — optional | MIDI out to a digital piano or synth: a bot can play it | DIN-5 jacks and a 3 V-safe circuit; its TX pad from GPIO 17, 3V and GND (Adafruit's guide: 3.3 V logic, 31250 baud) |
 | WS2812B strip, 144 LEDs/m, 1.22 m (176 LEDs) | lights over the keys | |
 | 74AHCT125 quad buffer + 330 Ω | LED data, 3.3 V to 5 V | one channel used; the other three tied off |
 | 1000 µF capacitor | across 5 V at the strip | |
@@ -63,6 +64,7 @@ ribbon cable (motor wires) and a 6-pin JST PH cable pair.
 | GPIO 34 | home sensor, through the divider | in | active low (`HOME_ACTIVE_LOW = true`) |
 | GPIO 35 | emergency stop button | in | active low; **external** 10 kΩ pull-up to 3.3 V |
 | GPIO 33 | play button, other side to GND | in | active low; internal pull-up; plays the next stored song, or stops it |
+| GPIO 17 | MIDI FeatherWing **TX** pad (optional) | out | MIDI out at 31250 baud (UART2); free on a WROOM-32 DevKitC |
 | GPIO 13 | 74AHCT125 1A → 1Y → 330 Ω → strip DIN | out | |
 | 3V3 | TMC2209 VDD, MS1, MS2, e-stop pull-up | — | |
 | GND | every ground | — | 12 V, 5 V, ESP32, TMC2209, MOSFET Driver, sensor, strip |
@@ -232,6 +234,7 @@ are in `firmware/boards/esp32-s3/board.h`:
 | Emergency stop | GPIO 35 | GPIO 16 | internal pull-up: the external 10 kΩ is not needed |
 | Play button | GPIO 33 | GPIO 17 | |
 | LED strip (through the 74AHCT125) | GPIO 13 | GPIO 18 | |
+| MIDI out (FeatherWing TX pad) | GPIO 17 | GPIO 8 | |
 
 Not usable on the N16R8 (Espressif's DevKitC-1 user guide): GPIO 35–37 (taken by the
 octal PSRAM), GPIO 38 (the on-board RGB LED), GPIO 19–20 (USB, kept free for a MIDI

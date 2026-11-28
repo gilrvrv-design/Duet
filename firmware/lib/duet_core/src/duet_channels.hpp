@@ -11,6 +11,7 @@ namespace duet {
 enum class ChannelKind : uint8_t {
   CarriageStriker,  // move_at, strike_at
   LedStrip,         // led_frame_at
+  MidiOut,          // note_at: a MIDI out port (31250 baud), e.g. to a digital piano
 };
 
 struct Channel {
@@ -25,10 +26,17 @@ struct Channels {
   bool has(int32_t ch, ChannelKind kind) const {
     return ch >= 0 && static_cast<size_t>(ch) < count && items[ch].kind == kind;
   }
+  bool any(ChannelKind kind) const {
+    for (size_t i = 0; i < count; ++i)
+      if (items[i].kind == kind) return true;
+    return false;
+  }
 };
 
 constexpr const char* kind_name(ChannelKind kind) {
-  return kind == ChannelKind::CarriageStriker ? "carriage_striker" : "led_strip";
+  return kind == ChannelKind::CarriageStriker ? "carriage_striker"
+         : kind == ChannelKind::LedStrip      ? "led_strip"
+                                              : "midi_out";
 }
 
 // The executor drives one carriage: a board may have at most one carriage channel.

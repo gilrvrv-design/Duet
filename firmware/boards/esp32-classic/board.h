@@ -24,10 +24,13 @@ constexpr int PIN_ESTOP = 35;     // e-stop button to GND; input-only, so an EXT
                                   // 10 kOhm pull-up to 3.3 V is required
 constexpr bool ESTOP_NEEDS_EXTERNAL_PULLUP = true;
 
-// Channel 0: the carriage and its striker; channel 1: the LED strip over the keys.
+constexpr int PIN_MIDI_TX = 17;  // MIDI out, 31250 baud: UART2's TX; free on a WROOM-32 DevKitC (WROVER modules use it for PSRAM)
+
+// Channel 0: the carriage and its striker; 1: the LED strip over the keys; 2: MIDI out.
 constexpr duet::Channel CHANNELS[] = {
     {duet::ChannelKind::CarriageStriker, 0},
     {duet::ChannelKind::LedStrip, LED_COUNT},
+    {duet::ChannelKind::MidiOut, 0},
 };
 static_assert(duet::at_most_one_carriage(CHANNELS), "one carriage per board");
 constexpr duet::Channels BOARD_CHANNELS{CHANNELS, sizeof CHANNELS / sizeof CHANNELS[0]};
