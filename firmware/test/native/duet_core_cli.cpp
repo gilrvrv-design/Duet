@@ -6,16 +6,23 @@
 //
 // Messages are delivered `lookahead_us` before their own time, like the conductor does,
 // and a heartbeat arrives every `heartbeat_us`, like the Hub's DeviceGateway sends.
+//
+// --midi <file>: the duet the core makes of a MIDI file, as one JSON object (or
+// {"error": reason}, exit status 1), for tests/test_midi_contract.py.
 #include <algorithm>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
 
 #include "duet_executor.hpp"
 #include "duet_features.hpp"
+#include "duet_json.hpp"
+#include "duet_midi.hpp"
 #include "duet_sim_hal.hpp"
 
 using namespace duet;
@@ -35,7 +42,34 @@ struct Print : Sink {
   }
 };
 
+static int print_midi(const char* path) {
+  std::ifstream file(path, std::ios::binary);
+  std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), {});
+  MidiScore score;
+  std::string why;
+  if (!read_midi(bytes.data(), bytes.size(), score, why)) {
+    std::printf("{\"error\":%s}\n", json_string(why).c_str());
+    return 1;
+  }
+  // %.17g: every double reads back exactly.
+  std::printf("{\"tempo_bpm\":%.17g,\"time_signature\":[%d,%d],\"warnings\":[", score.tempo_bpm,
+              score.beats_per_bar, score.beat_unit);
+  for (size_t i = 0; i < score.warnings.size(); ++i)
+    std::printf("%s%s", i ? "," : "", json_string(score.warnings[i]).c_str());
+  std::printf("],\"events\":[");
+  for (size_t i = 0; i < score.events.size(); ++i) {
+    const ScoreEvent& e = score.events[i];
+    std::printf("%s{\"part\":\"%s\",\"bar\":%d,\"beat\":%.17g,\"dur\":%.17g,\"pitch\":%d,"
+                "\"vel\":%d}",
+                i ? "," : "", part_name(e.part), static_cast<int>(e.bar), e.beat, e.dur, e.pitch,
+                e.vel);
+  }
+  std::printf("]}\n");
+  return 0;
+}
+
 int main(int argc, char** argv) {
+  if (argc > 2 && std::string(argv[1]) == "--midi") return print_midi(argv[2]);
   if (argc > 1 && std::string(argv[1]) == "--channels") {  // the rig's channels and limits
     char buf[kMaxMessage + 1];
     for (size_t ch = 0; ch < kRig.count; ++ch) {

@@ -10,6 +10,7 @@
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "duet_features.hpp"
+#include "duet_midi.hpp"
 #include "duet_protocol.hpp"
 #include "duet_queue.hpp"
 #include "duet_sim_hal.hpp"
@@ -629,6 +630,128 @@ static void test_bad_settings_are_refused_and_nothing_is_saved() {
         200);  // an open network needs no password
 }
 
+// A MIDI file of format 1 (or 0 for one track): header, then each track's events.
+using Bytes = std::vector<uint8_t>;
+static Bytes smf(std::vector<Bytes> tracks, uint16_t division = 480, uint16_t format = 1) {
+  Bytes out = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, static_cast<uint8_t>(format), 0,
+               static_cast<uint8_t>(tracks.size()), static_cast<uint8_t>(division >> 8),
+               static_cast<uint8_t>(division & 0xFF)};
+  for (const Bytes& t : tracks) {
+    Bytes body = t;
+    body.insert(body.end(), {0x00, 0xFF, 0x2F, 0x00});  // end of track
+    uint32_t n = static_cast<uint32_t>(body.size());
+    out.insert(out.end(), {'M', 'T', 'r', 'k', static_cast<uint8_t>(n >> 24),
+                           static_cast<uint8_t>(n >> 16), static_cast<uint8_t>(n >> 8),
+                           static_cast<uint8_t>(n)});
+    out.insert(out.end(), body.begin(), body.end());
+  }
+  return out;
+}
+
+static bool import(const Bytes& file, MidiScore& score) {
+  std::string why;
+  return read_midi(file.data(), file.size(), score, why);
+}
+
+static std::string refusal(const Bytes& file) {
+  MidiScore score;
+  std::string why;
+  return read_midi(file.data(), file.size(), score, why) ? "" : why;
+}
+
+static void test_midi_running_status_and_note_on_releases() {
+  // One status byte, then data bytes only; a note on of velocity 0 releases.
+  Bytes track = {0x00, 0x90, 60, 100, 0x60, 60, 0, 0x00, 62, 80, 0x81, 0x70, 62, 0};
+  MidiScore s;
+  CHECK(import(smf({track}, 480, 0), s));
+  CHECK(s.events.size() == 2 && s.warnings.empty());
+  CHECK(s.tempo_bpm == 120.0 && s.beats_per_bar == 4 && s.beat_unit == 4);  // MIDI's defaults
+  const ScoreEvent& a = s.events[0];
+  CHECK(a.pitch == 60 && a.vel == 100 && a.bar == 1 && a.beat == 1.0 && a.dur == 0.2);
+  const ScoreEvent& b = s.events[1];  // 0x81 0x70: 240 ticks, half a beat
+  CHECK(b.pitch == 62 && b.vel == 80 && b.beat == 1.2 && b.dur == 0.5);
+  CHECK(refusal(smf({{0x00, 60, 100}})) == "track 0 uses running status with no status before it");
+}
+
+static void test_midi_truncated_or_malformed_is_refused() {
+  Bytes file = smf({{0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20, 0x00, 0x90, 60, 100, 0x60, 0x80,
+                     60, 0}});
+  MidiScore s;
+  CHECK(import(file, s));
+  for (size_t n = 0; n < file.size(); ++n) {  // every cut is refused, none read past it
+    Bytes cut(file.begin(), file.begin() + static_cast<long>(n));
+    CHECK(!refusal(cut).empty());
+  }
+  Bytes tail = file;  // the track says it is a byte longer than the file
+  tail[21] += 1;      // the low byte of its length, after MThd (14 bytes) and MTrk
+  CHECK(refusal(tail) == "track 0 runs past the end of the file");
+  CHECK(refusal(Bytes(kMaxMidiBytes + 1, 0)).find("larger than") != std::string::npos);
+  CHECK(refusal({'R', 'I', 'F', 'F', 0, 0, 0, 6, 0, 0, 0, 0, 0, 0}) ==
+        "not a MIDI file: no MThd header");
+  CHECK(refusal(smf({{0x00, 0x90, 60, 100}}, 0xE728)).find("SMPTE") != std::string::npos);
+  CHECK(refusal(smf({{0x00, 0x90, 60, 200}})) == "track 0 has a data byte above 127");
+  CHECK(refusal(smf({{0x00, 0xF1, 0x00}})).find("0xF1") != std::string::npos);
+  CHECK(refusal(smf({{0x00, 0xFF, 0x58, 0x04, 5, 5, 24, 8}})) ==
+        "unsupported time signature 5/32");
+  CHECK(refusal(smf({{0x00, 0xFF, 0x51, 0x02, 0x07, 0xA1}})).find("tempo") != std::string::npos);
+  CHECK(refusal(smf({{0x00, 0x90, 60, 100}})) == "the file has no notes");  // never released
+  CHECK(refusal(smf({{0x00, 0x90, 60, 100}}, 480, 2)).find("format 2") != std::string::npos);
+}
+
+static void test_midi_tracks_by_mean_pitch() {
+  Bytes low = {0x00, 0x90, 48, 70, 0x83, 0x60, 0x80, 48, 0,   // C3 for a beat
+               0x00, 0x90, 50, 70, 0x83, 0x60, 0x80, 50, 0};  // D3
+  Bytes high = {0x00, 0x91, 72, 90, 0x83, 0x60, 0x81, 72, 0};  // C5 on its own channel
+  MidiScore s;
+  CHECK(import(smf({low, high}), s) && s.events.size() == 3);
+  for (const ScoreEvent& e : s.events)
+    CHECK(e.part == (e.pitch == 72 ? DuoPart::Bot : DuoPart::Human));
+  CHECK(s.events[0].pitch == 48 && s.events[1].pitch == 72);  // by start, then pitch
+  CHECK(s.events[2].pitch == 50 && s.events[2].beat == 2.0);
+}
+
+static void test_midi_named_tracks_win_over_pitch() {
+  Bytes robot = {0x00, 0xFF, 0x03, 0x07, ' ', 'R', 'o', 'B', 'o', 't', '\t',
+                 0x00, 0x90, 40, 70, 0x60, 0x80, 40, 0};
+  Bytes pianist = {0x00, 0xFF, 0x03, 0x07, 'P', 'I', 'A', 'N', 'I', 'S', 'T',
+                   0x00, 0x90, 90, 70, 0x60, 0x80, 90, 0};
+  Bytes other = {0x00, 0xFF, 0x03, 0x04, 'L', 'e', 'a', 'd',
+                 0x00, 0x90, 100, 70, 0x60, 0x80, 100, 0};
+  MidiScore s;
+  CHECK(import(smf({robot, pianist, other}), s) && s.events.size() == 3);
+  for (const ScoreEvent& e : s.events)
+    CHECK(e.part == (e.pitch == 40 ? DuoPart::Bot : DuoPart::Human));
+  CHECK(std::string(part_name(DuoPart::Bot)) == "robot");
+}
+
+static void test_midi_one_track_is_split_by_skyline() {
+  // A C major chord, then G4 alone, in 3/4 at 60 bpm.
+  Bytes track = {0x00, 0xFF, 0x58, 0x04, 3, 2, 24, 8, 0x00, 0xFF, 0x51, 0x03, 0x0F, 0x42, 0x40,
+                 0x00, 0x90, 60, 70, 0x00, 64, 70, 0x00, 67, 70,
+                 0x83, 0x60, 60, 0, 0x00, 64, 0, 0x00, 67, 0,
+                 0x00, 67, 70, 0x83, 0x60, 67, 0};
+  MidiScore s;
+  CHECK(import(smf({track}), s) && s.events.size() == 4);
+  CHECK(s.beats_per_bar == 3 && s.beat_unit == 4 && s.tempo_bpm == 60.0);
+  CHECK(s.events[0].part == DuoPart::Human && s.events[1].part == DuoPart::Human);
+  CHECK(s.events[2].pitch == 67 && s.events[2].part == DuoPart::Bot);
+  CHECK(s.events[3].pitch == 67 && s.events[3].part == DuoPart::Bot && s.events[3].beat == 2.0);
+}
+
+static void test_midi_warns_of_what_a_score_cannot_hold() {
+  Bytes track = {0x00, 0xFF, 0x51, 0x03, 0x00, 0x30, 0xD4,  // 12500 us: 4800 bpm
+                 0x00, 0x90, 60, 70, 0x60, 0x80, 60, 0,
+                 0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20,  // a later tempo
+                 0x00, 0x90, 62, 70};                       // never released
+  MidiScore s;
+  CHECK(import(smf({track}), s) && s.tempo_bpm == 300.0);
+  CHECK(s.warnings == std::vector<std::string>({
+                          "1 later tempo change(s) ignored: one tempo per score",
+                          "1 note(s) never released were left out",
+                          "tempo 4800 bpm is outside what a score allows; using 300",
+                      }));
+}
+
 int main() {
   test_parse();
   test_queue_orders_by_time();
@@ -656,6 +779,12 @@ int main() {
   test_json_objects_of_strings_and_lists();
   test_settings_are_saved_and_the_password_never_leaves();
   test_bad_settings_are_refused_and_nothing_is_saved();
+  test_midi_running_status_and_note_on_releases();
+  test_midi_truncated_or_malformed_is_refused();
+  test_midi_tracks_by_mean_pitch();
+  test_midi_named_tracks_win_over_pitch();
+  test_midi_one_track_is_split_by_skyline();
+  test_midi_warns_of_what_a_score_cannot_hold();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

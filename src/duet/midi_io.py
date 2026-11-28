@@ -182,15 +182,15 @@ def _assign_parts(notes: list[_Note], names: dict[int, str], duo: Duo) -> dict[i
     return {t: duo.bot if t == melody else duo.human for t in tracks}
 
 
-def _skyline(notes: list[_Note], duo: Duo) -> dict[_Note, PartName]:
-    by_onset: dict[int, list[_Note]] = defaultdict(list)
-    for n in notes:
-        by_onset[n.start].append(n)
-    parts: dict[_Note, PartName] = {}
+def _skyline(notes: list[_Note], duo: Duo) -> list[PartName]:
+    """Each note's part, by position: the top note of each onset is the bot's. (By
+    position, not by value: a doubled note must not take its twin's part.)"""
+    by_onset: dict[int, list[int]] = defaultdict(list)
+    for i, n in enumerate(notes):
+        by_onset[n.start].append(i)
+    parts = [duo.human] * len(notes)
     for group in by_onset.values():
-        top = max(group, key=lambda n: n.pitch)
-        for n in group:
-            parts[n] = duo.bot if n is top else duo.human
+        parts[max(group, key=lambda i: notes[i].pitch)] = duo.bot
     return parts
 
 
@@ -213,11 +213,13 @@ def read_midi(
     warnings: list[str] = []
     midi = _open(source)
     notes, names, tempo_us, (beats, unit) = _read_notes(midi, warnings)
+    if not notes:
+        raise ValueError("the file has no notes")
     tpb = midi.ticks_per_beat * 4 / unit
     tempo_bpm = _bpm(tempo_us, unit)
 
     by_track = _assign_parts(notes, names, duo)
-    part_of = {n: by_track[n.track] for n in notes} if by_track else _skyline(notes, duo)
+    parts = [by_track[n.track] for n in notes] if by_track else _skyline(notes, duo)
 
     def to_beats(ticks: int) -> float:
         value = ticks / tpb
@@ -226,12 +228,13 @@ def read_midi(
         return round(value, 6)
 
     events = []
-    for n in sorted(notes, key=lambda n: (n.start, n.pitch)):
+    for i in sorted(range(len(notes)), key=lambda i: (notes[i].start, notes[i].pitch)):
+        n = notes[i]
         start = to_beats(n.start)
         dur = max(to_beats(n.end) - start, quantize_beats or 1 / 64)
         bar, beat = bar_and_beat(start, beats)
         events.append(
-            Event(part=part_of[n], bar=bar, beat=beat, dur=round(dur, 6), pitch=n.pitch, vel=n.vel)
+            Event(part=parts[i], bar=bar, beat=beat, dur=round(dur, 6), pitch=n.pitch, vel=n.vel)
         )
 
     allowed = clamp_tempo(tempo_bpm)
