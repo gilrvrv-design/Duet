@@ -69,8 +69,14 @@ flowchart LR
 - `RobotProfile` and `KeyboardProfile` are thin, read-only views of an instrument (how
   the planner sees a carriage-striker bot, how the light guide sees a keyboard). They
   hold no facts and no rules of their own: every rule is the instrument's.
+- **Bot mechanisms today:** `carriage_striker` (one striker on a moving carriage; one
+  note at a time, travel takes time) and `midi_out` (the device sends notes to a digital
+  piano or synth; nothing moves, so any note in range can follow any other, and
+  `polyphony` limits how many sound at once). `piano-88` has both a `human:` and a
+  `bot: {mechanism: midi_out}` section, so a score can give the piano to a bot.
 - **The device exposes channels** (carriage-striker, LED strip, MIDI out, ...) in its
-  greeting; commands name a channel. Today's commands are channel 0.
+  greeting (docs/device-protocol.md); every timed command names its channel. One device
+  can serve one moving bot and any number of MIDI bots.
 
 ## Boards
 
@@ -95,7 +101,7 @@ not fit a board is switched off for that board, explicitly. CI builds every boar
 |---|---|---|
 | 0 | Board layer; boards report board and features; `esp32-s3`; CI builds every board | native tests, gateway tests, CI build matrix |
 | 1 | Instrument / performer / mechanism model; N-part score with v1 migration; the conductor plays every part on its own devices; the ensemble is a score (done, in slices 1a–1f) | Python tests; every existing test still passes |
-| 2 | Protocol channels; multi-channel executor; MIDI-out mechanism | native tests, full loop |
+| 2 | Protocol channels; multi-channel executor; MIDI-out mechanism; a bot plays the piano (done, in slices 2a–2c) | native tests, full loop |
 | 3 | Device web server, web app, device API, Wi-Fi setup | the native device serves the same API; browser tests |
 | 4 | The app finds and uses servers, and falls back | browser tests with servers up, down, failing |
 | 5 | Offline MIDI → song on the device | contract tests against the Python planner |

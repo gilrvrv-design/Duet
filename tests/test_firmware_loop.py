@@ -335,3 +335,41 @@ def test_cli_upload_and_play(capsys):
     finally:
         process.terminate()
         process.wait(timeout=10)
+
+
+MIDI = re.compile(r"^# midi t_us=(-?\d+) bytes=(\d+),(\d+),(\d+)")
+
+
+def test_the_firmware_plays_a_digital_piano_over_midi(device_url):
+    """A bot on the piano: the device sends note on and off (default velocity 80)."""
+    score = load_score(
+        {
+            "meta": {"tempo_bpm": 120},
+            "parts": {"piano": {"instrument": "piano-88", "performer": "bot"}},
+            "events": [
+                {"part": "piano", "bar": 1, "beat": 1, "dur": 1, "pitch": "C4"},
+                {"part": "piano", "bar": 1, "beat": 2, "dur": 1, "pitch": "E4"},
+            ],
+        }
+    )
+    gateway = connect(device_url)
+    try:
+        perf = perform(score, one_rig(score, [gateway]), VirtualClock(hub_now_us()))
+        gateway.wait_acked()
+        deadline = time.monotonic() + (perf.planned[-1].t_us - hub_now_us()) / 1e6 + 5
+        while len(midi_out(gateway)) < 4 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        sent = midi_out(gateway)
+        assert gateway.errors == [] and gateway.faults == []
+    finally:
+        gateway.close()
+
+    assert [b for _, b in sent] == [(0x90, 60, 80), (0x80, 60, 0), (0x90, 64, 80), (0x80, 64, 0)]
+    ons = [t for t, b in sent if b[0] == 0x90]
+    for t_device, note in zip(ons, perf.planned, strict=True):
+        assert abs(gateway.sync.to_hub(t_device) - note.t_us) < ONSET_TOLERANCE_US
+
+
+def midi_out(gateway: DeviceGateway) -> list[tuple[int, tuple[int, int, int]]]:
+    found = (MIDI.match(line) for line in gateway.console)
+    return [(int(m[1]), (int(m[2]), int(m[3]), int(m[4]))) for m in found if m]

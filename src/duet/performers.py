@@ -12,9 +12,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from duet import midi_bot
 from duet.difficulty import check_pianist, pianist_difficulty
-from duet.feasibility import DEFAULT_MARGIN_S, Report, check_robot
-from duet.instruments import Instrument, instrument
+from duet.feasibility import check_robot
+from duet.instruments import CarriageStriker, Instrument, MidiOut, instrument
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.repair import RepairResult, repair_robot
 from duet.score import MIN_LEVEL, DuetScore, LineUpError
@@ -24,22 +25,35 @@ NO_OVERRIDES: Mapping[str, Instrument] = MappingProxyType({})
 
 @dataclass(frozen=True)
 class Bot:
+    """A bot playing ``part``; what it can play depends on its mechanism: a carriage with
+    a striker (travel time, one note at a time, duty cycle) or MIDI out (range and
+    polyphony)."""
+
     part: str
     instrument: Instrument
+
+    @property
+    def mechanism(self) -> CarriageStriker | MidiOut:
+        return self.instrument.bot
+
+    @property
+    def moves(self) -> bool:
+        """Has a carriage: one per device, and it must be homed before playing."""
+        return isinstance(self.mechanism, CarriageStriker)
 
     @property
     def profile(self) -> RobotProfile:  # how the planner sees a carriage-striker bot
         return RobotProfile(self.instrument)
 
-    def report(self, score: DuetScore, margin_s: float = DEFAULT_MARGIN_S) -> Report:
-        """What the mechanism cannot play, by note, for repair."""
-        return check_robot(score, self.profile, part=self.part, margin_s=margin_s)
-
     def problems(self, score: DuetScore) -> list[str]:
-        return self.report(score).feedback().splitlines()
+        if self.moves:
+            return check_robot(score, self.profile, part=self.part).feedback().splitlines()
+        return midi_bot.problems(score, self.part, self.instrument)
 
     def repair(self, score: DuetScore, keep_tempo: bool = False) -> RepairResult:
-        return repair_robot(score, self.profile, part=self.part, keep_tempo=keep_tempo)
+        if self.moves:
+            return repair_robot(score, self.profile, part=self.part, keep_tempo=keep_tempo)
+        return midi_bot.repair(score, self.part, self.instrument)
 
 
 @dataclass(frozen=True)

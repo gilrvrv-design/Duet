@@ -38,9 +38,9 @@ BEGINNER_RANGE = (48, 84)  # C3..C6, when a score does not give a human part's r
 
 
 def change_tempo(score: DuetScore, factor: float, bots: list[Bot]) -> DuetScore:
-    """Scale the tempo; when speeding up, never beyond what every bot can play."""
+    """Scale the tempo; when speeding up, never beyond what every moving bot can play."""
     if factor > 1:
-        for bot in bots:
+        for bot in (b for b in bots if b.moves):
             factor = min(factor, max_speed_up(score, bot.profile, part=bot.part))
         tempo = math.floor(score.meta.tempo_bpm * factor * 10) / 10  # round toward safe
     else:

@@ -152,8 +152,8 @@ Profile = RobotProfile | KeyboardProfile
 
 
 def _view(inst: Instrument) -> Profile:
-    """A bot's instrument as a RobotProfile, else a keyboard."""
-    if inst.bot is not None:
+    """A carriage-striker bot's instrument as a RobotProfile, else a keyboard."""
+    if isinstance(inst.bot, CarriageStriker):
         return RobotProfile(inst)
     return KeyboardProfile(inst)
 

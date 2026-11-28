@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Protocol
 
+from duet import midi_bot
 from duet.device.clock import hub_now_us
 from duet.listening import KeyInput
 from duet.performers import NO_OVERRIDES, Bot, Instruments, performers
@@ -163,7 +164,13 @@ def build_messages(
     plans: dict[str, RobotPlan] = {}
     counted_in = not count_in
     for p in performers(score, instruments):
-        if isinstance(p, Bot):
+        if isinstance(p, Bot) and not p.moves:  # MIDI out: a note on and a note off each
+            tagged += [(p.part, m) for m in midi_bot.messages(score, p.part, p.instrument, us)]
+            planned += [
+                PlannedNote(p.part, "bot", us(t.start_s), t.event.pitch, t.event.bar)
+                for t in timed_events(score, p.part)
+            ]
+        elif isinstance(p, Bot):
             robot = p.profile
             plan = robot_plan(score, robot, start_steps.get(p.part, HOME_STEPS), part=p.part)
             plans[p.part] = plan
@@ -200,18 +207,23 @@ def _led_messages(cue: LedCue, us) -> list[Message]:
     ]
 
 
-def _check_routes(score: DuetScore, routes: Routes) -> None:
-    """Every part has its devices, and no device plays two bots' parts: one carriage
-    cannot be in two places."""
+def _check_routes(score: DuetScore, routes: Routes, instruments: Instruments) -> None:
+    """Every part has its devices, and no device carries two bots that move: one
+    carriage cannot be in two places. (MIDI parts can share a device's MIDI out.)"""
     missing = [part for part in score.parts if part not in routes]
     if missing:
         raise ValueError(f"no devices for part(s) {missing}: route every part, even to []")
     owner: dict[int, str] = {}
-    for part in score.parts_played_by("bot"):
+    for part in _moving_bots(score, instruments):
         for device in routes[part]:
             other = owner.setdefault(id(device), part)
             if other != part:
                 raise ValueError(f"parts {other!r} and {part!r} would drive the same device")
+
+
+def _moving_bots(score: DuetScore, instruments: Instruments) -> list[str]:
+    """The parts played by a bot with a carriage."""
+    return [p.part for p in performers(score, instruments) if isinstance(p, Bot) and p.moves]
 
 
 def _check_channels(program: Program, routes: Routes) -> None:
@@ -256,11 +268,11 @@ def perform(
     For back-to-back pieces (call and response), pass ``home=False``, ``count_in=False``,
     where each bot's carriage is (``start_steps``), and when to start.
     """
-    _check_routes(score, routes)
+    _check_routes(score, routes, instruments)
     perf = Performance()
     perf.states.append(State.PREPARING)
-    bot_devices = list(
-        {id(d): d for part in score.parts_played_by("bot") for d in routes[part]}.values()
+    bot_devices = list(  # the carriages to home
+        {id(d): d for part in _moving_bots(score, instruments) for d in routes[part]}.values()
     )
     if home:
         home_all(bot_devices, homing_timeout_s)
@@ -363,7 +375,7 @@ class _Sender:
         self.hook = getattr(keys, "robot_strike", None)
         self.carriages: dict[str, _Carriage] = {}
         for p in performers(score, instruments):
-            if isinstance(p, Bot):
+            if isinstance(p, Bot) and p.moves:
                 robot = p.profile
                 self.carriages[p.part] = _Carriage(
                     pitch_at={
@@ -405,7 +417,7 @@ def _follow(perf, program, score, instruments, sender, clock, keys) -> Performan
     from duet.feasibility import max_speed_up
     from duet.follow import Follower
 
-    bots = [p for p in performers(score, instruments) if isinstance(p, Bot)]
+    bots = [p for p in performers(score, instruments) if isinstance(p, Bot) and p.moves]
     fastest = min((max_speed_up(score, b.profile, part=b.part) for b in bots), default=1.0)
     follower = Follower(perf.expected_pianist(), min_rate=1 / fastest)
     begin = getattr(keys, "begin", None)

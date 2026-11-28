@@ -11,7 +11,14 @@ from duet.calibration import SWEEP_INTERVAL_S
 from duet.conductor import RealClock, VirtualClock, one_rig, perform
 from duet.instruments import Instrument
 from duet.midi_io import midi_to_score, save_midi
-from duet.performers import human_difficulty, in_use, repair_bots, score_problems
+from duet.performers import (
+    Bot,
+    human_difficulty,
+    in_use,
+    performers,
+    repair_bots,
+    score_problems,
+)
 from duet.profile import (
     RobotProfile,
     keyboard_profile,
@@ -113,13 +120,27 @@ def cmd_play(args) -> int:
         else:
             print(f"waited {perf.waited_us / 1e6:.1f} s for the pianist")
         print(grade(perf.expected_pianist(), perf.played).feedback())
-    planned = [p for p in perf.planned if p.performer == "bot"]
-    errors = [abs(s.t_us - p.t_us) for s, p in zip(rig.sounds, planned, strict=False)]
-    print(f"robot notes: {len(rig.sounds)}/{len(planned)}, LED frames: {len(rig.led_frames)}")
-    print(f"max timing error: {max(errors, default=0)} us, faults: {len(rig.faults)}")
+    all_played = True
+    for bot in (p for p in performers(score, _in_use(args)) if isinstance(p, Bot)):
+        planned = sorted(n.t_us for n in perf.planned if n.part == bot.part)
+        heard = sorted(_heard(rig, bot))
+        errors = [abs(h - t) for h, t in zip(heard, planned, strict=False)]
+        print(
+            f"{bot.part} (bot): {len(heard)}/{len(planned)} notes, "
+            f"max timing error {max(errors, default=0)} us"
+        )
+        all_played &= len(heard) == len(planned)
+    print(f"LED frames: {len(rig.led_frames)}, faults: {len(rig.faults)}")
     for fault in rig.faults:
-        print("  " + fault)
-    return 0 if not rig.faults and len(rig.sounds) == len(planned) else 1
+        print(f"  {fault}")
+    return 0 if not rig.faults and all_played else 1
+
+
+def _heard(rig: SimulatedRig, bot: Bot) -> list[int]:
+    """When the rig sounded the bot's notes: the carriage's strikes, or its MIDI note ons."""
+    if bot.moves:  # one carriage on the rig, so every strike is this bot's
+        return [s.t_us for s in rig.sounds]
+    return [n.t_us for n in rig.notes if n.vel > 0 and n.midi == bot.mechanism.midi_channel]
 
 
 def _keys(args):

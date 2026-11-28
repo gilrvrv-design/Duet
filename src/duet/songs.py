@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from duet.conductor import build_messages
-from duet.performers import in_use
+from duet.performers import Bot, in_use, performers
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import CHANNEL_KIND, Message, message_time_us
 from duet.score import DuetScore
@@ -46,12 +46,11 @@ def compile_song(
     the first one is at t_us 0, on the device's ``channels`` (kind -> number). A song
     lives on one device, which has one carriage: at most one bot part, and it must
     already be playable."""
-    bots = score.parts_played_by("bot")
-    if len(bots) > 1:
-        raise SongError(f"a stored song plays on one device: one bot part at most, not {bots}")
-    messages = build_messages(
-        score, 0, instruments=in_use(robot, keyboard), count_in=count_in
-    ).messages
+    playing = in_use(robot, keyboard)
+    carriages = [p.part for p in performers(score, playing) if isinstance(p, Bot) and p.moves]
+    if len(carriages) > 1:
+        raise SongError(f"a stored song plays on one device, which has one carriage: {carriages}")
+    messages = build_messages(score, 0, instruments=playing, count_in=count_in).messages
     if not messages:
         raise SongError("the score has nothing to play")
     if len(messages) > MAX_LINES:

@@ -86,6 +86,10 @@ Make a variation: `slower`, `faster`, `easier` and `swap` are instant; anything 
 duet vary examples/rain-on-the-bottles.json easier rain-easier.json
 ```
 
+A digital piano can be played by a bot too: set a part's `"performer": "bot"` on `piano-88`
+and the device sends that part to the piano over MIDI (the rig's MIDI FeatherWing), while the
+carriage plays the bottles.
+
 Play a multi-track MIDI file as an ensemble: each line goes to the instrument that fits it best
 (bottles, a robot glockenspiel and the pianist here):
 

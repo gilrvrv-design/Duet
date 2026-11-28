@@ -15,7 +15,7 @@ def test_built_in_instruments_and_who_can_play_them():
     assert BOTTLES.name == "Glass bottles" and BOTTLES.pitches == [72, 74, 76, 77, 79, 81, 83, 84]
     assert BOTTLES.performers == ("bot",)
     piano = instrument("piano-88")
-    assert piano.performers == ("human",)
+    assert piano.performers == ("bot", "human")  # a person, or a bot over MIDI
     assert piano.pitches[0] == 21 and piano.pitches[-1] == 108 and len(piano.pitches) == 88
     assert instrument("glock-v1").performers == ("bot",)
     with pytest.raises(KeyError, match="unknown instrument: kazoo"):

@@ -1,10 +1,13 @@
 # A standard 88-key piano, played by a person who follows a 144 LED/m strip above the
-# keys (spec §5.4).
+# keys (spec §5.4), or, if it is a digital piano, by a bot over MIDI.
 schema: duet-instrument/1
 id: piano-88
 name: Piano (88 keys)
 range: [A0, C8]
 midi_program: 0  # General MIDI acoustic grand piano
+bot:  # a digital piano, played over MIDI by the board's MIDI out
+  mechanism: midi_out
+  midi_channel: 0
 human:
   guide:
     guide: led_strip

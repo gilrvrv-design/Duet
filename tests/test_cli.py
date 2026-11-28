@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from duet.cli import main
@@ -6,7 +8,7 @@ from helpers import ROOT
 
 @pytest.mark.parametrize(
     ("only", "expect"),
-    [("robot", "robot notes: 9/9"), ("pianist", "robot notes: 0/0")],
+    [("robot", "robot (bot): 9/9 notes"), ("pianist", "LED frames: ")],
 )
 def test_play_one_part_alone(only, expect, capsys):
     example = str(ROOT / "examples" / "rain-on-the-bottles.json")
@@ -25,3 +27,14 @@ def test_a_part_the_score_does_not_have_is_reported(capsys):
     example = str(ROOT / "examples" / "rain-on-the-bottles.json")
     assert main(["play", example, "--sim", "--only", "drums"]) == 2
     assert "no part named 'drums'; the score has ['robot', 'pianist']" in capsys.readouterr().err
+
+
+def test_play_with_a_bot_on_the_piano(tmp_path, capsys):
+    score = json.loads((ROOT / "examples" / "rain-on-the-bottles.json").read_text())
+    score["parts"]["pianist"]["performer"] = "bot"  # the digital piano, over MIDI
+    path = tmp_path / "two-bots.json"
+    path.write_text(json.dumps(score))
+    assert main(["play", str(path), "--sim"]) == 0
+    out = capsys.readouterr().out
+    assert "robot (bot): 9/9 notes, max timing error 0 us" in out
+    assert "pianist (bot): 4/4 notes, max timing error 0 us" in out

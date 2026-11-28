@@ -67,7 +67,7 @@ def test_cli_check_play_convert_repair(tmp_path, capsys):
     midi = tmp_path / "rain.mid"
     assert main(["convert", str(EXAMPLE), str(midi)]) == 0
     assert main(["play", str(midi), "--sim"]) == 0
-    assert "robot notes: 9/9" in capsys.readouterr().out
+    assert "robot (bot): 9/9 notes, max timing error 0 us" in capsys.readouterr().out
 
     hard = tmp_path / "hard.json"
     hard.write_text(make_score(robot=[(1, 1, 0.5, "C5"), (1, 1.5, 0.5, "C6")]).to_json())

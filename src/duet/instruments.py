@@ -100,7 +100,17 @@ class CarriageStriker(FrozenModel):
         return self
 
 
-Mechanism = Annotated[CarriageStriker, Field(discriminator="mechanism")]
+class MidiOut(FrozenModel):
+    """The instrument plays MIDI (a digital piano, a synth): the board sends it notes.
+    Nothing moves, so any note in range can follow any other; ``polyphony`` limits how
+    many sound at once."""
+
+    mechanism: Literal["midi_out"]
+    midi_channel: int = Field(0, ge=0, le=15)
+    polyphony: int = Field(16, ge=1, le=128)
+
+
+Mechanism = Annotated[CarriageStriker | MidiOut, Field(discriminator="mechanism")]
 
 
 # How a human is guided --------------------------------------------------------------
@@ -161,7 +171,7 @@ class Instrument(FrozenModel):
                     f"cents off its name (tolerance {self.tolerance_cents:g}); rename or "
                     "retune it"
                 )
-        if self.bot is not None and len(self.bot.positions) != len(self.notes):
+        if isinstance(self.bot, CarriageStriker) and len(self.bot.positions) != len(self.notes):
             raise ValueError("the bot needs one position per note")
         return self
 
