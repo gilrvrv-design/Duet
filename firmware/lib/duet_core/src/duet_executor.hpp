@@ -30,7 +30,8 @@ struct Stats {
 
 class Executor {
  public:
-  Executor(Hal& hal, Sink& sink, Config config = Config{});
+  // ``channels``: what the board drives (board.h); timed commands must name one of them.
+  Executor(Hal& hal, Sink& sink, Channels channels, Config config = Config{});
 
   void on_message(const char* json, int64_t now_us);
   // Call instead of on_message when a frame or line was longer than kMaxMessage.
@@ -41,6 +42,8 @@ class Executor {
   // For commands that come from the device itself (playing a stored song) instead of
   // the Hub. Every safety rule still applies once a command is queued.
   bool submit(const Command& c);   // queue a timed command; false if refused
+  bool accepts(const Command& c) const;  // a timed command for one of the board's channels
+  const Channels& channels() const { return channels_; }
   void start_homing(int64_t now_us);
   void cancel();                   // drop the queue, stop the carriage and the solenoid
   void keepalive(int64_t now_us);  // the device is its own conductor: no watchdog stop
@@ -67,6 +70,7 @@ class Executor {
 
   Hal& hal_;
   Sink& sink_;
+  Channels channels_;
   Config cfg_;
   CommandQueue<kQueueSize> queue_;
   bool homed_ = false;

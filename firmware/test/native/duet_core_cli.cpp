@@ -20,6 +20,11 @@
 
 using namespace duet;
 
+// The rig's channels: 0 the carriage and striker, 1 the LED strip (as boards/*/board.h).
+static constexpr Channel kRigChannels[] = {{ChannelKind::CarriageStriker, 0},
+                                           {ChannelKind::LedStrip, 176}};
+static constexpr Channels kRig{kRigChannels, 2};
+
 struct Print : Sink {
   void send(const char* json) override {
     if (std::string(json).find("\"fault\"") != std::string::npos ||
@@ -29,10 +34,12 @@ struct Print : Sink {
 };
 
 int main(int argc, char** argv) {
-  if (argc > 1 && std::string(argv[1]) == "--limits") {  // the limits this firmware enforces
+  if (argc > 1 && std::string(argv[1]) == "--channels") {  // the rig's channels and limits
     char buf[kMaxMessage + 1];
-    write_limits(buf, sizeof buf, Config{});
-    std::printf("%s\n", buf);
+    for (size_t ch = 0; ch < kRig.count; ++ch) {
+      write_channel(buf, sizeof buf, static_cast<int>(ch), kRig.items[ch], Config{});
+      std::printf("%s\n", buf);
+    }
     return 0;
   }
   if (argc > 1 && std::string(argv[1]) == "--features") {  // every feature it knows
@@ -63,7 +70,7 @@ int main(int argc, char** argv) {
 
   SimHal hal;
   Print out;
-  Executor ex(hal, out);
+  Executor ex(hal, out, kRig);
   size_t next = 0;
   for (hal.now_us = start; hal.now_us <= last + 1000000; hal.now_us += 50) {
     while (next < inbox.size() && inbox[next].first <= hal.now_us)

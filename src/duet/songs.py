@@ -8,12 +8,13 @@ from its own clock (firmware/lib/duet_core/src/duet_device.hpp).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from duet.conductor import build_messages
 from duet.performers import in_use
 from duet.profile import KeyboardProfile, RobotProfile
-from duet.protocol import Message, message_time_us
+from duet.protocol import CHANNEL_KIND, Message, message_time_us
 from duet.score import DuetScore
 
 SLOTS = 8  # firmware kSongSlots
@@ -35,11 +36,16 @@ class CompiledSong:
 
 
 def compile_song(
-    score: DuetScore, robot: RobotProfile, keyboard: KeyboardProfile, count_in: bool = True
+    score: DuetScore,
+    robot: RobotProfile,
+    keyboard: KeyboardProfile,
+    channels: Mapping[str, int],
+    count_in: bool = True,
 ) -> CompiledSong:
     """The commands a live performance would send, from the home position, shifted so
-    the first one is at t_us 0. A song lives on one device, which has one carriage: at
-    most one bot part, and it must already be playable."""
+    the first one is at t_us 0, on the device's ``channels`` (kind -> number). A song
+    lives on one device, which has one carriage: at most one bot part, and it must
+    already be playable."""
     bots = score.parts_played_by("bot")
     if len(bots) > 1:
         raise SongError(f"a stored song plays on one device: one bot part at most, not {bots}")
@@ -51,7 +57,10 @@ def compile_song(
     if len(messages) > MAX_LINES:
         raise SongError(f"{len(messages)} commands; a stored song holds at most {MAX_LINES}")
     first = message_time_us(messages[0])
-    commands = [replace(m, t_us=message_time_us(m) - first, seq=i) for i, m in enumerate(messages)]
+    commands = [
+        replace(m, t_us=message_time_us(m) - first, seq=i, ch=channels[CHANNEL_KIND[type(m)]])
+        for i, m in enumerate(messages)
+    ]
     return CompiledSong(score.meta.title, commands)
 
 

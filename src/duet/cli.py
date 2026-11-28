@@ -295,13 +295,9 @@ def cmd_upload(args) -> int:
     score = _playable(score, args)
     try:
         slot = check_slot(args.slot)
-        song = compile_song(score, robot, keyboard_profile(args.piano))
-    except SongError as exc:
-        print(f"cannot store it: {exc}", file=sys.stderr)
-        return 2
-    try:
         with DeviceGateway(args.device, profile=robot) as gateway:
             print(f"connected to {describe(gateway.hello)}")
+            song = compile_song(score, robot, keyboard_profile(args.piano), gateway.channels)
             gateway.upload(slot, song.commands)
             print(
                 f"stored {song.title!r} in slot {slot}: {len(song.commands)} commands, "
@@ -310,6 +306,9 @@ def cmd_upload(args) -> int:
             if args.play:
                 gateway.play(slot)
                 print("playing from memory")
+    except SongError as exc:
+        print(f"cannot store it: {exc}", file=sys.stderr)
+        return 2
     except DeviceFault as exc:
         print(f"the device refused it: {exc}", file=sys.stderr)
         return 1

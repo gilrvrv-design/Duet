@@ -31,6 +31,7 @@ from duet.plans import HOME_STEPS
 from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import Estop, Heartbeat, Home, MoveAt, StrikeAt, parse_message
 from duet.score import load_score
+from duet.sim import RIG_CHANNELS
 from duet.songs import compile_song
 from helpers import ROOT
 
@@ -176,7 +177,7 @@ def test_a_move_past_the_end_is_refused_and_the_music_goes_on(device_url):
         gateway.send(Home(seq=1))
         gateway.wait_ready(timeout_s=10)
         soon = hub_now_us() + 100_000
-        gateway.send(MoveAt(soon, 999_999, 500.0, 5000.0, seq=2))  # far beyond the travel
+        gateway.send(MoveAt(soon, 999_999, 500.0, 5000.0, seq=2, ch=0))  # far beyond the travel
         deadline = time.monotonic() + 2
         while not gateway.faults and time.monotonic() < deadline:
             time.sleep(0.02)
@@ -222,7 +223,7 @@ def test_the_firmware_stops_when_the_hub_goes_silent(device_url):
         assert until("telemetry").homed
         # A slow, long move on the device's own clock (no clock sync on a raw link):
         # t_us 0 is in the past, so it starts at once.
-        send(MoveAt(0, 40_000, 50.0, 5000.0, seq=2))
+        send(MoveAt(0, 40_000, 50.0, 5000.0, seq=2, ch=0))
         send(Heartbeat())
         started = time.monotonic()
         fault = until("fault")
@@ -265,7 +266,7 @@ def check_song_timing(heard: list[tuple[int, int]], song) -> None:
 
 def example_song():
     score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
-    return compile_song(score, robot_profile(), keyboard_profile())
+    return compile_song(score, robot_profile(), keyboard_profile(), RIG_CHANNELS)
 
 
 def test_a_stored_song_plays_from_memory(device_url):
@@ -291,7 +292,7 @@ def test_bad_songs_and_plays_are_refused(device_url):
         gateway.close()
     gateway = connect(device_url)
     try:
-        bad = [StrikeAt(-1, 20000)]  # before the song starts
+        bad = [StrikeAt(-1, 20000, ch=0)]  # before the song starts
         with pytest.raises(DeviceFault, match="bad song line"):
             gateway.upload(0, bad)
     finally:

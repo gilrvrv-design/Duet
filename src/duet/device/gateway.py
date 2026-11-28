@@ -28,14 +28,15 @@ from duet.device.limits import DeviceLimits, mismatches
 from duet.device.lines import LineLink
 from duet.profile import RobotProfile
 from duet.protocol import (
+    CARRIAGE_STRIKER,
     PROTOCOL,
     TIMED,
     Ack,
+    Channel,
     Fault,
     Heartbeat,
     Hello,
     Home,
-    Limits,
     Message,
     Play,
     Song,
@@ -82,7 +83,8 @@ class DeviceGateway:
         self.profile = profile
         self.now_us = now_us
         self.hello: Hello | None = None
-        self.limits: DeviceLimits | None = None
+        self.channels: dict[str, int] = {}  # kind -> channel number, from the greeting
+        self.limits: DeviceLimits | None = None  # its carriage's, if it has one
         self.sync: ClockSync | None = None
         self.errors: list[str] = []
         self.faults: list[Fault] = []
@@ -175,7 +177,10 @@ class DeviceGateway:
                 f"device {self.hello.device_id} speaks protocol {self.hello.protocol}; "
                 f"this Hub speaks {PROTOCOL}: update one of them"
             )
-        self.limits = DeviceLimits.from_message(await self._expect(Limits))
+        described = [await self._expect(Channel) for _ in range(self.hello.channels)]
+        self.channels = {c.kind: c.ch for c in described}  # kind -> channel number
+        carriages = [c for c in described if c.kind == CARRIAGE_STRIKER]
+        self.limits = DeviceLimits.from_channel(carriages[0]) if carriages else None
         self._check_profile()
         task = self._loop.create_task(self._reader(), name="reader")
         task.add_done_callback(self._task_done)
@@ -194,7 +199,10 @@ class DeviceGateway:
         problems = []
         if self.hello.profile != self.profile.id:
             problems.append(f"profile: device {self.hello.profile}, Hub {self.profile.id}")
-        problems += mismatches(self.limits, self.profile)
+        if self.limits is None:
+            problems.append("the device has no carriage to play this robot")
+        else:
+            problems += mismatches(self.limits, self.profile)
         if problems:
             raise DeviceMismatch("device and profile disagree: " + "; ".join(problems))
 

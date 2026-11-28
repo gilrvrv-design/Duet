@@ -3,7 +3,17 @@
 #pragma once
 #include <cstdint>
 
+#include "duet_channels.hpp"
 #include "duet_features.hpp"
+#include "rig.h"
 
 constexpr const char* BOARD = "native";
 constexpr uint32_t FEATURES = duet::kPlayButton;
+
+// Channel 0: the carriage and its striker; channel 1: the LED strip over the keys.
+constexpr duet::Channel CHANNELS[] = {
+    {duet::ChannelKind::CarriageStriker, 0},
+    {duet::ChannelKind::LedStrip, LED_COUNT},
+};
+static_assert(duet::at_most_one_carriage(CHANNELS), "one carriage per board");
+constexpr duet::Channels BOARD_CHANNELS{CHANNELS, sizeof CHANNELS / sizeof CHANNELS[0]};

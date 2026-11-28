@@ -12,7 +12,13 @@ from dataclasses import asdict, dataclass, field
 from typing import ClassVar
 
 MAX_MESSAGE_BYTES = 255  # same as kMaxMessage in firmware/lib/duet_core/src/duet_protocol.hpp
-PROTOCOL = 2  # same as kProtocol; 2: the greeting is hello (identity), then limits
+PROTOCOL = 3  # same as kProtocol; 3: the greeting is hello, then one message per channel
+CARRIAGE_STRIKER, LED_STRIP = "carriage_striker", "led_strip"  # channel kinds
+
+# A timed command's channel is the device's business: the conductor fills it in for each
+# device it sends to (its channel of the right kind). Until then it is None, which a
+# device refuses ("cannot parse"), so a forgotten channel can never play by accident.
+_CH = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -42,6 +48,7 @@ class MoveAt(Message):
     target_steps: int
     v_max_mm_s: float
     a_max_mm_s2: float
+    ch: int | None = _CH
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,7 @@ class StrikeAt(Message):
     type: ClassVar[str] = "strike_at"
     t_us: int
     pulse_us: int
+    ch: int | None = _CH
 
 
 @dataclass(frozen=True)
@@ -58,6 +66,7 @@ class LedFrameAt(Message):
     first: int
     count: int
     rgb: tuple[int, int, int]
+    ch: int | None = _CH
 
 
 @dataclass(frozen=True)
@@ -75,7 +84,8 @@ class Heartbeat(Message):
 
 @dataclass(frozen=True)
 class Hello(Message):
-    """Who the device is: its first message on every connection; limits follows."""
+    """Who the device is: its first message on every connection. ``channels`` channel
+    messages follow, one per thing it drives."""
 
     type: ClassVar[str] = "hello"
     protocol: int = PROTOCOL
@@ -83,13 +93,18 @@ class Hello(Message):
     board: str = ""
     profile: str = ""
     features: tuple[str, ...] = ()  # duet.device.features
+    channels: int = 0
 
 
 @dataclass(frozen=True)
-class Limits(Message):
-    """The safety limits the firmware enforces; sent right after hello."""
+class Channel(Message):
+    """One thing the device drives. A carriage-striker channel carries the safety limits
+    the firmware enforces; an LED strip its number of LEDs."""
 
-    type: ClassVar[str] = "limits"
+    type: ClassVar[str] = "channel"
+    ch: int = 0
+    kind: str = ""  # CARRIAGE_STRIKER or LED_STRIP
+    count: int = 0
     steps_per_mm: float = 0.0
     travel_steps: int = 0
     duty_limit: float = 0.0
@@ -160,6 +175,7 @@ class Fault(Message):
 
 
 TIMED = (MoveAt, StrikeAt, LedFrameAt)
+CHANNEL_KIND = {MoveAt: CARRIAGE_STRIKER, StrikeAt: CARRIAGE_STRIKER, LedFrameAt: LED_STRIP}
 MESSAGE_TYPES = {cls.type: cls for cls in Message.__subclasses__()}  # every message, by name
 
 

@@ -42,6 +42,13 @@ bool get_float(const char* json, const char* key, float& out) {
   return true;
 }
 
+bool get_ch(const char* json, Command& out) {
+  int64_t ch = 0;
+  if (!get_int(json, "ch", ch)) return false;
+  out.ch = static_cast<int32_t>(ch);
+  return true;
+}
+
 bool type_is(const char* json, const char* name) {
   const char* p = find_value(json, "type");
   if (!p || *p != '"') return false;
@@ -78,20 +85,22 @@ bool parse(const char* json, Command& out) {
     if (!get_int(json, "t1", out.t1)) return false;
     out.type = Type::TimePing;
   } else if (type_is(json, "move_at")) {
-    if (!get_int(json, "t_us", out.t_us) || !get_int(json, "target_steps", i) ||
+    if (!get_ch(json, out) || !get_int(json, "t_us", out.t_us) ||
+        !get_int(json, "target_steps", i) ||
         !get_float(json, "v_max_mm_s", out.v_max_mm_s) ||
         !get_float(json, "a_max_mm_s2", out.a_max_mm_s2))
       return false;
     out.target_steps = static_cast<int32_t>(i);
     out.type = Type::MoveAt;
   } else if (type_is(json, "strike_at")) {
-    if (!get_int(json, "t_us", out.t_us) || !get_int(json, "pulse_us", i)) return false;
+    if (!get_ch(json, out) || !get_int(json, "t_us", out.t_us) || !get_int(json, "pulse_us", i))
+      return false;
     out.pulse_us = static_cast<int32_t>(i);
     out.type = Type::StrikeAt;
   } else if (type_is(json, "led_frame_at")) {
     int64_t first = 0, count = 0;
-    if (!get_int(json, "t_us", out.t_us) || !get_int(json, "first", first) ||
-        !get_int(json, "count", count))
+    if (!get_ch(json, out) || !get_int(json, "t_us", out.t_us) ||
+        !get_int(json, "first", first) || !get_int(json, "count", count))
       return false;
     const char* p = find_value(json, "rgb");
     if (!p || *p != '[') return false;
@@ -123,19 +132,26 @@ int write_hello(char* buf, size_t n, const Identity& id) {
   }
   return std::snprintf(buf, n,
                        "{\"type\":\"hello\",\"seq\":0,\"protocol\":%d,\"device_id\":\"%s\","
-                       "\"board\":\"%s\",\"profile\":\"%s\",\"features\":[%s]}",
-                       kProtocol, id.device_id, id.board, id.profile, features);
+                       "\"board\":\"%s\",\"profile\":\"%s\",\"features\":[%s],\"channels\":%u}",
+                       kProtocol, id.device_id, id.board, id.profile, features,
+                       static_cast<unsigned>(id.channels.count));
 }
 
-int write_limits(char* buf, size_t n, const Config& cfg) {
+int write_channel(char* buf, size_t n, int ch, const Channel& channel, const Config& cfg) {
+  if (channel.kind == ChannelKind::CarriageStriker) {
+    return std::snprintf(buf, n,
+                         "{\"type\":\"channel\",\"seq\":0,\"ch\":%d,\"kind\":\"%s\","
+                         "\"steps_per_mm\":%.3f,\"travel_steps\":%d,\"duty_limit\":%.3f,"
+                         "\"duty_window_us\":%lld,\"max_pulse_us\":%d}",
+                         ch, kind_name(channel.kind), static_cast<double>(cfg.steps_per_mm),
+                         static_cast<int>(cfg.travel_steps), static_cast<double>(cfg.duty_limit),
+                         static_cast<long long>(cfg.duty_window_us),
+                         static_cast<int>(cfg.max_pulse_us));
+  }
   return std::snprintf(buf, n,
-                       "{\"type\":\"limits\",\"seq\":0,\"steps_per_mm\":%.3f,"
-                       "\"travel_steps\":%d,\"duty_limit\":%.3f,\"duty_window_us\":%lld,"
-                       "\"max_pulse_us\":%d}",
-                       static_cast<double>(cfg.steps_per_mm), static_cast<int>(cfg.travel_steps),
-                       static_cast<double>(cfg.duty_limit),
-                       static_cast<long long>(cfg.duty_window_us),
-                       static_cast<int>(cfg.max_pulse_us));
+                       "{\"type\":\"channel\",\"seq\":0,\"ch\":%d,\"kind\":\"%s\","
+                       "\"count\":%d}",
+                       ch, kind_name(channel.kind), static_cast<int>(channel.count));
 }
 
 int write_ack(char* buf, size_t n, int64_t seq, const char* status) {

@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
 
   duet::ReportingHal hal(report);
   SocketSink sink;
-  duet::Executor executor(hal, sink);
+  duet::Executor executor(hal, sink, BOARD_CHANNELS);
   duet::MemorySongStore songs;
   duet::Device device(executor, songs, sink);
   duet::LineReader reader;
@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
         client = fd;
         int yes = 1;
         setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof yes);
-        device.greet(duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES});
+        device.greet(duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS});
       }
     }
     if (client >= 0 && FD_ISSET(client, &fds)) {

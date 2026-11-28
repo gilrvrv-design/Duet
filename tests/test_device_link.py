@@ -12,13 +12,13 @@ from duet.performers import in_use
 from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import (
     Ack,
+    Channel,
     Estop,
     Fault,
     Heartbeat,
     Hello,
     Home,
     LedFrameAt,
-    Limits,
     MoveAt,
     StrikeAt,
     Telemetry,
@@ -46,12 +46,14 @@ def test_offset_and_delay_maths():
     "msg",
     [
         Home(seq=1),
-        MoveAt(10, 6400, 500.0, 5000.0, seq=2),
-        StrikeAt(20, 15000, seq=3),
-        LedFrameAt(30, 4, 2, (255, 0, 0), seq=4),
+        MoveAt(10, 6400, 500.0, 5000.0, seq=2, ch=0),
+        StrikeAt(20, 15000, seq=3, ch=0),
+        LedFrameAt(30, 4, 2, (255, 0, 0), seq=4, ch=1),
         Estop(),
         Hello(device_id="d", board="esp32-s3", profile="bottles-v1", features=("wifi", "flash")),
-        Limits(steps_per_mm=80.0, travel_steps=48000, duty_limit=0.2),
+        Channel(ch=0, kind="carriage_striker", steps_per_mm=80.0, travel_steps=48000),
+        Channel(ch=1, kind="led_strip", count=176),
+        StrikeAt(20, 15000, seq=3, ch=0),
         TimePing(5),
         TimePong(5, 6, 7),
         Ack(seq=9, status="ok"),
@@ -253,9 +255,10 @@ def test_a_device_with_other_limits_is_refused_at_connect(device):
 def test_the_simulated_device_reports_the_firmware_limits():
     from duet.device.limits import DeviceLimits, mismatches
 
-    hello, limits = SimulatedDevice().greeting()
+    hello, carriage, strip = SimulatedDevice().greeting()
     assert hello.board == "sim"
-    assert mismatches(DeviceLimits.from_message(limits), robot_profile()) == []
+    assert hello.channels == 2 and strip.kind == "led_strip"
+    assert mismatches(DeviceLimits.from_channel(carriage), robot_profile()) == []
 
 
 @pytest.mark.parametrize("device", [{"_lines": True}], indirect=True)
@@ -288,8 +291,8 @@ def test_line_links_need_a_host_and_port():
         asyncio.run(LineLink.open("tcp://nohost"))
 
 
-@pytest.mark.parametrize("device", [{"protocol": 1}], indirect=True)
+@pytest.mark.parametrize("device", [{"protocol": 2}], indirect=True)
 def test_a_device_on_another_protocol_is_refused_at_connect(device):
     _, url = device
-    with pytest.raises(ConnectionError, match="protocol 1; this Hub speaks 2"):
+    with pytest.raises(ConnectionError, match="protocol 2; this Hub speaks 3"):
         DeviceGateway(url).connect()

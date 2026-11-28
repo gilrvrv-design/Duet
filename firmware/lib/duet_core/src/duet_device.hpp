@@ -27,7 +27,7 @@ class Device {
   Device(Executor& executor, SongStore& store, Sink& sink)
       : ex_(executor), store_(store), sink_(sink) {}
 
-  // What a new Hub hears first: hello (who the device is), then limits.
+  // What a new Hub hears first: hello (who the device is), then its channels.
   void greet(const Identity& id);
   void on_message(const char* json, int64_t now_us);
   void on_oversize(int64_t now_us);

@@ -5,7 +5,9 @@
 #pragma once
 #include <cstdint>
 
+#include "duet_channels.hpp"
 #include "duet_features.hpp"
+#include "rig.h"
 
 constexpr const char* BOARD = "esp32-s3";
 constexpr uint32_t FEATURES = duet::kWifi | duet::kFlash | duet::kPlayButton | duet::kEstopButton;
@@ -19,3 +21,11 @@ constexpr int PIN_LEDS = 18;
 constexpr int PIN_PLAY = 17;   // play button to GND; internal pull-up
 constexpr int PIN_ESTOP = 16;  // e-stop button to GND; every S3 GPIO has an internal pull-up
 constexpr bool ESTOP_NEEDS_EXTERNAL_PULLUP = false;
+
+// Channel 0: the carriage and its striker; channel 1: the LED strip over the keys.
+constexpr duet::Channel CHANNELS[] = {
+    {duet::ChannelKind::CarriageStriker, 0},
+    {duet::ChannelKind::LedStrip, LED_COUNT},
+};
+static_assert(duet::at_most_one_carriage(CHANNELS), "one carriage per board");
+constexpr duet::Channels BOARD_CHANNELS{CHANNELS, sizeof CHANNELS / sizeof CHANNELS[0]};

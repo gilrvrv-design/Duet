@@ -96,11 +96,11 @@ class Link : public duet::Sink {
   }
 };
 
-constexpr duet::Identity IDENTITY{DEVICE_ID, BOARD, PROFILE_ID, FEATURES};
+constexpr duet::Identity IDENTITY{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS};
 
 Esp32Hal hal;
 Link link;
-duet::Executor executor(hal, link);
+duet::Executor executor(hal, link, BOARD_CHANNELS);
 FlashSongStore songs;
 duet::Device device(executor, songs, link);  // songs stored in flash, played without the Hub
 

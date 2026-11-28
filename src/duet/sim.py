@@ -16,7 +16,18 @@ from duet.device.limits import STRIKE_HISTORY, DeviceLimits
 from duet.kinematics import move_time_s
 from duet.plans import HOME_STEPS
 from duet.profile import RobotProfile
-from duet.protocol import Estop, Home, LedFrameAt, Message, MoveAt, StrikeAt, message_time_us
+from duet.protocol import (
+    CARRIAGE_STRIKER,
+    CHANNEL_KIND,
+    LED_STRIP,
+    Estop,
+    Home,
+    LedFrameAt,
+    Message,
+    MoveAt,
+    StrikeAt,
+    message_time_us,
+)
 
 
 @dataclass(frozen=True)
@@ -44,8 +55,15 @@ class SimFault:
         return f"t={self.t_us}: {self.code}: {self.detail}"
 
 
+RIG_CHANNELS = {CARRIAGE_STRIKER: 0, LED_STRIP: 1}  # as firmware/boards/*/board.h
+RIG_LEDS = 176  # as LED_COUNT in firmware/src/rig.h
+
+
 @dataclass
 class SimulatedRig:
+    """The rig: a carriage-striker on channel 0 and an LED strip on channel 1, like the
+    boards in firmware/boards/ (the contract test keeps them the same)."""
+
     profile: RobotProfile
     limits: DeviceLimits | None = None  # default: what the profile says
     sounds: list[Sound] = field(default_factory=list)
@@ -66,7 +84,17 @@ class SimulatedRig:
     def fault_codes(self) -> list[str]:
         return [f.code for f in self.faults]
 
+    @property
+    def channels(self) -> dict[str, int]:
+        return dict(RIG_CHANNELS)
+
     def send(self, msg: Message) -> None:
+        kind = CHANNEL_KIND.get(type(msg))
+        if kind is not None and msg.ch != RIG_CHANNELS[kind]:
+            # The firmware refuses it ("no such channel"): a Hub bug, so say so loudly.
+            raise ValueError(
+                f"{msg.type} for channel {msg.ch}; this rig's {kind} is {RIG_CHANNELS[kind]}"
+            )
         self.received.append(msg)
 
     def run(self) -> None:

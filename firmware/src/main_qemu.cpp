@@ -27,7 +27,7 @@ class SerialSink : public duet::Sink {
 
 duet::ReportingHal hal([](const char* line) { Serial.println(line); });
 SerialSink link;
-duet::Executor executor(hal, link);
+duet::Executor executor(hal, link, BOARD_CHANNELS);
 duet::MemorySongStore songs;  // QEMU: songs in RAM; the rig keeps them in flash
 duet::Device device(executor, songs, link);
 
@@ -38,7 +38,7 @@ void setup() {
   hal.now_us = now_us();
   hal.place(START_STEPS);
   // On the serial link the greeting opens the conversation at boot.
-  device.greet(duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES});
+  device.greet(duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS});
 }
 
 void loop() {

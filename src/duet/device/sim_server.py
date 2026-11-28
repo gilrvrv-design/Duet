@@ -18,9 +18,12 @@ from duet.device.limits import DeviceLimits
 from duet.device.lines import LineLink
 from duet.profile import RobotProfile, robot_profile
 from duet.protocol import (
+    CARRIAGE_STRIKER,
+    LED_STRIP,
     PROTOCOL,
     TIMED,
     Ack,
+    Channel,
     Estop,
     Fault,
     Heartbeat,
@@ -35,7 +38,7 @@ from duet.protocol import (
     TimePong,
     parse_message,
 )
-from duet.sim import SimulatedRig
+from duet.sim import RIG_CHANNELS, RIG_LEDS, SimulatedRig
 
 log = logging.getLogger(__name__)
 
@@ -99,11 +102,20 @@ class SimulatedDevice:
         return replies
 
     def greeting(self) -> list[Message]:
-        """What the firmware sends on connect (Device::greet): hello, then limits."""
+        """What the firmware sends on connect (Device::greet): hello, then its channels,
+        the same two as the rig: the carriage, then the LED strip."""
         hello = Hello(
-            protocol=self.protocol, device_id=self.device_id, board="sim", profile=self.profile.id
+            protocol=self.protocol,
+            device_id=self.device_id,
+            board="sim",
+            profile=self.profile.id,
+            channels=len(RIG_CHANNELS),
         )
-        return [hello, DeviceLimits.from_profile(self.profile).to_message()]
+        carriage = DeviceLimits.from_profile(self.profile).to_channel(
+            RIG_CHANNELS[CARRIAGE_STRIKER]
+        )
+        strip = Channel(ch=RIG_CHANNELS[LED_STRIP], kind=LED_STRIP, count=RIG_LEDS)
+        return [hello, carriage, strip]
 
     async def serve_lines(self, host: str = "127.0.0.1", port: int = 5555, ready=None) -> None:
         """The same device on a serial-style line link (``tcp://``), like the QEMU build.

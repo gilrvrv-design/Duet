@@ -4,7 +4,8 @@
 
 namespace duet {
 
-Executor::Executor(Hal& hal, Sink& sink, Config config) : hal_(hal), sink_(sink), cfg_(config) {
+Executor::Executor(Hal& hal, Sink& sink, Channels channels, Config config)
+    : hal_(hal), sink_(sink), channels_(channels), cfg_(config) {
   for (size_t i = 0; i < kDutySlots; ++i) duty_time_[i] = INT64_MIN / 2;
 }
 
@@ -80,6 +81,10 @@ void Executor::on_message(const char* json, int64_t now_us) {
     ack(c.seq, "error: not supported");
     return;
   }
+  if (!accepts(c)) {
+    ack(c.seq, "error: no such channel");
+    return;
+  }
   if (!queue_.push(c)) {
     ack(c.seq, "error: queue full");
     return;
@@ -100,8 +105,12 @@ void Executor::start_homing(int64_t now_us) {
   }
 }
 
+bool Executor::accepts(const Command& c) const {
+  return c.timed() && channels_.has(c.ch, c.channel_kind());
+}
+
 bool Executor::submit(const Command& c) {
-  if (estopped_ || !c.timed()) return false;
+  if (estopped_ || !accepts(c)) return false;
   return queue_.push(c);
 }
 

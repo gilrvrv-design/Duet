@@ -1,3 +1,5 @@
+import pytest
+
 from duet.cli import main
 from duet.conductor import State, VirtualClock, build_messages, one_rig, perform
 from duet.performers import in_use
@@ -47,7 +49,11 @@ def test_simulated_performance_plays_every_note_on_time():
 
 def test_simulator_catches_a_bad_plan():
     rig = SimulatedRig(BOTTLES)
-    for msg in (Home(), MoveAt(0, 46000, 500, 5000, seq=1), StrikeAt(100_000, 20000, seq=2)):
+    for msg in (
+        Home(),
+        MoveAt(0, 46000, 500, 5000, seq=1, ch=0),
+        StrikeAt(100_000, 20000, seq=2, ch=0),
+    ):
         rig.send(msg)
     rig.run()
     assert rig.fault_codes == ["NOT_ARRIVED"]
@@ -71,3 +77,22 @@ def test_cli_check_play_convert_repair(tmp_path, capsys):
     assert main(["check", str(fixed)]) == 0
     assert main(["play", str(hard), "--sim"]) == 0
     assert main(["play", str(hard)]) == 2
+
+
+def test_a_part_needs_a_device_with_its_kind_of_channel():
+    """A person's light cues need an LED strip; a board with only a carriage refuses."""
+
+    class CarriageOnly:
+        channels = {"carriage_striker": 0}
+
+        def send(self, msg):
+            pass
+
+    score = make_score(robot=[(1, 1, 1, "C5")], pianist=[(1, 1, 2, "C4")])
+    with pytest.raises(ValueError, match=r"part 'pianist'.*no \['led_strip'\]"):
+        perform(
+            score,
+            one_rig(score, [CarriageOnly()]),
+            VirtualClock(),
+            instruments=in_use(BOTTLES, PIANO),
+        )

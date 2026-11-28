@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from duet.conductor import Clock, Device, home_all, one_rig, perform
+from duet.conductor import Clock, Device, home_all, one_rig, perform, send_to
 from duet.kinematics import move_time_s
 from duet.listening import KeyInput, PlayedNote
 from duet.performers import in_use
@@ -62,8 +62,8 @@ def call_and_response(
     for number in range(turns):
         end = start + turn_beats * spb_us
         for device in devices:
-            device.send(LedFrameAt(start, 0, strip, YOUR_TURN))
-            device.send(LedFrameAt(end, 0, strip, OFF))
+            send_to(device, LedFrameAt(start, 0, strip, YOUR_TURN))
+            send_to(device, LedFrameAt(end, 0, strip, OFF))
         begin = getattr(keys, "start_turn", None)
         if begin is not None:
             begin(number, start)
@@ -112,7 +112,7 @@ def _listen_and_preposition(keys, clock, start, end, responder, robot, devices, 
             return
         t = now + REPOSITION_LEAD_US
         for device in devices:
-            device.send(MoveAt(t, target, kin.v_max_mm_s, kin.a_max_mm_s2))
+            send_to(device, MoveAt(t, target, kin.v_max_mm_s, kin.a_max_mm_s2))
         busy_until = t + round(move_time_s(position, target, kin) * 1_000_000)
         position = target
 

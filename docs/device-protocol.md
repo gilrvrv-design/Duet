@@ -6,8 +6,26 @@ The contract between the **Hub** (Python, `src/duet/protocol.py`,
 (`tests/test_firmware_contract.py`) runs the Hub's real command stream through the C++
 core and checks that it agrees with the Python simulator.
 
-**Protocol version: 2** (sent by the device in `hello`). Version 2 split the greeting
-into `hello` (who the device is) and `limits` (what it enforces).
+**Protocol version: 3** (sent by the device in `hello`). Version 3 added channels: the
+device describes what it drives, and every timed command names the channel that plays
+it.
+
+## Channels
+
+A board drives a few things, one **channel** each: today a carriage with its striker
+(`carriage_striker`) and the LED strip over the keys (`led_strip`). The board lists them
+(`firmware/boards/<board>/board.h`); the device describes them on connect; every timed
+command carries `ch`, and the device refuses a command for a channel it does not have,
+or of the wrong kind (`error: no such channel`).
+
+| Kind | Commands | Described with |
+|---|---|---|
+| `carriage_striker` | `move_at`, `strike_at` | the safety limits it enforces |
+| `led_strip` | `led_frame_at` | `count`: its number of LEDs |
+
+The Hub never assumes channel numbers: the conductor sends each message on the target
+device's channel of that message's kind. Today's boards have the carriage on 0 and the
+strip on 1.
 
 ## At a glance
 
@@ -52,7 +70,7 @@ whole conversation during bench work.
 Every message is a flat JSON object with a `type` and a `seq`:
 
 ```json
-{"type":"strike_at","seq":42,"t_us":987654321012,"pulse_us":22000}
+{"type":"strike_at","seq":42,"ch":0,"t_us":987654321012,"pulse_us":22000}
 ```
 
 - **No nesting**, except the `rgb` array. The firmware parser is a small flat-object
@@ -64,7 +82,7 @@ Every message is a flat JSON object with a `type` and a `seq`:
 | Who sends it | `seq` values |
 |---|---|
 | Gateway (every command and clock ping) | 1, 2, 3 ... counting up for the whole connection |
-| Device (`hello`, `limits`, `telemetry`, `fault`) | 0 |
+| Device (`hello`, `channel`, `telemetry`, `fault`) | 0 |
 | Device (`ack`, `time_pong`) | the `seq` of the message being answered |
 
 The conductor numbers each performance's plan from 0. The gateway puts its **own**
@@ -79,9 +97,9 @@ reported with the plan's number.
 | Type | Fields | Timed? | Answer | What the device does |
 |---|---|---|---|---|
 | `home` | — | no | `ack`, then `telemetry` when homed | Clears the queue, drives toward the sensor, sets position 0 |
-| `move_at` | `t_us`, `target_steps`, `v_max_mm_s`, `a_max_mm_s2` | yes | `ack` on receipt | At `t_us`, moves the carriage with a trapezoid profile |
-| `strike_at` | `t_us`, `pulse_us` | yes | `ack` on receipt | At `t_us`, pulses the solenoid, if the carriage has arrived |
-| `led_frame_at` | `t_us`, `first`, `count`, `rgb` | yes | `ack` on receipt | At `t_us`, fills LEDs `first … first+count−1` with `rgb` and shows |
+| `move_at` | `ch`, `t_us`, `target_steps`, `v_max_mm_s`, `a_max_mm_s2` | yes | `ack` on receipt | At `t_us`, moves the carriage with a trapezoid profile |
+| `strike_at` | `ch`, `t_us`, `pulse_us` | yes | `ack` on receipt | At `t_us`, pulses the solenoid, if the carriage has arrived |
+| `led_frame_at` | `ch`, `t_us`, `first`, `count`, `rgb` | yes | `ack` on receipt | At `t_us`, fills LEDs `first … first+count−1` with `rgb` and shows |
 | `estop` | — | no | `ack` | Stops motion, solenoid off, clears the queue, latches |
 | `time_ping` | `t1` (Hub clock) | no | `time_pong` | Answers immediately |
 | `heartbeat` | — | no | none | Only resets the watchdog |
@@ -93,8 +111,8 @@ reported with the plan's number.
 
 | Type | Fields | When |
 |---|---|---|
-| `hello` | `protocol`, `device_id`, `board`, `profile`, `features` (list) | First message on every connection |
-| `limits` | the limits it enforces: `steps_per_mm`, `travel_steps`, `duty_limit`, `duty_window_us`, `max_pulse_us` | Right after `hello` |
+| `hello` | `protocol`, `device_id`, `board`, `profile`, `features` (list), `channels` (how many) | First message on every connection |
+| `channel` | `ch`, `kind`; a carriage: `steps_per_mm`, `travel_steps`, `duty_limit`, `duty_window_us`, `max_pulse_us`; a strip: `count` | Right after `hello`, one per channel |
 | `ack` | `status`: `ok` or `error: …` | For every command except `heartbeat` and `time_ping` |
 | `time_pong` | `t1`, `t2` (arrived), `t3` (left), device clock | Answer to `time_ping` |
 | `telemetry` | `homed`, `position` (steps), `queued` | When homing ends; when position stops being trusted |
@@ -103,14 +121,15 @@ reported with the plan's number.
 ### Examples
 
 ```json
-{"type":"hello","seq":0,"protocol":2,"device_id":"duet-rig-1","board":"esp32-classic","profile":"bottles-v1","features":["wifi","flash","play_button","estop_button"]}
-{"type":"limits","seq":0,"steps_per_mm":80.000,"travel_steps":48000,"duty_limit":0.200,"duty_window_us":10000000,"max_pulse_us":50000}
+{"type":"hello","seq":0,"protocol":3,"device_id":"duet-rig-1","board":"esp32-classic","profile":"bottles-v1","features":["wifi","flash","play_button","estop_button"],"channels":2}
+{"type":"channel","seq":0,"ch":0,"kind":"carriage_striker","steps_per_mm":80.000,"travel_steps":48000,"duty_limit":0.200,"duty_window_us":10000000,"max_pulse_us":50000}
+{"type":"channel","seq":0,"ch":1,"kind":"led_strip","count":176}
 {"type":"home","seq":0}
 {"type":"ack","seq":0,"status":"ok"}
 {"type":"telemetry","seq":0,"homed":true,"position":0,"queued":0}
-{"type":"move_at","seq":7,"t_us":5012000345,"target_steps":26800,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0}
-{"type":"strike_at","seq":8,"t_us":5012755345,"pulse_us":22000}
-{"type":"led_frame_at","seq":9,"t_us":5012767345,"first":93,"count":2,"rgb":[255,255,255]}
+{"type":"move_at","seq":7,"ch":0,"t_us":5012000345,"target_steps":26800,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0}
+{"type":"strike_at","seq":8,"ch":0,"t_us":5012755345,"pulse_us":22000}
+{"type":"led_frame_at","seq":9,"ch":1,"t_us":5012767345,"first":93,"count":2,"rgb":[255,255,255]}
 {"type":"time_ping","seq":17,"t1":81234567}
 {"type":"time_pong","seq":17,"t1":81234567,"t2":1068889101,"t3":1068889102}
 {"type":"heartbeat","seq":0}
@@ -137,8 +156,9 @@ sequenceDiagram
     participant D as Device
 
     H->>D: open WebSocket
-    D-->>H: hello {protocol 2, device_id, board, profile, features}
-    D-->>H: limits {steps_per_mm, travel_steps, duty_limit, ...}
+    D-->>H: hello {protocol 3, device_id, board, profile, features, channels 2}
+    D-->>H: channel {ch 0, carriage_striker, limits}
+    D-->>H: channel {ch 1, led_strip, count 176}
 
     rect rgb(235, 245, 255)
     Note over H,D: Clock sync: 16 pings, the fastest round trip wins
@@ -251,7 +271,8 @@ stateDiagram-v2
 | Status | Meaning | Hub should |
 |---|---|---|
 | `ok` | Accepted (queued, or done for `home` / `estop`) | nothing |
-| `error: cannot parse` | Not valid JSON, unknown type, or missing fields | log it; it is a Hub bug |
+| `error: cannot parse` | Not valid JSON, unknown type, or missing fields (a timed command without `ch`) | log it; it is a Hub bug |
+| `error: no such channel` | A timed command for a channel the device does not have, or of the wrong kind | log it; it is a Hub bug |
 | `error: queue full` | 512 commands already waiting | send less far ahead |
 | `error: emergency stop` | The rig is latched in emergency stop | stop the performance; a person must power-cycle |
 | `error: playing from memory` | A live timed command or an upload while a stored song plays | send `stop` first |
@@ -263,8 +284,8 @@ stateDiagram-v2
 
 ### What the gateway does with answers
 
-- The gateway refuses a device on another protocol version, then compares `limits`
-  with the profile the Hub plans with and
+- The gateway refuses a device on another protocol version, then compares its
+  carriage channel's limits with the profile the Hub plans with and
   refuses to connect if they differ (`DeviceMismatch`): a score the Hub thinks playable
   would otherwise be refused mid-song.
 - `board` and `features` say what this device can do beyond the core (feature names:

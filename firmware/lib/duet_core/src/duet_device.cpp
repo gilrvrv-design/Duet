@@ -55,8 +55,10 @@ void Device::greet(const Identity& id) {
   char buf[kMaxMessage + 1];
   write_hello(buf, sizeof buf, id);
   sink_.send(buf);
-  write_limits(buf, sizeof buf, ex_.config());
-  sink_.send(buf);
+  for (size_t ch = 0; ch < id.channels.count; ++ch) {
+    write_channel(buf, sizeof buf, static_cast<int>(ch), id.channels.items[ch], ex_.config());
+    sink_.send(buf);
+  }
 }
 
 void Device::on_oversize(int64_t now_us) {
@@ -92,7 +94,9 @@ void Device::begin_upload(const Command& c, int64_t now_us) {
 void Device::receive_line(const Command& c, const char* json, int64_t now_us) {
   ex_.keepalive(now_us);
   upload_last_us_ = now_us;
-  if (c.t_us < 0 || c.t_us > kMaxSongUs || !store_.append(json)) upload_bad_ = true;
+  if (c.t_us < 0 || c.t_us > kMaxSongUs || !ex_.accepts(c) || !store_.append(json)) {
+    upload_bad_ = true;
+  }
   if (--upload_left_ == 0) end_upload(upload_bad_ ? "error: bad song line" : nullptr);
 }
 

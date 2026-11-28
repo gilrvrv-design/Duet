@@ -16,7 +16,7 @@ from duet.device.clock import hub_now_us
 from duet.listening import KeyInput
 from duet.performers import NO_OVERRIDES, Bot, Instruments, performers
 from duet.plans import HOME_STEPS, LedCue, RobotPlan, led_plan, robot_plan
-from duet.protocol import Home, LedFrameAt, Message, MoveAt, StrikeAt, message_time_us
+from duet.protocol import CHANNEL_KIND, Home, LedFrameAt, Message, MoveAt, StrikeAt, message_time_us
 from duet.score import DuetScore, Performer
 from duet.timing import seconds_per_beat, timed_events
 
@@ -35,6 +35,12 @@ class State(StrEnum):
 
 
 class Device(Protocol):
+    """Anything that plays messages: a rig over the gateway, a simulator, a recorder.
+    ``channels`` is what it drives, by kind (its greeting): the conductor sends each
+    timed message to the device's channel of that message's kind."""
+
+    channels: Mapping[str, int]
+
     def send(self, msg: Message) -> None: ...
 
 
@@ -89,6 +95,12 @@ class Performance:
         from duet.listening import Expected
 
         return [Expected(p.t_us, p.pitch, p.bar) for p in self.planned if p.performer == "human"]
+
+
+def send_to(device: Device, msg: Message) -> None:
+    """Send a timed message on the device's channel of its kind (the one place a
+    message's ``ch`` is filled in)."""
+    device.send(replace(msg, ch=device.channels[CHANNEL_KIND[type(msg)]]))
 
 
 def home_all(devices: list[Device], timeout_s: float = 30.0) -> None:
@@ -202,6 +214,21 @@ def _check_routes(score: DuetScore, routes: Routes) -> None:
                 raise ValueError(f"parts {other!r} and {part!r} would drive the same device")
 
 
+def _check_channels(program: Program, routes: Routes) -> None:
+    """Every device a part is routed to drives what that part's messages need: a
+    carriage for a bot's strikes, an LED strip for a person's cues."""
+    needs: dict[str, set[str]] = {}
+    for msg in program.messages:
+        needs.setdefault(program.part_of[msg.seq], set()).add(CHANNEL_KIND[type(msg)])
+    for part, kinds in needs.items():
+        for device in routes[part]:
+            missing = kinds - set(device.channels)
+            if missing:
+                raise ValueError(
+                    f"part {part!r}: a device it is routed to has no {sorted(missing)}"
+                )
+
+
 def perform(
     score: DuetScore,
     routes: Routes,
@@ -248,6 +275,7 @@ def perform(
     earliest = clock.now_us() + round((buffer_s + max(count_in_s, preroll_s)) * 1_000_000)
     perf.start_us = earliest if start_at_us is None else max(start_at_us, earliest)
     program = program.at(perf.start_us)
+    _check_channels(program, routes)
     perf.planned = program.planned
     perf.end_steps = {
         part: plan.commands[-1].target_steps
@@ -348,7 +376,7 @@ class _Sender:
     def send(self, msg: Message) -> None:
         part = self.part_of[msg.seq]
         for device in self.routes[part]:
-            device.send(msg)
+            send_to(device, msg)
         self.perf.messages_sent += 1
         carriage = self.carriages.get(part)
         if carriage is None:

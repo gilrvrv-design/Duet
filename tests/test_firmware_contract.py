@@ -9,12 +9,13 @@ import subprocess
 import pytest
 
 from duet.conductor import VirtualClock, one_rig, perform
+from duet.device.sim_server import SimulatedDevice
 from duet.performers import in_use
 from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import Home, MoveAt, StrikeAt
 from duet.repair import repair_robot
 from duet.score import load_score
-from duet.sim import SimulatedRig
+from duet.sim import RIG_CHANNELS, SimulatedRig
 from helpers import ROOT, make_score
 
 FIRMWARE = ROOT / "firmware"
@@ -22,6 +23,10 @@ pytestmark = pytest.mark.skipif(shutil.which("g++") is None, reason="needs a C++
 
 
 class Recorder:
+    """A device with the rig's channels that keeps what it is sent."""
+
+    channels = RIG_CHANNELS
+
     def __init__(self):
         self.messages = []
 
@@ -93,8 +98,8 @@ def test_firmware_and_hub_agree(score, firmware_cli):
 def test_firmware_refuses_a_strike_before_arrival(firmware_cli):
     messages = [
         Home(),
-        MoveAt(1_000_000, 46000, 500, 5000, seq=1),
-        StrikeAt(1_100_000, 20000, seq=2),
+        MoveAt(1_000_000, 46000, 500, 5000, seq=1, ch=0),
+        StrikeAt(1_100_000, 20000, seq=2, ch=0),
     ]
     assert "NOT_ARRIVED" in run_firmware(firmware_cli, messages)
 
@@ -108,19 +113,28 @@ def test_heartbeats_keep_the_watchdog_quiet(firmware_cli):
     assert "WATCHDOG" not in run_firmware(firmware_cli, messages, "500000", "250000")
 
 
+def firmware_channels(cli) -> list:
+    from duet.protocol import parse_message
+
+    out = subprocess.run([str(cli), "--channels"], capture_output=True, text=True, check=True)
+    return [parse_message(line) for line in out.stdout.splitlines()]
+
+
+def test_firmware_and_simulator_describe_the_same_channels(firmware_cli):
+    """The rig's channels (firmware/boards/*/board.h) are the simulators' (duet.sim)."""
+    simulated = SimulatedDevice().greeting()[1:]
+    assert [(c.ch, c.kind, c.count) for c in firmware_channels(firmware_cli)] == [
+        (c.ch, c.kind, c.count) for c in simulated
+    ]
+    assert {c.kind: c.ch for c in simulated} == RIG_CHANNELS
+
+
 def test_firmware_limits_match_the_profile(firmware_cli):
     """The firmware's compiled-in limits (duet_config.hpp) and the profile the Hub plans
     with (bottles-v1.yaml) describe the same rig."""
     from duet.device.limits import FIRMWARE_MAX_PULSE_US, DeviceLimits, mismatches
-    from duet.protocol import parse_message
 
-    limits = DeviceLimits.from_message(
-        parse_message(
-            subprocess.run(
-                [str(firmware_cli), "--limits"], capture_output=True, text=True, check=True
-            ).stdout
-        )
-    )
+    limits = DeviceLimits.from_channel(firmware_channels(firmware_cli)[0])
     assert mismatches(limits, robot_profile()) == []
     assert limits.max_pulse_us == FIRMWARE_MAX_PULSE_US
     # A glockenspiel profile allows a higher duty limit than this firmware enforces.
@@ -148,11 +162,15 @@ def fault_codes(output: str) -> list[str]:
 @pytest.mark.parametrize(
     "messages",
     [
-        [MoveAt(1_000_000, 6400, 500, 5000, seq=1)],  # no home
-        [Home(), MoveAt(1_000_000, 99_999, 500, 5000, seq=1)],  # beyond travel
-        [Home(), MoveAt(1_000_000, 46000, 500, 5000, seq=1), StrikeAt(1_100_000, 20000, seq=2)],
-        [Home()] + [StrikeAt(1_000_000 + i * 10_000, 5000, seq=i + 1) for i in range(1000)],
-        [Home()] + [StrikeAt(1_000_000 + i * 100_000, 50_000, seq=i + 1) for i in range(60)],
+        [MoveAt(1_000_000, 6400, 500, 5000, seq=1, ch=0)],  # no home
+        [Home(), MoveAt(1_000_000, 99_999, 500, 5000, seq=1, ch=0)],  # beyond travel
+        [
+            Home(),
+            MoveAt(1_000_000, 46000, 500, 5000, seq=1, ch=0),
+            StrikeAt(1_100_000, 20000, seq=2, ch=0),
+        ],
+        [Home()] + [StrikeAt(1_000_000 + i * 10_000, 5000, seq=i + 1, ch=0) for i in range(1000)],
+        [Home()] + [StrikeAt(1_000_000 + i * 100_000, 50_000, seq=i + 1, ch=0) for i in range(60)],
     ],
     ids=["not-homed", "soft-limit", "not-arrived", "short-pulse-duty", "long-pulse-duty"],
 )

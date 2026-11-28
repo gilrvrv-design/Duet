@@ -13,6 +13,11 @@
 
 using namespace duet;
 
+// The rig's channels: 0 the carriage and striker, 1 the LED strip (as boards/*/board.h).
+static constexpr Channel kRigChannels[] = {{ChannelKind::CarriageStriker, 0},
+                                           {ChannelKind::LedStrip, 176}};
+static constexpr Channels kRig{kRigChannels, 2};
+
 static int failures = 0;
 #define CHECK(cond)                                                    \
   do {                                                                 \
@@ -34,12 +39,12 @@ struct Capture : Sink {
 
 static void test_parse() {
   Command c;
-  CHECK(parse(R"({"type":"move_at","seq":3,"t_us":1500,"target_steps":6400,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0})", c));
+  CHECK(parse(R"({"type":"move_at","seq":3,"ch":0,"t_us":1500,"target_steps":6400,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0})", c));
   CHECK(c.type == Type::MoveAt && c.seq == 3 && c.t_us == 1500 && c.target_steps == 6400);
   CHECK(c.v_max_mm_s == 500.0f && c.a_max_mm_s2 == 5000.0f);
-  CHECK(parse(R"({"type":"led_frame_at","seq":4,"t_us":9,"first":10,"count":2,"rgb":[255,40,0]})", c));
+  CHECK(parse(R"({"type":"led_frame_at","seq":4,"ch":1,"t_us":9,"first":10,"count":2,"rgb":[255,40,0]})", c));
   CHECK(c.type == Type::LedFrameAt && c.first == 10 && c.count == 2 && c.rgb[0] == 255 && c.rgb[1] == 40);
-  CHECK(parse(R"({"type":"strike_at","seq":5,"t_us":123456789012,"pulse_us":20000})", c));
+  CHECK(parse(R"({"type":"strike_at","seq":5,"ch":0,"t_us":123456789012,"pulse_us":20000})", c));
   CHECK(c.t_us == 123456789012LL && c.pulse_us == 20000);
   CHECK(parse(R"({"type":"time_ping","seq":7,"t1":42})", c) && c.t1 == 42);
   CHECK(parse(R"({"type":"heartbeat","seq":0})", c) && c.type == Type::Heartbeat);
@@ -77,7 +82,7 @@ static void test_home_move_strike() {
   SimHal hal;
   hal.place(5000);
   Capture out;
-  Executor ex(hal, out);
+  Executor ex(hal, out, kRig);
   ex.on_message(R"({"type":"home","seq":1})", 0);
   CHECK(!ex.homed());
   run_until(ex, hal, 3000000);
@@ -85,9 +90,9 @@ static void test_home_move_strike() {
   CHECK(out.has(R"({"type":"telemetry","seq":0,"homed":true,"position":0,"queued":0})"));
   int64_t t0 = hal.now_us;
   char msg[200];
-  std::snprintf(msg, sizeof msg, R"({"type":"move_at","seq":2,"t_us":%lld,"target_steps":6400,"v_max_mm_s":500,"a_max_mm_s2":5000})", (long long)(t0 + 1000));
+  std::snprintf(msg, sizeof msg, R"({"type":"move_at","seq":2,"ch":0,"t_us":%lld,"target_steps":6400,"v_max_mm_s":500,"a_max_mm_s2":5000})", (long long)(t0 + 1000));
   ex.on_message(msg, t0);
-  std::snprintf(msg, sizeof msg, R"({"type":"strike_at","seq":3,"t_us":%lld,"pulse_us":20000})", (long long)(t0 + 400000));
+  std::snprintf(msg, sizeof msg, R"({"type":"strike_at","seq":3,"ch":0,"t_us":%lld,"pulse_us":20000})", (long long)(t0 + 400000));
   ex.on_message(msg, t0);
   CHECK(out.has(R"("seq":2,"status":"ok")") && out.has(R"("seq":3,"status":"ok")"));
   run_until(ex, hal, t0 + 500000);
@@ -99,10 +104,10 @@ static void test_home_move_strike() {
 static void test_strike_before_arrival_is_refused() {
   SimHal hal;
   Capture out;
-  Executor ex(hal, out);
+  Executor ex(hal, out, kRig);
   ex.on_message(R"({"type":"home","seq":1})", 0);
-  ex.on_message(R"({"type":"move_at","seq":2,"t_us":1000,"target_steps":46000,"v_max_mm_s":500,"a_max_mm_s2":5000})", 0);
-  ex.on_message(R"({"type":"strike_at","seq":3,"t_us":200000,"pulse_us":20000})", 0);
+  ex.on_message(R"({"type":"move_at","seq":2,"ch":0,"t_us":1000,"target_steps":46000,"v_max_mm_s":500,"a_max_mm_s2":5000})", 0);
+  ex.on_message(R"({"type":"strike_at","seq":3,"ch":0,"t_us":200000,"pulse_us":20000})", 0);
   run_until(ex, hal, 300000);
   CHECK(out.has("NOT_ARRIVED"));
   CHECK(hal.events.empty());
@@ -111,18 +116,18 @@ static void test_strike_before_arrival_is_refused() {
 static void test_safety_rules() {
   SimHal hal;
   Capture out;
-  Executor ex(hal, out);
-  ex.on_message(R"({"type":"strike_at","seq":1,"t_us":10,"pulse_us":20000})", 0);
+  Executor ex(hal, out, kRig);
+  ex.on_message(R"({"type":"strike_at","seq":1,"ch":0,"t_us":10,"pulse_us":20000})", 0);
   run_until(ex, hal, 1000);
   CHECK(out.has("NOT_HOMED"));
 
   ex.on_message(R"({"type":"home","seq":2})", hal.now_us);
-  ex.on_message(R"({"type":"move_at","seq":3,"t_us":2000,"target_steps":99999,"v_max_mm_s":500,"a_max_mm_s2":5000})", hal.now_us);
+  ex.on_message(R"({"type":"move_at","seq":3,"ch":0,"t_us":2000,"target_steps":99999,"v_max_mm_s":500,"a_max_mm_s2":5000})", hal.now_us);
   run_until(ex, hal, 3000);
   CHECK(out.has("SOFT_LIMIT"));
 
   // Watchdog: a long move, then silence from the Hub.
-  ex.on_message(R"({"type":"move_at","seq":4,"t_us":4000,"target_steps":46000,"v_max_mm_s":20,"a_max_mm_s2":5000})", hal.now_us);
+  ex.on_message(R"({"type":"move_at","seq":4,"ch":0,"t_us":4000,"target_steps":46000,"v_max_mm_s":20,"a_max_mm_s2":5000})", hal.now_us);
   run_until(ex, hal, 1200000);
   CHECK(out.has("WATCHDOG") && !hal.is_moving() && !ex.homed());
 
@@ -137,12 +142,12 @@ static void test_safety_rules() {
 static void test_duty_cycle_limit() {
   SimHal hal;
   Capture out;
-  Executor ex(hal, out);
+  Executor ex(hal, out, kRig);
   ex.on_message(R"({"type":"home","seq":1})", 0);
   char msg[160];
   // 50 ms pulses every 100 ms = 50% duty; the limit is 20% over 10 s (2 s on).
   for (int i = 0; i < 60; ++i) {
-    std::snprintf(msg, sizeof msg, R"({"type":"strike_at","seq":%d,"t_us":%d,"pulse_us":50000})", i + 2, 1000 + i * 100000);
+    std::snprintf(msg, sizeof msg, R"({"type":"strike_at","seq":%d,"ch":0,"t_us":%d,"pulse_us":50000})", i + 2, 1000 + i * 100000);
     ex.on_message(msg, hal.now_us);
   }
   for (; hal.now_us <= 6100000; hal.now_us += 100) {
@@ -158,13 +163,13 @@ static void test_duty_cannot_be_bypassed_with_short_pulses() {
   // only 256 strikes, the old check forgot the oldest strikes and let all of them fire.
   SimHal hal;
   Capture out;
-  Executor ex(hal, out);
+  Executor ex(hal, out, kRig);
   ex.on_message(R"({"type":"home","seq":1})", 0);
   char msg[160];
   int64_t fired_on_us = 0;
   for (int i = 0; i < 1000; ++i) {
     int64_t t = 1000 + i * 10000LL;
-    std::snprintf(msg, sizeof msg, R"({"type":"strike_at","seq":%d,"t_us":%lld,"pulse_us":5000})", i + 2, (long long)t);
+    std::snprintf(msg, sizeof msg, R"({"type":"strike_at","seq":%d,"ch":0,"t_us":%lld,"pulse_us":5000})", i + 2, (long long)t);
     hal.now_us = t - 500;
     ex.on_message(msg, hal.now_us);
     size_t before = hal.events.size();
@@ -175,21 +180,22 @@ static void test_duty_cannot_be_bypassed_with_short_pulses() {
   CHECK(out.has("DUTY_CYCLE"));
 }
 
-static void test_greeting_hello_then_limits_and_oversize_is_rejected() {
+static void test_greeting_hello_then_channels_and_oversize_is_rejected() {
   {
     SimHal hal;
     Capture out;
-    Executor ex(hal, out);
+    Executor ex(hal, out, kRig);
     MemorySongStore store;
     Device dev(ex, store, out);
-    dev.greet(Identity{"duet-rig-1", "esp32-classic", "bottles-v1", kWifi | kPlayButton});
-    CHECK(out.sent.size() == 2);
+    dev.greet(Identity{"duet-rig-1", "esp32-classic", "bottles-v1", kWifi | kPlayButton, kRig});
+    CHECK(out.sent.size() == 3);  // hello, then one message per channel
     CHECK(out.sent[0] ==
-          R"({"type":"hello","seq":0,"protocol":2,"device_id":"duet-rig-1","board":"esp32-classic",)"
-          R"("profile":"bottles-v1","features":["wifi","play_button"]})");
-    CHECK(out.sent[1].find(R"({"type":"limits")") == 0);
+          R"({"type":"hello","seq":0,"protocol":3,"device_id":"duet-rig-1","board":"esp32-classic",)"
+          R"("profile":"bottles-v1","features":["wifi","play_button"],"channels":2})");
+    CHECK(out.sent[1].find(R"({"type":"channel","seq":0,"ch":0,"kind":"carriage_striker")") == 0);
     CHECK(out.sent[1].find(R"("travel_steps":48000)") != std::string::npos);
     CHECK(out.sent[1].find(R"("duty_limit":0.200)") != std::string::npos);
+    CHECK(out.sent[2] == R"({"type":"channel","seq":0,"ch":1,"kind":"led_strip","count":176})");
   }
   // The longest hello possible (every feature, long names) still fits one message.
   char buf[kMaxMessage + 1];
@@ -197,13 +203,12 @@ static void test_greeting_hello_then_limits_and_oversize_is_rejected() {
   for (const FeatureName& f : kFeatureNames) all |= f.feature;
   int n = write_hello(buf, sizeof buf,
                       Identity{"a-device-id-of-32-characters-xxx", "a-board-name-24-chars-xx",
-                               "a-profile-id-24-chars-xx", all});
+                               "a-profile-id-24-chars-xx", all, kRig});
   CHECK(n > 0 && n <= static_cast<int>(kMaxMessage));
-  write_limits(buf, sizeof buf, Config{});
-  CHECK(std::strlen(buf) <= kMaxMessage);
+  CHECK(write_channel(buf, sizeof buf, 0, kRigChannels[0], Config{}) <= int(kMaxMessage));
   SimHal hal;
   Capture out;
-  Executor ex(hal, out);
+  Executor ex(hal, out, kRig);
   ex.on_oversize(0);
   CHECK(out.has("error: message too long"));
 }
@@ -211,7 +216,7 @@ static void test_greeting_hello_then_limits_and_oversize_is_rejected() {
 static void test_time_ping() {
   SimHal hal;
   Capture out;
-  Executor ex(hal, out);
+  Executor ex(hal, out, kRig);
   ex.on_message(R"({"type":"time_ping","seq":9,"t1":111})", 5555);
   CHECK(out.has(R"({"type":"time_pong","seq":9,"t1":111,"t2":5555,"t3":5555})"));
 }
@@ -221,7 +226,7 @@ static void test_time_ping() {
 struct Rig {
   SimHal hal;
   Capture out;
-  Executor ex{hal, out};
+  Executor ex{hal, out, kRig};
   MemorySongStore store;
   Device dev{ex, store, out};
 
@@ -243,9 +248,9 @@ struct Rig {
 
 // A tiny song: move to 6400 steps at 0.1 s, strike at 0.5 s, light a key at 0.5 s.
 static const char* kSong[] = {
-    R"({"type":"move_at","seq":0,"t_us":100000,"target_steps":6400,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0})",
-    R"({"type":"strike_at","seq":1,"t_us":500000,"pulse_us":20000})",
-    R"({"type":"led_frame_at","seq":2,"t_us":500000,"first":10,"count":2,"rgb":[255,255,255]})",
+    R"({"type":"move_at","seq":0,"ch":0,"t_us":100000,"target_steps":6400,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0})",
+    R"({"type":"strike_at","seq":1,"ch":0,"t_us":500000,"pulse_us":20000})",
+    R"({"type":"led_frame_at","seq":2,"ch":1,"t_us":500000,"first":10,"count":2,"rgb":[255,255,255]})",
 };
 
 static void upload(Rig& r, int slot, int seq = 7) {
@@ -288,7 +293,7 @@ static void test_a_bad_song_is_refused_whole() {
   Rig r;
   r.msg(R"({"type":"song","seq":3,"slot":0,"lines":2})");
   r.msg(kSong[0]);
-  r.msg(R"({"type":"strike_at","seq":1,"t_us":-5,"pulse_us":20000})");  // before the start
+  r.msg(R"({"type":"strike_at","seq":1,"ch":0,"t_us":-5,"pulse_us":20000})");  // before the start
   CHECK(r.out.has(R"({"type":"ack","seq":3,"status":"error: bad song line"})"));
   CHECK(!r.store.has(0));
   r.msg(R"({"type":"play","seq":4,"slot":0})");
@@ -307,7 +312,7 @@ static void test_a_stalled_upload_is_dropped() {
   CHECK(r.out.has(R"({"type":"ack","seq":3,"status":"error: upload stalled"})"));
   CHECK(!r.store.has(0));
   // Timed commands are live commands again, not song lines.
-  r.msg(R"({"type":"strike_at","seq":4,"t_us":99999999,"pulse_us":20000})");
+  r.msg(R"({"type":"strike_at","seq":4,"ch":0,"t_us":99999999,"pulse_us":20000})");
   CHECK(r.out.has(R"({"type":"ack","seq":4,"status":"ok"})") && r.ex.queued() == 1);
 }
 
@@ -334,7 +339,7 @@ static void test_no_watchdog_stop_while_playing_from_memory() {
   // A slow move: 6400 steps at 10 mm/s (800 steps/s) takes 8 s.
   Rig r;
   r.msg(R"({"type":"song","seq":1,"slot":0,"lines":1})");
-  r.msg(R"({"type":"move_at","seq":0,"t_us":0,"target_steps":6400,"v_max_mm_s":10.0,"a_max_mm_s2":5000.0})");
+  r.msg(R"({"type":"move_at","seq":0,"ch":0,"t_us":0,"target_steps":6400,"v_max_mm_s":10.0,"a_max_mm_s2":5000.0})");
   r.msg(R"({"type":"play","seq":2,"slot":0})");
   r.run_until(3000000);  // seconds with no Hub message, the carriage moving all along
   CHECK(r.hal.is_moving() && r.dev.playing() && !r.out.has("WATCHDOG"));
@@ -346,7 +351,7 @@ static void test_playing_from_memory_keeps_the_rig_safe() {
   Rig r;
   upload(r, 0);
   r.msg(R"({"type":"play","seq":8,"slot":0})");
-  r.msg(R"({"type":"strike_at","seq":9,"t_us":1,"pulse_us":20000})");  // the Hub interrupts
+  r.msg(R"({"type":"strike_at","seq":9,"ch":0,"t_us":1,"pulse_us":20000})");  // the Hub interrupts
   CHECK(r.out.has(R"({"type":"ack","seq":9,"status":"error: playing from memory"})"));
   r.msg(R"({"type":"play","seq":10,"slot":0})");
   CHECK(r.out.has(R"({"type":"ack","seq":10,"status":"error: already playing"})"));
@@ -354,6 +359,20 @@ static void test_playing_from_memory_keeps_the_rig_safe() {
   CHECK(!r.dev.playing() && r.ex.estopped());
   r.msg(R"({"type":"play","seq":12,"slot":0})");
   CHECK(r.out.has(R"({"type":"ack","seq":12,"status":"error: emergency stop"})"));
+}
+
+static void test_commands_must_name_a_channel_of_their_kind() {
+  SimHal hal;
+  Capture out;
+  Executor ex(hal, out, kRig);
+  ex.on_message(R"({"type":"strike_at","seq":1,"t_us":5,"pulse_us":20000})", 0);  // no ch
+  CHECK(out.has(R"({"type":"ack","seq":1,"status":"error: cannot parse"})"));
+  ex.on_message(R"({"type":"strike_at","seq":2,"ch":1,"t_us":5,"pulse_us":20000})", 0);
+  CHECK(out.has(R"({"type":"ack","seq":2,"status":"error: no such channel"})"));  // a strip
+  ex.on_message(R"({"type":"led_frame_at","seq":3,"ch":7,"t_us":5,"first":0,"count":1,"rgb":[1,2,3]})", 0);
+  CHECK(out.has(R"({"type":"ack","seq":3,"status":"error: no such channel"})"));
+  ex.on_message(R"({"type":"led_frame_at","seq":4,"ch":1,"t_us":5,"first":0,"count":1,"rgb":[1,2,3]})", 0);
+  CHECK(out.has(R"({"type":"ack","seq":4,"status":"ok"})") && ex.queued() == 1);
 }
 
 int main() {
@@ -364,8 +383,9 @@ int main() {
   test_safety_rules();
   test_duty_cycle_limit();
   test_duty_cannot_be_bypassed_with_short_pulses();
-  test_greeting_hello_then_limits_and_oversize_is_rejected();
+  test_greeting_hello_then_channels_and_oversize_is_rejected();
   test_time_ping();
+  test_commands_must_name_a_channel_of_their_kind();
   test_upload_then_play_from_memory();
   test_a_bad_song_is_refused_whole();
   test_a_stalled_upload_is_dropped();
