@@ -42,9 +42,23 @@ flowchart LR
 | Tested on the emulated chip | Not tested here |
 |---|---|
 | The core compiled for the ESP32 (Xtensa, the Arduino-ESP32 framework) | The motor, solenoid and LED drivers: QEMU has no stepper or RMT hardware, so `SimHal` stands in |
-| The device clock (`esp_timer`) and the Hub's clock sync against it | Wi-Fi and the WebSocket server (use Wokwi, see WOKWI.md, or the rig) |
-| The serial link, message parsing and size limits on the chip | Real-world timing jitter |
-| Homing, queueing, timed strikes, faults, e-stop, end to end with the Hub | |
+| The device clock (`esp_timer`), and the device's own timing of a stored song | Wi-Fi, the WebSocket server and the web app (use Wokwi, see WOKWI.md, or the rig) |
+| The serial link and its greeting, message parsing and size limits on the chip | The Hub's millisecond timing on the device clock (below) |
+| Homing, queueing, timed strikes, MIDI notes, faults, e-stop, end to end with the Hub | Real-world timing jitter |
+
+### What QEMU needs, and why
+
+- **The hardware watchdogs off** (`-global driver=timer.esp32.timg,property=wdt_disable,value=true`,
+  as ESP-IDF's own `idf.py qemu` does). Emulated time is not steady enough for them, and
+  they fire at random during boot.
+- **Nothing sent while the chip boots.** A byte that arrives before the firmware is up
+  crashes the emulated chip (a real ESP32 ignores it). `main_qemu.cpp` prints
+  `# duet: ready` once it is up, and the test harness waits for that line before the
+  tests connect. The gateway then asks for the greeting (`greet`, docs/device-protocol.md).
+- **No millisecond timing checks.** QEMU's clock speeds up and slows down with the load
+  on the host, by about 1%, so the Hub cannot time notes on it to the millisecond. On
+  QEMU the timing tests check what plays and in what order. The native device, on a
+  real clock with a deliberate offset, checks the timing.
 
 The ladder, fastest first: `make -C firmware test` (the core, natively, in a second) →
 `tests/test_firmware_contract.py` (the core against the Hub's simulator) → the full
@@ -72,10 +86,17 @@ Without ESP-IDF, download the build listed for your platform in ESP-IDF's
 
 ### Run it by hand
 
+`wait=off` lets the chip boot on its own, so nothing reaches it before it is up. Give it
+a few seconds before connecting.
+
 ```bash
 qemu-system-xtensa -machine esp32 -display none -monitor none \
+  -global driver=timer.esp32.timg,property=wdt_disable,value=true \
   -drive file=firmware/build/qemu-flash.bin,if=mtd,format=raw \
-  -serial tcp:127.0.0.1:5555,server=on,wait=on
+  -serial tcp:127.0.0.1:5555,server=on,wait=off &
+```
+
+```bash
 duet play examples/rain-on-the-bottles.json --device tcp://127.0.0.1:5555
 ```
 

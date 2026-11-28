@@ -108,10 +108,10 @@ int main(int argc, char** argv) {
   SocketSink sink;
   duet::Executor executor(hal, sink, BOARD_CHANNELS);
   duet::MemorySongStore songs;
-  duet::Device device(executor, songs, sink);
-  constexpr duet::Identity identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS};
+  duet::Device device(executor, songs, sink,
+                     duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS});
   duet::MemorySettingsStore settings;
-  duet::Api api(device, identity, settings);
+  duet::Api api(device, settings);
   api.set_network(duet::Network::Setup);  // nothing saved yet
   HttpServer http([&](const std::string& method, const std::string& path,
                       const std::string& body) {
@@ -152,8 +152,7 @@ int main(int argc, char** argv) {
       } else {
         client = fd;
         int yes = 1;
-        setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof yes);
-        device.greet(identity);
+        setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof yes);  // greets when asked
       }
     }
     if (client >= 0 && FD_ISSET(client, &fds)) {

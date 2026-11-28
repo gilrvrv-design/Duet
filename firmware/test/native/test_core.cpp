@@ -190,17 +190,21 @@ static void test_greeting_hello_then_channels_and_oversize_is_rejected() {
     Capture out;
     Executor ex(hal, out, kRig);
     MemorySongStore store;
-    Device dev(ex, store, out);
-    dev.greet(Identity{"duet-rig-1", "esp32-classic", "bottles-v1", kWifi | kPlayButton, kRig});
+    Device dev(ex, store, out,
+               Identity{"duet-rig-1", "esp32-classic", "bottles-v1", kWifi | kPlayButton, kRig});
+    dev.greet();
     CHECK(out.sent.size() == 4);  // hello, then one message per channel
     CHECK(out.sent[0] ==
-          R"({"type":"hello","seq":0,"protocol":3,"device_id":"duet-rig-1","board":"esp32-classic",)"
+          R"({"type":"hello","seq":0,"protocol":4,"device_id":"duet-rig-1","board":"esp32-classic",)"
           R"("profile":"bottles-v1","features":["wifi","play_button"],"channels":3})");
     CHECK(out.sent[1].find(R"({"type":"channel","seq":0,"ch":0,"kind":"carriage_striker")") == 0);
     CHECK(out.sent[1].find(R"("travel_steps":48000)") != std::string::npos);
     CHECK(out.sent[1].find(R"("duty_limit":0.200)") != std::string::npos);
     CHECK(out.sent[2] == R"({"type":"channel","seq":0,"ch":1,"kind":"led_strip","count":176})");
     CHECK(out.sent[3] == R"({"type":"channel","seq":0,"ch":2,"kind":"midi_out","count":0})");
+    // On a serial link the Hub asks for the greeting, and hears the same again.
+    dev.on_message(R"({"type":"greet","seq":0})", 0);
+    CHECK(out.sent.size() == 8 && out.sent[4] == out.sent[0] && out.sent[7] == out.sent[3]);
   }
   // The longest hello possible (every feature, long names) still fits one message.
   char buf[kMaxMessage + 1];
@@ -233,7 +237,7 @@ struct Rig {
   Capture out;
   Executor ex{hal, out, kRig};
   MemorySongStore store;
-  Device dev{ex, store, out};
+  Device dev{ex, store, out, Identity{"duet-rig-1", "native", "bottles-v1", kPlayButton, kRig}};
 
   void msg(const char* json) { dev.on_message(json, hal.now_us); }
   void run_until(int64_t t_us) {
@@ -434,7 +438,7 @@ static void test_the_api_reports_the_device_and_plays_its_songs() {
   Rig r;
   r.hal.place(4000);
   MemorySettingsStore settings;
-  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", kPlayButton, kRig}, settings);
+  Api api(r.dev, settings);
   Response info = api.handle("GET", "/api/info", "", r.hal.now_us);
   CHECK(info.status == 200);
   CHECK(info.body.find(R"({"hello":{"type":"hello")") == 0);  // as the Hub hears it
@@ -466,7 +470,7 @@ static void test_the_api_reports_the_device_and_plays_its_songs() {
 static void test_the_api_refuses_unknown_paths_and_wrong_methods() {
   Rig r;
   MemorySettingsStore settings;
-  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", 0, kRig}, settings);
+  Api api(r.dev, settings);
   CHECK(api.handle("GET", "/api/nothing", "", 0).status == 404);
   CHECK(api.handle("POST", "/api/songs/8/play", "", 0).status == 404);  // slots are 0-7
   CHECK(api.handle("POST", "/api/songs/x/play", "", 0).status == 404);
@@ -494,7 +498,7 @@ static void test_json_objects_of_strings_and_lists() {
 static void test_settings_are_saved_and_the_password_never_leaves() {
   Rig r;
   MemorySettingsStore store;
-  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", 0, kRig}, store);
+  Api api(r.dev, store);
   api.set_network(Network::Setup);
   CHECK(api.handle("GET", "/api/info", "", 0).body.find(R"("network":"setup")") !=
         std::string::npos);
@@ -521,7 +525,7 @@ static void test_settings_are_saved_and_the_password_never_leaves() {
 static void test_bad_settings_are_refused_and_nothing_is_saved() {
   Rig r;
   MemorySettingsStore store;
-  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", 0, kRig}, store);
+  Api api(r.dev, store);
   const char* bad[] = {
       R"({"wifi_ssid":"","servers":[]})",
       R"({"wifi_ssid":"123456789012345678901234567890123","servers":[]})",

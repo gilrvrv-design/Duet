@@ -32,6 +32,9 @@ void Device::on_message(const char* json, int64_t now_us) {
         stop();
         ack(c.seq, "ok");
         return;
+      case Type::Greet:
+        greet();
+        return;
       case Type::Home:
       case Type::Estop:
         stop();  // the Hub takes over
@@ -48,12 +51,12 @@ void Device::on_message(const char* json, int64_t now_us) {
   ex_.on_message(json, now_us);
 }
 
-void Device::greet(const Identity& id) {
+void Device::greet() {
   char buf[kMaxMessage + 1];
-  write_hello(buf, sizeof buf, id);
+  write_hello(buf, sizeof buf, id_);
   sink_.send(buf);
-  for (size_t ch = 0; ch < id.channels.count; ++ch) {
-    write_channel(buf, sizeof buf, static_cast<int>(ch), id.channels.items[ch], ex_.config());
+  for (size_t ch = 0; ch < id_.channels.count; ++ch) {
+    write_channel(buf, sizeof buf, static_cast<int>(ch), id_.channels.items[ch], ex_.config());
     sink_.send(buf);
   }
 }

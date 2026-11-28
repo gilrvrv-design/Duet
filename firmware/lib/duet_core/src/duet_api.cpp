@@ -59,11 +59,12 @@ Response Api::handle(const char* method, const char* path, const char* body, int
 }
 
 Response Api::info() const {
+  const Identity& id = device_.identity();
   char buf[kMaxMessage + 1];
-  write_hello(buf, sizeof buf, id_);
+  write_hello(buf, sizeof buf, id);
   std::string body = std::string("{\"hello\":") + buf + ",\"channels\":[";
-  for (size_t ch = 0; ch < id_.channels.count; ++ch) {
-    write_channel(buf, sizeof buf, static_cast<int>(ch), id_.channels.items[ch],
+  for (size_t ch = 0; ch < id.channels.count; ++ch) {
+    write_channel(buf, sizeof buf, static_cast<int>(ch), id.channels.items[ch],
                   device_.config());
     body += (ch ? "," : "") + std::string(buf);
   }

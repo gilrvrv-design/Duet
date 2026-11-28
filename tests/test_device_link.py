@@ -294,5 +294,5 @@ def test_line_links_need_a_host_and_port():
 @pytest.mark.parametrize("device", [{"protocol": 2}], indirect=True)
 def test_a_device_on_another_protocol_is_refused_at_connect(device):
     _, url = device
-    with pytest.raises(ConnectionError, match="protocol 2; this Hub speaks 3"):
+    with pytest.raises(ConnectionError, match="protocol 2; this Hub speaks 4"):
         DeviceGateway(url).connect()

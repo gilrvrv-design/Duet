@@ -43,7 +43,7 @@ def wait_for_state(device, state, timeout_s=10):
 def test_info_is_what_the_hub_hears(device):
     status, info = device.api("GET", "/api/info")
     assert status == 200
-    assert info["hello"]["board"] == "native" and info["hello"]["protocol"] == 3
+    assert info["hello"]["board"] == "native" and info["hello"]["protocol"] == 4
     assert [c["kind"] for c in info["channels"]] == ["carriage_striker", "led_strip", "midi_out"]
     assert info["channels"][0]["travel_steps"] == 48000
     assert (info["state"], info["slot"], info["estopped"]) == ("idle", -1, False)

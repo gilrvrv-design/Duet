@@ -34,6 +34,7 @@ from duet.protocol import (
     Ack,
     Channel,
     Fault,
+    Greet,
     Heartbeat,
     Hello,
     Home,
@@ -48,6 +49,8 @@ from duet.protocol import (
 )
 
 log = logging.getLogger(__name__)
+
+GREET_RETRY_S = 1.0  # on a serial link, ask for the greeting again this often
 
 # Faults after which the rig cannot carry on without a person (docs/device-protocol.md).
 FATAL_FAULTS = frozenset({"WATCHDOG", "HOMING_TIMEOUT"})
@@ -167,11 +170,13 @@ class DeviceGateway:
     async def _connect(self) -> None:
         if self.url.startswith("tcp://"):
             self._ws = await LineLink.open(self.url)  # a serial port over TCP (e.g. QEMU)
+            first = await self._ask_for_greeting()
         else:
             self._ws = await connect(self.url)
+            first = await self._ws.recv()  # a WebSocket device greets when the Hub connects
         self._pongs = asyncio.Queue()
         self._sync_lock = asyncio.Lock()
-        self.hello = await self._expect(Hello)
+        self.hello = self._greeting(first, Hello)
         if self.hello.protocol != PROTOCOL:
             raise ConnectionError(
                 f"device {self.hello.device_id} speaks protocol {self.hello.protocol}; "
@@ -186,9 +191,27 @@ class DeviceGateway:
         task.add_done_callback(self._task_done)
         self._tasks.append(task)
 
+    async def _ask_for_greeting(self) -> str:
+        """A serial link has no connect: ask for the greeting, and ask again until it
+        comes. A board that is still booting (one that resets when its port opens, or
+        QEMU, which starts the chip when the Hub connects) misses what is sent too soon;
+        a greeting heard twice is harmless."""
+        deadline = self._loop.time() + self.timeout_s
+        while True:
+            await self._ws.send(Greet().to_json())
+            try:
+                return await asyncio.wait_for(self._ws.recv(), GREET_RETRY_S)
+            except TimeoutError:
+                if self._loop.time() > deadline:
+                    raise ConnectionError(f"no greeting from {self.url}") from None
+
     async def _expect(self, kind: type[Message]) -> Message:
         """The next message of the greeting, which must be ``kind``."""
-        msg = parse_message(await self._ws.recv())
+        return self._greeting(await self._ws.recv(), kind)
+
+    @staticmethod
+    def _greeting(text: str, kind: type[Message]) -> Message:
+        msg = parse_message(text)
         if not isinstance(msg, kind):
             raise ConnectionError(f"device greeting: expected {kind.type}, got {msg}")
         return msg

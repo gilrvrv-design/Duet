@@ -29,16 +29,18 @@ duet::ReportingHal hal([](const char* line) { Serial.println(line); });
 SerialSink link;
 duet::Executor executor(hal, link, BOARD_CHANNELS);
 duet::MemorySongStore songs;  // QEMU: songs in RAM; the rig keeps them in flash
-duet::Device device(executor, songs, link);
+duet::Device device(executor, songs, link,
+                    duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS});
 
 }  // namespace
 
 void setup() {
   Serial.begin(115200);
   hal.now_us = now_us();
-  hal.place(START_STEPS);
-  // On the serial link the greeting opens the conversation at boot.
-  device.greet(duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS});
+  hal.place(START_STEPS);  // the Hub asks for the greeting when it connects (greet)
+  // In QEMU, a byte that arrives while the chip is still booting crashes the emulated
+  // chip (a real one ignores it), so the test harness waits for this line first.
+  Serial.println("# duet: ready");
 }
 
 void loop() {

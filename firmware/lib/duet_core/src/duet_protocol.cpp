@@ -81,6 +81,8 @@ bool parse(const char* json, Command& out) {
     out.type = Type::Play;
   } else if (type_is(json, "stop")) {
     out.type = Type::Stop;
+  } else if (type_is(json, "greet")) {
+    out.type = Type::Greet;
   } else if (type_is(json, "time_ping")) {
     if (!get_int(json, "t1", out.t1)) return false;
     out.type = Type::TimePing;

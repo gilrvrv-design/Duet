@@ -110,9 +110,9 @@ Esp32Hal hal;
 Link link;
 duet::Executor executor(hal, link, BOARD_CHANNELS);
 FlashSongStore songs;
-duet::Device device(executor, songs, link);  // songs stored in flash, played without the Hub
+duet::Device device(executor, songs, link, IDENTITY);  // songs in flash, played without the Hub
 NvsSettingsStore settings;
-duet::Api api(device, IDENTITY, settings);
+duet::Api api(device, settings);
 WebServer web(HTTP_PORT);
 DNSServer dns;  // on the setup network, every name leads to the setup page
 bool setup_network = false;
@@ -165,7 +165,7 @@ void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED: {
       client = static_cast<int8_t>(num);
-      device.greet(IDENTITY);
+      device.greet();
       break;
     }
     case WStype_DISCONNECTED:

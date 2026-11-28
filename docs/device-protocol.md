@@ -6,14 +6,16 @@ The contract between the **Hub** (Python, `src/duet/protocol.py`,
 (`tests/test_firmware_contract.py`) runs the Hub's real command stream through the C++
 core and checks that it agrees with the Python simulator.
 
-**Protocol version: 3** (sent by the device in `hello`). Version 3 added channels: the
+**Protocol version: 4** (sent by the device in `hello`). Version 3 added channels: the
 device describes what it drives, and every timed command names the channel that plays
-it.
+it. Version 4 added `greet`: on a serial link, which has no "connect", the Hub asks for
+the greeting instead of hoping to catch the one sent at boot.
 
 ## Channels
 
 A board drives a few things, one **channel** each: today a carriage with its striker
-(`carriage_striker`) and the LED strip over the keys (`led_strip`). The board lists them
+(`carriage_striker`), the LED strip over the keys (`led_strip`) and a MIDI out port
+(`midi_out`). The board lists them
 (`firmware/boards/<board>/board.h`); the device describes them on connect; every timed
 command carries `ch`, and the device refuses a command for a channel it does not have,
 or of the wrong kind (`error: no such channel`).
@@ -108,12 +110,13 @@ reported with the plan's number.
 | `song` | `slot` (0–7), `lines` | no | one `ack`, after the last line | The next `lines` timed commands are stored as a song (below) |
 | `play` | `slot` | no | `ack` | Homes, then plays the stored song on its own (below) |
 | `stop` | — | no | `ack` | Stops playing a stored song; LEDs off |
+| `greet` | — | no | `hello`, then the `channel`s | The Hub's first message on a serial link (below) |
 
 ### Device → Hub
 
 | Type | Fields | When |
 |---|---|---|
-| `hello` | `protocol`, `device_id`, `board`, `profile`, `features` (list), `channels` (how many) | First message on every connection |
+| `hello` | `protocol`, `device_id`, `board`, `profile`, `features` (list), `channels` (how many) | When a WebSocket connects; on a serial link, in answer to `greet` |
 | `channel` | `ch`, `kind`; a carriage: `steps_per_mm`, `travel_steps`, `duty_limit`, `duty_window_us`, `max_pulse_us`; a strip: `count` | Right after `hello`, one per channel |
 | `ack` | `status`: `ok` or `error: …` | For every command except `heartbeat` and `time_ping` |
 | `time_pong` | `t1`, `t2` (arrived), `t3` (left), device clock | Answer to `time_ping` |
@@ -123,9 +126,10 @@ reported with the plan's number.
 ### Examples
 
 ```json
-{"type":"hello","seq":0,"protocol":3,"device_id":"duet-rig-1","board":"esp32-classic","profile":"bottles-v1","features":["wifi","flash","play_button","estop_button"],"channels":2}
+{"type":"hello","seq":0,"protocol":4,"device_id":"duet-rig-1","board":"esp32-classic","profile":"bottles-v1","features":["wifi","flash","play_button","estop_button","web"],"channels":3}
 {"type":"channel","seq":0,"ch":0,"kind":"carriage_striker","steps_per_mm":80.000,"travel_steps":48000,"duty_limit":0.200,"duty_window_us":10000000,"max_pulse_us":50000}
 {"type":"channel","seq":0,"ch":1,"kind":"led_strip","count":176}
+{"type":"channel","seq":0,"ch":2,"kind":"midi_out","count":0}
 {"type":"home","seq":0}
 {"type":"ack","seq":0,"status":"ok"}
 {"type":"telemetry","seq":0,"homed":true,"position":0,"queued":0}
@@ -157,10 +161,11 @@ sequenceDiagram
     participant H as Hub gateway
     participant D as Device
 
-    H->>D: open WebSocket
-    D-->>H: hello {protocol 3, device_id, board, profile, features, channels 2}
+    H->>D: open WebSocket (on a serial link: send greet)
+    D-->>H: hello {protocol 4, device_id, board, profile, features, channels 3}
     D-->>H: channel {ch 0, carriage_striker, limits}
     D-->>H: channel {ch 1, led_strip, count 176}
+    D-->>H: channel {ch 2, midi_out}
 
     rect rgb(235, 245, 255)
     Note over H,D: Clock sync: 16 pings, the fastest round trip wins

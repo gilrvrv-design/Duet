@@ -24,11 +24,12 @@ constexpr int64_t kMaxSongUs = 3600000000;     // a song line later than an hour
 
 class Device {
  public:
-  Device(Executor& executor, SongStore& store, Sink& sink)
-      : ex_(executor), store_(store), sink_(sink) {}
+  Device(Executor& executor, SongStore& store, Sink& sink, const Identity& id)
+      : ex_(executor), store_(store), sink_(sink), id_(id) {}
 
-  // What a new Hub hears first: hello (who the device is), then its channels.
-  void greet(const Identity& id);
+  // What a new Hub hears first: hello (who the device is), then its channels. Sent when
+  // a WebSocket connects, and on a serial link when the Hub asks ({"type":"greet"}).
+  void greet();
   void on_message(const char* json, int64_t now_us);
   void on_oversize(int64_t now_us);
   void poll(int64_t now_us);  // call every loop iteration, instead of executor.poll
@@ -44,6 +45,7 @@ class Device {
   int slot() const { return slot_; }  // the song playing or last played; -1 before any
   const SongStore& songs() const { return store_; }
   const Config& config() const { return ex_.config(); }
+  const Identity& identity() const { return id_; }
 
  private:
   enum class State { Idle, Homing, Playing };
@@ -60,6 +62,7 @@ class Device {
   Executor& ex_;
   SongStore& store_;
   Sink& sink_;
+  Identity id_;
 
   bool receiving_ = false;
   int64_t upload_seq_ = 0;

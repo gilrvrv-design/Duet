@@ -41,8 +41,7 @@ enum class Network { Station, Setup };
 
 class Api {
  public:
-  Api(Device& device, const Identity& id, SettingsStore& settings)
-      : device_(device), id_(id), settings_(settings) {}
+  Api(Device& device, SettingsStore& settings) : device_(device), settings_(settings) {}
 
   void set_network(Network network) { network_ = network; }
   Response handle(const char* method, const char* path, const char* body, int64_t now_us);
@@ -54,7 +53,6 @@ class Api {
   Response save_settings(const char* body);
 
   Device& device_;
-  Identity id_;
   SettingsStore& settings_;
   Network network_ = Network::Station;
 };

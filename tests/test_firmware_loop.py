@@ -16,6 +16,7 @@ that both agree, in real time, about clocks, messages, acknowledgements and faul
 
 import os
 import re
+import select
 import shutil
 import socket
 import subprocess
@@ -26,11 +27,11 @@ import pytest
 import native_device
 from duet.conductor import VirtualClock, one_rig, perform
 from duet.device.clock import hub_now_us
-from duet.device.gateway import DeviceFault, DeviceGateway
+from duet.device.gateway import GREET_RETRY_S, DeviceFault, DeviceGateway
 from duet.performers import in_use
 from duet.plans import HOME_STEPS
 from duet.profile import keyboard_profile, robot_profile
-from duet.protocol import Estop, Heartbeat, Home, MoveAt, StrikeAt, parse_message
+from duet.protocol import Estop, Greet, Heartbeat, Home, MoveAt, StrikeAt, parse_message
 from duet.score import load_score
 from duet.sim import RIG_CHANNELS
 from duet.songs import compile_song
@@ -63,16 +64,39 @@ def start_qemu(tmp_path):
         [
             QEMU,
             "-machine", "esp32",
+            # As ESP-IDF's own `idf.py qemu`: emulated time is not steady enough for the
+            # hardware watchdogs, which then fire at random during boot.
+            "-global", "driver=timer.esp32.timg,property=wdt_disable,value=true",
             "-display", "none",
             "-monitor", "none",
             "-drive", f"file={image},if=mtd,format=raw",
-            # The guest starts only when the Hub connects, so hello is never missed.
+            # The guest starts when the first client connects (wait=on).
             "-serial", f"tcp:127.0.0.1:{port},server=on,wait=on",
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )  # fmt: skip
+    wait_for_boot(port)
     return process, f"tcp://127.0.0.1:{port}"
+
+
+def wait_for_boot(port: int) -> None:
+    """Start the emulated chip and wait until its firmware is up (main_qemu.cpp). Bytes
+    sent to a chip that is still booting crash QEMU (not a real ESP32), so nothing is
+    sent until then; QEMU then takes the tests' own connection."""
+    deadline = time.monotonic() + BOOT_TIMEOUT_S
+    while True:  # QEMU opens its port a moment after it starts
+        try:
+            link = socket.create_connection(("127.0.0.1", port), timeout=BOOT_TIMEOUT_S)
+            break
+        except OSError:
+            assert time.monotonic() < deadline, "QEMU did not open its serial port"
+            time.sleep(0.2)
+    with link, link.makefile("r", errors="replace") as console:
+        for line in console:
+            if line.startswith("# duet: ready"):
+                return
+    raise AssertionError("QEMU closed the link before the firmware was up")
 
 
 QEMU_READY = bool(QEMU and QEMU_IMAGE.is_file())
@@ -105,14 +129,15 @@ def device_url(request, tmp_path):
 
 
 def connect(url: str) -> DeviceGateway:
-    deadline = time.monotonic() + BOOT_TIMEOUT_S
-    while True:  # QEMU opens its port a moment after it starts
-        try:
-            return DeviceGateway(url, timeout_s=BOOT_TIMEOUT_S, profile=robot_profile()).connect()
-        except OSError:
-            if time.monotonic() > deadline:
-                raise
-            time.sleep(0.2)
+    return DeviceGateway(url, timeout_s=BOOT_TIMEOUT_S, profile=robot_profile()).connect()
+
+
+def steady_clock(gateway: DeviceGateway) -> bool:
+    """Whether the device's clock runs at a steady rate, so the Hub can time notes on it
+    to the millisecond: a real ESP32's crystal, and the native device's. QEMU's emulated
+    clock speeds up and slows down with the load on the host (by about 1%), so on QEMU
+    these tests check what plays and in what order, not when."""
+    return gateway.hello.board != "qemu"
 
 
 def strikes(gateway: DeviceGateway) -> list[tuple[int, int]]:
@@ -150,7 +175,8 @@ def test_the_firmware_plays_a_score_on_time(device_url):
     for (t_device, position), note in zip(heard, planned, strict=True):
         assert robot.notes[robot.bottle_index(note.pitch)].steps == position  # right bottle
         errors.append(abs(gateway.sync.to_hub(t_device) + latency - note.t_us))
-    assert max(errors) < ONSET_TOLERANCE_US, f"onset errors (us): {errors}"
+    if steady_clock(gateway):
+        assert max(errors) < ONSET_TOLERANCE_US, f"onset errors (us): {errors}"
 
 
 def test_the_firmware_latches_an_emergency_stop(device_url):
@@ -198,22 +224,34 @@ def test_the_firmware_stops_when_the_hub_goes_silent(device_url):
             if time.monotonic() > deadline:
                 raise
             time.sleep(0.2)
-    reader = link.makefile("r")
+    pending = b""
 
-    def until(kind: str):
+    def until(kind: str, timeout_s: float = BOOT_TIMEOUT_S):
+        """The next message of this kind; None if none comes within the timeout."""
+        nonlocal pending
+        give_up = time.monotonic() + timeout_s
         while True:
-            line = reader.readline()
-            assert line, f"link closed before a {kind}"
-            if line.startswith("{"):
-                msg = parse_message(line)
-                if msg.type == kind:
+            line, newline, rest = pending.partition(b"\n")
+            if newline:
+                pending = rest
+                if line.startswith(b"{") and (msg := parse_message(line.decode())).type == kind:
                     return msg
+                continue
+            if not select.select([link], [], [], max(0, give_up - time.monotonic()))[0]:
+                return None
+            data = link.recv(4096)
+            assert data, f"link closed before a {kind}"
+            pending += data
 
     def send(msg) -> None:
         link.sendall(msg.to_json().encode() + b"\n")
 
     try:
-        hello = until("hello")
+        hello = None
+        while hello is None:  # a serial link: ask for the greeting until it comes
+            assert time.monotonic() < deadline + BOOT_TIMEOUT_S, "no greeting"
+            send(Greet())
+            hello = until("hello", timeout_s=GREET_RETRY_S)
         send(Home(seq=1))
         assert until("telemetry").homed
         # A slow, long move on the device's own clock (no clock sync on a raw link):
@@ -361,8 +399,10 @@ def test_the_firmware_plays_a_digital_piano_over_midi(device_url):
 
     assert [b for _, b in sent] == [(0x90, 60, 80), (0x80, 60, 0), (0x90, 64, 80), (0x80, 64, 0)]
     ons = [t for t, b in sent if b[0] == 0x90]
-    for t_device, note in zip(ons, perf.planned, strict=True):
-        assert abs(gateway.sync.to_hub(t_device) - note.t_us) < ONSET_TOLERANCE_US
+    assert len(ons) == len(perf.planned)
+    if steady_clock(gateway):
+        for t_device, note in zip(ons, perf.planned, strict=True):
+            assert abs(gateway.sync.to_hub(t_device) - note.t_us) < ONSET_TOLERANCE_US
 
 
 def midi_out(gateway: DeviceGateway) -> list[tuple[int, tuple[int, int, int]]]:

@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field
 from typing import ClassVar
 
 MAX_MESSAGE_BYTES = 255  # same as kMaxMessage in firmware/lib/duet_core/src/duet_protocol.hpp
-PROTOCOL = 3  # same as kProtocol; 3: the greeting is hello, then one message per channel
+PROTOCOL = 4  # same as kProtocol; 4: on a serial link the Hub asks for the greeting (Greet)
 CARRIAGE_STRIKER, LED_STRIP, MIDI_OUT = "carriage_striker", "led_strip", "midi_out"
 
 # A timed command's channel is the device's business: the conductor fills it in for each
@@ -177,6 +177,14 @@ class Stop(Message):
     """Stop playing a stored song."""
 
     type: ClassVar[str] = "stop"
+
+
+@dataclass(frozen=True)
+class Greet(Message):
+    """Ask the device for its greeting (hello, then its channels). A WebSocket device
+    greets when the Hub connects; on a serial link, which has no connect, the Hub asks."""
+
+    type: ClassVar[str] = "greet"
 
 
 @dataclass(frozen=True)

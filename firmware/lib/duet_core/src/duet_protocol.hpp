@@ -11,7 +11,7 @@ namespace duet {
 // Longest message either side may send, in bytes (the Hub checks this too:
 // duet.protocol.MAX_MESSAGE_BYTES).
 constexpr size_t kMaxMessage = 255;
-constexpr int kProtocol = 3;  // 3: channels: hello, then one channel message per channel
+constexpr int kProtocol = 4;  // 4: on a serial link the Hub asks for the greeting (greet)
 
 // Who the device is, for hello. `features` is a set of duet::Feature bits.
 struct Identity {
@@ -37,6 +37,7 @@ enum class Type : uint8_t {
   Song,       // the next `lines` timed commands are a song to store in `slot`
   Play,       // play the song stored in `slot` from memory
   Stop,       // stop playing from memory
+  Greet,      // say hello again: how a Hub starts a conversation on a serial link
 };
 
 struct Command {
