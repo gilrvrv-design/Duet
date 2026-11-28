@@ -12,7 +12,7 @@ void Device::on_message(const char* json, int64_t now_us) {
   Command c;
   bool ok = parse(json, c);
   if (receiving_ && ok && c.timed()) {  // heartbeats and pings still pass during uploads
-    receive_line(c, json, now_us);
+    receive_line(json, now_us);
     return;
   }
   if (ok) {
@@ -67,15 +67,15 @@ void Device::greet() {
 
 void Device::on_oversize(int64_t now_us) {
   if (receiving_) {
-    upload_bad_ = true;  // the line is lost: the song would have a hole in it
-    if (--upload_left_ == 0) end_upload("error: bad song line");
+    song_line_lost();  // the song would have a hole in it
+    if (--upload_left_ == 0) end_upload(nullptr);
     return;
   }
   ex_.on_oversize(now_us);
 }
 
 // A song's title: optional; short, and no control characters (it is shown as one line).
-static bool song_title(const char* json, std::string& title) {
+bool read_song_title(const char* json, std::string& title) {
   title.clear();
   if (std::strstr(json, "\"title\"") && !string_field(json, "title", title)) return false;
   if (title.size() > kMaxTitle) return false;
@@ -84,44 +84,87 @@ static bool song_title(const char* json, std::string& title) {
   return true;
 }
 
+const char* Device::begin_song(int slot, const std::string& title) {
+  if (writing_) return "another song is being stored";
+  if (playing()) return "playing from memory";
+  if (!store_.begin(slot, title)) return "bad song slot";
+  writing_ = true;
+  song_lines_ = 0;
+  song_bad_ = false;
+  return nullptr;
+}
+
+bool Device::song_line(const char* json) {
+  Command c;
+  bool ok = ++song_lines_ <= kMaxSongLines && parse(json, c) && c.timed() && c.t_us >= 0 &&
+            c.t_us <= kMaxSongUs && ex_.accepts(c) && store_.append(json);
+  song_bad_ = song_bad_ || !ok;
+  return ok;
+}
+
+void Device::song_line_lost() {
+  ++song_lines_;
+  song_bad_ = true;
+}
+
+const char* Device::end_song() {
+  writing_ = false;
+  const char* why = song_bad_         ? "bad song line"
+                    : song_lines_ == 0 ? "bad song length"
+                    : !store_.finish() ? "storage full"
+                                       : nullptr;
+  if (why) store_.abort();
+  return why;
+}
+
+void Device::abort_song() {
+  if (!writing_) return;
+  store_.abort();
+  writing_ = false;
+}
+
 void Device::begin_upload(const Command& c, const char* json, int64_t now_us) {
-  std::string title;
   if (receiving_) {
-    store_.abort();
+    abort_song();
     ack(upload_seq_, "error: upload replaced");
     receiving_ = false;
   }
-  if (playing()) {
-    ack(c.seq, "error: playing from memory");
-  } else if (c.lines < 1 || c.lines > kMaxSongLines) {
-    ack(c.seq, "error: bad song length");
-  } else if (!song_title(json, title)) {
-    ack(c.seq, "error: bad song title");
-  } else if (!store_.begin(c.slot, title)) {
-    ack(c.seq, "error: bad song slot");
-  } else {
-    receiving_ = true;
-    upload_seq_ = c.seq;
-    upload_left_ = c.lines;
-    upload_last_us_ = now_us;
-    upload_bad_ = false;
+  std::string title;
+  const char* why = c.lines < 1 || c.lines > kMaxSongLines ? "bad song length"
+                    : !read_song_title(json, title)       ? "bad song title"
+                                                          : begin_song(c.slot, title);
+  if (why) {
+    ack(c.seq, (std::string("error: ") + why).c_str());
+    return;
   }
+  receiving_ = true;
+  upload_seq_ = c.seq;
+  upload_left_ = c.lines;
+  upload_last_us_ = now_us;
 }
 
-void Device::receive_line(const Command& c, const char* json, int64_t now_us) {
+void Device::receive_line(const char* json, int64_t now_us) {
   ex_.keepalive(now_us);
   upload_last_us_ = now_us;
-  if (c.t_us < 0 || c.t_us > kMaxSongUs || !ex_.accepts(c) || !store_.append(json)) {
-    upload_bad_ = true;
-  }
-  if (--upload_left_ == 0) end_upload(upload_bad_ ? "error: bad song line" : nullptr);
+  song_line(json);
+  if (--upload_left_ == 0) end_upload(nullptr);
 }
 
-void Device::end_upload(const char* status) {
+void Device::end_upload(const char* stalled) {
   receiving_ = false;
-  if (status == nullptr && !store_.finish()) status = "error: storage full";
-  if (status != nullptr) store_.abort();
-  ack(upload_seq_, status == nullptr ? "ok" : status);
+  if (stalled) {
+    abort_song();
+    ack(upload_seq_, stalled);
+    return;
+  }
+  const char* why = end_song();
+  ack(upload_seq_, why ? (std::string("error: ") + why).c_str() : "ok");
+}
+
+const char* Device::delete_song(int slot) {
+  if (playing() && slot == slot_) return "playing from memory";
+  if (!store_.has(slot)) return "no song in that slot";
+  return store_.remove(slot) ? nullptr : "storage failed";
 }
 
 const char* Device::request_play(int slot, int64_t now_us) {

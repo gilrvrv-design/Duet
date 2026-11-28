@@ -1,4 +1,5 @@
 // Native unit tests for the firmware core. Build and run: make -C firmware test
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -502,6 +503,72 @@ static void test_the_api_refuses_unknown_paths_and_wrong_methods() {
   CHECK(!r.dev.estopped());
 }
 
+static std::string song_file(const char* title) {
+  std::string file = std::string(R"({"title":")") + title + "\"}\n";
+  for (const char* line : kSong) file += std::string(line) + "\r\n";  // any line ending
+  return file;
+}
+
+static void test_the_api_stores_a_song_file() {
+  Rig r;
+  MemorySettingsStore settings;
+  Api api(r.dev, settings);
+  Response stored = api.handle("PUT", "/api/songs/6", song_file("Rain").c_str(), 0);
+  CHECK(stored.status == 200);
+  CHECK(r.store.has(6) && r.store.title(6) == "Rain");
+  CHECK(api.handle("GET", "/api/songs", "", 0).body ==
+        R"({"slots":8,"songs":[{"slot":6,"title":"Rain"}]})");
+
+  // In pieces, as the ESP32's web server hands them over: the same song.
+  std::string file = song_file("In pieces");
+  CHECK(api.begin_upload("/api/songs/2").status == 200);
+  for (size_t at = 0; at < file.size(); at += 7)
+    api.upload_data(file.c_str() + at, std::min<size_t>(7, file.size() - at));
+  CHECK(api.end_upload().status == 200 && r.store.title(2) == "In pieces");
+
+  // It plays like a song from the Hub.
+  CHECK(api.handle("POST", "/api/songs/2/play", "", r.hal.now_us).status == 200);
+  r.run_until(5000000);
+  CHECK(r.strikes() == 1 && !r.out.has("fault"));
+
+  CHECK(api.handle("DELETE", "/api/songs/6", "", 0).status == 200 && !r.store.has(6));
+  CHECK(api.handle("DELETE", "/api/songs/6", "", 0).status == 404);
+}
+
+static void test_the_api_refuses_a_bad_song_file_whole() {
+  Rig r;
+  MemorySettingsStore settings;
+  Api api(r.dev, settings);
+  CHECK(api.handle("PUT", "/api/songs/1", song_file("Old").c_str(), 0).status == 200);
+  std::string bad_line = song_file("New") +
+                         R"({"type":"strike_at","seq":1,"ch":0,"t_us":-5,"pulse_us":20000})";
+  Response refused = api.handle("PUT", "/api/songs/1", bad_line.c_str(), 0);
+  CHECK(refused.status == 400 && refused.body == R"({"error":"bad song line 5"})");
+  CHECK(r.store.title(1) == "Old");  // the stored song stays
+
+  std::string no_title = std::string(kSong[0]) + "\n";
+  CHECK(api.handle("PUT", "/api/songs/1", no_title.c_str(), 0).status == 400);
+  CHECK(api.handle("PUT", "/api/songs/1", "", 0).body == R"({"error":"the song file is empty"})");
+  CHECK(api.handle("PUT", "/api/songs/1", R"({"title":"only a title"})", 0).status == 400);
+  std::string too_long = song_file("Long") + std::string(300, 'x') + "\n";
+  CHECK(api.handle("PUT", "/api/songs/1", too_long.c_str(), 0).body ==
+        R"({"error":"bad song line 5"})");
+  CHECK(api.handle("PUT", "/api/songs/9", song_file("x").c_str(), 0).status == 404);
+  CHECK(api.handle("POST", "/api/songs/1", "", 0).status == 405);
+  CHECK(r.store.title(1) == "Old" && !r.dev.writing_song());
+
+  // Not while a song plays, nor while the Hub is storing one.
+  CHECK(api.handle("POST", "/api/songs/1/play", "", 0).status == 200);
+  CHECK(api.handle("PUT", "/api/songs/2", song_file("x").c_str(), 0).body ==
+        R"({"error":"the rig is busy playing"})");
+  CHECK(api.handle("DELETE", "/api/songs/1", "", 0).status == 409);
+  r.dev.stop();
+  r.msg(R"({"type":"song","seq":3,"slot":0,"lines":3})");  // the Hub starts an upload
+  CHECK(api.handle("PUT", "/api/songs/2", song_file("x").c_str(), 0).body ==
+        R"({"error":"another song is being stored"})");
+  CHECK(api.begin_upload("/api/songs/2").status == 409);
+}
+
 static void test_json_objects_of_strings_and_lists() {
   JsonObject o;
   CHECK(read_object(R"( {"a":"x\"y\\zé\n", "list":["1", "2"], "empty":[]} )", o));
@@ -584,6 +651,8 @@ int main() {
   test_playing_from_memory_keeps_the_rig_safe();
   test_the_api_reports_the_device_and_plays_its_songs();
   test_the_api_refuses_unknown_paths_and_wrong_methods();
+  test_the_api_stores_a_song_file();
+  test_the_api_refuses_a_bad_song_file_whole();
   test_json_objects_of_strings_and_lists();
   test_settings_are_saved_and_the_password_never_leaves();
   test_bad_settings_are_refused_and_nothing_is_saved();

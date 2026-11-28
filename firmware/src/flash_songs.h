@@ -43,6 +43,7 @@ class FlashSongStore : public duet::SongStore {
     File f = LittleFS.open(path_of(slot), "r");
     return f && f.size() > 0;
   }
+  bool remove(int slot) override { return LittleFS.remove(path_of(slot)); }
   std::string title(int slot) const override {
     File f = LittleFS.open(path_of(slot), "r");
     String first = f.readStringUntil('\n');

@@ -6,6 +6,10 @@
 //                                  "estopped":..,"network":"station"|"setup"}: hello and
 //                                  channels as the Hub hears them
 //   GET  /api/songs               {"slots":8,"songs":[{"slot":k,"title":".."},..]}
+//   PUT  /api/songs/<k>           store a song in slot k. The body is a song file: its
+//                                 title line {"title":".."}, then one timed command per
+//                                 line (t_us from 0), as the device keeps it in flash
+//   DELETE /api/songs/<k>         forget the song in slot k
 //   POST /api/songs/<k>/play      play stored song k
 //   POST /api/stop                stop playing
 //   POST /api/estop               emergency stop (latched, as the button)
@@ -16,9 +20,9 @@
 //                                 answers {"ok":true,"restart":true}: the board restarts
 //                                 to join it.
 //
-// Errors are {"error":"..."} with 400 (a bad request body), 404 (no such path), 405
-// (wrong method) or 409 (the device cannot do it now: already playing, no song there,
-// emergency stop).
+// Errors are {"error":"..."} with 400 (a bad request body), 404 (no such path or song),
+// 405 (wrong method), 409 (the device cannot do it now: already playing, emergency stop,
+// busy) or 507 (no room to store it).
 #pragma once
 #include <cstdint>
 #include <string>
@@ -46,7 +50,18 @@ class Api {
   void set_network(Network network) { network_ = network; }
   Response handle(const char* method, const char* path, const char* body, int64_t now_us);
 
+  // PUT /api/songs/<k>, streamed for transports that receive the body in pieces (the
+  // ESP32 holds a 4000-line song in flash, not in RAM): begin_upload with the path; if
+  // it answers 200, upload_data for each piece, then end_upload (or abort_upload if the
+  // client goes away). handle() does all of it for a body that arrives whole.
+  Response begin_upload(const char* path);
+  void upload_data(const char* data, size_t n);
+  Response end_upload();
+  void abort_upload();
+
  private:
+  void upload_line();
+  void upload_failed(int status, const char* why);
   Response info() const;
   Response songs() const;
   Response settings() const;
@@ -55,6 +70,15 @@ class Api {
   Device& device_;
   SettingsStore& settings_;
   Network network_ = Network::Station;
+
+  // The song being uploaded through the API.
+  int upload_slot_ = -1;  // none
+  int upload_lines_ = 0;  // lines read, the title line included
+  int first_bad_line_ = 0;
+  int failed_status_ = 0;  // the upload was refused before its end ...
+  std::string failed_why_;  // ... and why
+  std::string line_;
+  bool line_too_long_ = false;
 };
 
 }  // namespace duet

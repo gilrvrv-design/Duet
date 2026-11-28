@@ -23,6 +23,7 @@ class SongStore {
   virtual bool finish() = 0;  // the new song replaces the old one
   virtual void abort() = 0;   // forget what was written; the old song stays
   virtual bool has(int slot) const = 0;
+  virtual bool remove(int slot) = 0;
   virtual std::string title(int slot) const = 0;  // of a stored song
   virtual bool open(int slot) = 0;                // start reading
   virtual bool next(char* buf, size_t size) = 0;  // the next line; false at the end
@@ -59,6 +60,11 @@ class MemorySongStore : public SongStore {
     return slot >= 0 && slot < kSongSlots && !songs_[slot].empty();
   }
   std::string title(int slot) const override { return titles_[slot]; }
+  bool remove(int slot) override {
+    songs_[slot].clear();
+    titles_[slot].clear();
+    return true;
+  }
   bool open(int slot) override {
     if (!has(slot)) return false;
     reading_ = slot;

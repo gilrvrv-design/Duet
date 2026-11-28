@@ -70,7 +70,7 @@ class HttpServer {
   }
 
  private:
-  static constexpr size_t kMaxRequest = 8192;
+  static constexpr size_t kMaxRequest = 1 << 20;  // a song file of 4000 long lines
 
   // Reads what has arrived; true when the connection is done with (answered or dropped).
   bool read_from(int fd, std::string& request) {

@@ -24,9 +24,10 @@ class NativeDevice:
         self.process.stdin.write("press\n")
         self.process.stdin.flush()
 
-    def api(self, method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
-        """Call the device API: the status and the JSON answer."""
-        data = None if body is None else json.dumps(body).encode()
+    def api(self, method: str, path: str, body: dict | str | None = None) -> tuple[int, dict]:
+        """Call the device API: the status and the JSON answer. A str body goes as is."""
+        data = None if body is None else (body if isinstance(body, str) else json.dumps(body))
+        data = None if data is None else data.encode()
         request = urllib.request.Request(self.http_url + path, data=data, method=method)
         try:
             with urllib.request.urlopen(request, timeout=5) as reply:

@@ -7,6 +7,7 @@
 #include <ESPmDNS.h>
 #include <FastAccelStepper.h>
 #include <WebServer.h>
+#include <uri/UriBraces.h>
 #include <WebSocketsServer.h>
 #include <WiFi.h>
 #include <esp_timer.h>
@@ -122,7 +123,10 @@ bool setup_network = false;
 void serve_web() {
   const String& path = web.uri();
   if (path.startsWith("/api/")) {
-    const char* method = web.method() == HTTP_GET ? "GET" : web.method() == HTTP_POST ? "POST" : "";
+    const char* method = web.method() == HTTP_GET      ? "GET"
+                         : web.method() == HTTP_POST   ? "POST"
+                         : web.method() == HTTP_DELETE ? "DELETE"
+                                                       : "";
     duet::Response r = api.handle(method, path.c_str(), web.arg("plain").c_str(), now_us());
     web.sendHeader("Cache-Control", "no-store");
     web.send(r.status, "application/json", r.body.c_str());
@@ -144,6 +148,28 @@ void serve_web() {
   }
   web.sendHeader("Content-Encoding", "gzip");
   web.send_P(200, asset->type, reinterpret_cast<const char*>(asset->gzip), asset->size);
+}
+
+// PUT /api/songs/<k>: the song file streams into flash as it arrives, a piece at a time,
+// so a long song never has to fit in RAM.
+duet::Response upload_answer{0, ""};
+
+void receive_song() {
+  HTTPRaw& raw = web.raw();
+  if (raw.status == RAW_START) {
+    upload_answer = api.begin_upload(web.uri().c_str());
+  } else if (raw.status == RAW_WRITE && upload_answer.status == 200) {
+    api.upload_data(reinterpret_cast<const char*>(raw.buf), raw.currentSize);
+  } else if (raw.status == RAW_ABORTED) {
+    api.abort_upload();
+    upload_answer = {0, ""};
+  }
+}
+
+void song_received() {
+  duet::Response r = upload_answer.status == 200 ? api.end_upload() : upload_answer;
+  web.sendHeader("Cache-Control", "no-store");
+  web.send(r.status, "application/json", r.body.c_str());
 }
 
 // The play button: a press (stable low for PLAY_DEBOUNCE_MS) plays the next stored song,
@@ -241,6 +267,7 @@ void setup() {
   MDNS.addService("http", "tcp", HTTP_PORT);
   server.begin();
   server.onEvent(on_ws_event);
+  web.on(UriBraces("/api/songs/{}"), HTTP_PUT, song_received, receive_song);
   web.onNotFound(serve_web);
   web.begin();
   if (!setup_network)

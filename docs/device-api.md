@@ -18,6 +18,8 @@ for people: it shows what the device is, and it plays the songs stored on it.
 |---|---|
 | `GET /api/info` | `{"hello":{..},"channels":[..],"state":"idle"\|"homing"\|"playing","slot":k,"estopped":bool,"network":"station"\|"setup"}`. `hello` and `channels` are the messages the Hub hears on connecting. `slot` is the song playing or last played (-1 before any). `network` is `setup` while the board serves its setup network. |
 | `GET /api/songs` | `{"slots":8,"songs":[{"slot":k,"title":".."},..]}`: the slots that hold a song, and its title |
+| `PUT /api/songs/<k>` | Store a song in slot *k*. The body is a song file (below). A bad line refuses the whole song, `400 {"error":"bad song line 12"}`, and the old song stays. Refused (409) while the rig plays, or while the Hub is storing a song. |
+| `DELETE /api/songs/<k>` | Forget the song in slot *k* |
 | `POST /api/songs/<k>/play` | Home, then play stored song *k* |
 | `POST /api/stop` | Stop playing |
 | `POST /api/estop` | Emergency stop, latched as with the hardware button |
@@ -29,8 +31,27 @@ Success is `200 {"ok":true}`. Errors are `{"error":"..."}` with one of these sta
   8-63 characters or none, at most 4 `http://` or `https://` servers);
 - 404: no such path;
 - 405: the wrong method;
-- 409: the device cannot do it now (`already playing`, `no song in that slot`,
-  `emergency stop`).
+- 409: the device cannot do it now (`already playing`, `emergency stop`, `the rig is
+  busy playing`, `another song is being stored`);
+- 507: no room in flash for the song.
+
+## Song files
+
+A song file is how the device keeps a song in flash, and how its API takes one. The first
+line is the title, `{"title":"Rain on the Bottles"}` (at most 64 bytes). Then comes one
+timed command per line, exactly as in the device protocol (docs/device-protocol.md),
+with `t_us` counted from the song's start. The Hub writes one with
+`CompiledSong.song_file()` (`duet.songs`).
+
+```text
+{"title":"Rain on the Bottles"}
+{"type":"move_at","seq":0,"ch":0,"t_us":0,"target_steps":6400,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0}
+{"type":"strike_at","seq":1,"ch":0,"t_us":420000,"pulse_us":20000}
+```
+
+The ESP32 streams the body into flash as it arrives (its web server's raw upload), so
+a 4000-line song never has to fit in RAM. A song uploaded this way plays exactly like
+one from the Hub: every line passes the same checks.
 
 On the ESP32 the app is at `http://duet-rig-1.local` (port 80, announced over mDNS).
 Boards that serve it report the `web` feature; QEMU's serial-only board does not.

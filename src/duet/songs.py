@@ -8,6 +8,7 @@ from its own clock (firmware/lib/duet_core/src/duet_device.hpp).
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
@@ -33,6 +34,12 @@ class CompiledSong:
     @property
     def duration_s(self) -> float:
         return message_time_us(self.commands[-1]) / 1e6 if self.commands else 0.0
+
+    def song_file(self) -> str:
+        """The song as the device keeps it, and as its API takes it (PUT /api/songs/<k>,
+        docs/device-api.md): the title line, then one command per line."""
+        lines = [json.dumps({"title": self.title}, ensure_ascii=False)]
+        return "\n".join(lines + [m.to_json() for m in self.commands]) + "\n"
 
 
 def song_title(title: str) -> str:

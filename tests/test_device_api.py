@@ -98,3 +98,20 @@ def test_wifi_setup(device):
     short = {"wifi_ssid": "Home", "wifi_password": "short", "servers": []}
     status, answer = device.api("POST", "/api/settings", short)
     assert status == 400 and "8-63 characters" in answer["error"]
+
+
+def test_a_song_file_is_stored_through_the_api_and_plays(device):
+    score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
+    song = compile_song(score, robot_profile(), keyboard_profile(), RIG_CHANNELS)
+    assert device.api("PUT", "/api/songs/7", song.song_file()) == (200, {"ok": True})
+    assert device.api("GET", "/api/songs")[1]["songs"] == [
+        {"slot": 7, "title": "Rain on the Bottles"}
+    ]
+    assert device.api("POST", "/api/songs/7/play") == (200, {"ok": True})
+    wait_for_state(device, "playing")
+    device.api("POST", "/api/stop")
+
+    broken = song.song_file().replace('"t_us":', '"t_us":-1', 1)  # line 2: before 0
+    assert device.api("PUT", "/api/songs/7", broken) == (400, {"error": "bad song line 2"})
+    assert device.api("DELETE", "/api/songs/7") == (200, {"ok": True})
+    assert device.api("GET", "/api/songs")[1]["songs"] == []

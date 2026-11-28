@@ -1,5 +1,6 @@
 #include "duet_api.hpp"
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -16,15 +17,15 @@ Response error(int status, const char* why) {
 
 const Response kOk{200, "{\"ok\":true}"};
 
-// The slot in "/api/songs/<k>/play", or -1 if the path is not that.
-int play_slot(const char* path) {
+// The slot in "/api/songs/<k><rest>", or -1 if the path is not that.
+int song_slot(const char* path, const char* rest) {
   const char* prefix = "/api/songs/";
   size_t n = std::strlen(prefix);
-  if (std::strncmp(path, prefix, n) != 0) return -1;
+  if (std::strncmp(path, prefix, n) != 0 || !std::isdigit(static_cast<unsigned char>(path[n])))
+    return -1;
   char* end = nullptr;
   long slot = std::strtol(path + n, &end, 10);
-  if (end == path + n || std::strcmp(end, "/play") != 0 || slot < 0 || slot >= kSongSlots)
-    return -1;
+  if (std::strcmp(end, rest) != 0 || slot < 0 || slot >= kSongSlots) return -1;
   return static_cast<int>(slot);
 }
 
@@ -49,13 +50,93 @@ Response Api::handle(const char* method, const char* path, const char* body, int
     device_.on_message("{\"type\":\"estop\",\"seq\":0}", now_us);
     return kOk;
   }
-  int slot = play_slot(path);
+  int slot = song_slot(path, "/play");
   if (slot >= 0) {
     if (!post) return error(405, "use POST");
     const char* why = device_.request_play(slot, now_us);
     return why ? error(409, why) : kOk;
   }
+  slot = song_slot(path, "");
+  if (slot >= 0) {
+    if (std::strcmp(method, "DELETE") == 0) {
+      const char* why = device_.delete_song(slot);
+      return !why ? kOk : device_.songs().has(slot) ? error(409, why) : error(404, why);
+    }
+    if (std::strcmp(method, "PUT") != 0) return error(405, "use PUT or DELETE");
+    Response accepted = begin_upload(path);
+    if (accepted.status != 200) return accepted;
+    upload_data(body, std::strlen(body));
+    return end_upload();
+  }
   return error(404, "no such path");
+}
+
+Response Api::begin_upload(const char* path) {
+  int slot = song_slot(path, "");
+  if (slot < 0) return error(404, "no such path");
+  if (device_.writing_song()) return error(409, "another song is being stored");
+  if (!device_.at_rest()) return error(409, "the rig is busy playing");
+  upload_slot_ = slot;
+  upload_lines_ = 0;
+  first_bad_line_ = 0;
+  failed_status_ = 0;
+  line_.clear();
+  line_too_long_ = false;
+  return kOk;
+}
+
+void Api::upload_data(const char* data, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    char c = data[i];
+    if (c == '\n') {
+      upload_line();
+    } else if (c != '\r') {
+      if (line_.size() < kMaxMessage) line_ += c;
+      else line_too_long_ = true;
+    }
+  }
+}
+
+void Api::upload_line() {
+  bool blank = line_.empty() && !line_too_long_;
+  bool too_long = line_too_long_;
+  std::string line;
+  line.swap(line_);
+  line_too_long_ = false;
+  if (blank || failed_status_) return;
+  if (++upload_lines_ == 1) {  // the title line
+    std::string title;
+    if (too_long || line.find("\"title\"") == std::string::npos ||
+        !read_song_title(line.c_str(), title))
+      return upload_failed(400, "a song file starts with its title: {\"title\":\"..\"}");
+    if (const char* why = device_.begin_song(upload_slot_, title)) upload_failed(409, why);
+    return;
+  }
+  bool ok = too_long ? (device_.song_line_lost(), false) : device_.song_line(line.c_str());
+  if (!ok && first_bad_line_ == 0) first_bad_line_ = upload_lines_;
+}
+
+void Api::upload_failed(int status, const char* why) {
+  failed_status_ = status;
+  failed_why_ = why;
+}
+
+Response Api::end_upload() {
+  if (!line_.empty() || line_too_long_) upload_line();  // the last line had no newline
+  upload_slot_ = -1;
+  if (failed_status_) return error(failed_status_, failed_why_.c_str());
+  if (upload_lines_ == 0) return error(400, "the song file is empty");
+  const char* why = device_.end_song();
+  if (!why) return kOk;
+  if (std::strcmp(why, "bad song line") == 0)
+    return error(400, ("bad song line " + std::to_string(first_bad_line_)).c_str());
+  return std::strcmp(why, "storage full") == 0 ? error(507, why) : error(400, why);
+}
+
+void Api::abort_upload() {
+  if (upload_slot_ < 0) return;
+  if (!failed_status_ && upload_lines_ > 0) device_.abort_song();
+  upload_slot_ = -1;
 }
 
 Response Api::info() const {
