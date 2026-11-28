@@ -49,7 +49,7 @@ def run_firmware(cli, messages, *args) -> str:
 
 
 def playable(robot=(), pianist=(), tempo=100):
-    return repair_robot(make_score(robot, pianist, tempo), robot_profile()).score
+    return repair_robot(make_score(robot, pianist, tempo), robot_profile(), part="robot").score
 
 
 @pytest.mark.parametrize(

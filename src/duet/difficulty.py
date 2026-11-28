@@ -57,8 +57,9 @@ class PartStats:
     high: int | None
 
 
-def pianist_stats(score: DuetScore) -> PartStats:
-    timed = timed_events(score, "pianist")
+def pianist_stats(score: DuetScore, *, part: str) -> PartStats:
+    """What makes a human's part hard."""
+    timed = timed_events(score, part)
     if not timed:
         return PartStats(0, 0.0, 0, 0, False, False, None, None)
     groups = onset_groups(timed)
@@ -93,20 +94,24 @@ def broken_rules(stats: PartStats, rules: LevelRules) -> list[str]:
     return problems
 
 
-def pianist_difficulty(score: DuetScore) -> int:
-    stats = pianist_stats(score)
+def pianist_difficulty(score: DuetScore, *, part: str) -> int:
+    stats = pianist_stats(score, part=part)
     # A part beyond even the top level's rules (say, 11 notes at once) is top level.
     return next((r.level for r in LEVELS if not broken_rules(stats, r)), MAX_LEVEL)
 
 
 def check_pianist(
-    score: DuetScore, keyboard: KeyboardProfile, target_level: int | None = None
+    score: DuetScore,
+    keyboard: KeyboardProfile,
+    *,
+    part: str,
+    target_level: int | None = None,
 ) -> list[str]:
-    """Problems with the pianist part: keys off the keyboard or outside the part's range,
-    and rules above the target level."""
+    """What a human cannot play in ``part``: keys off the keyboard or outside the part's
+    range, and rules above the target level."""
     problems = []
-    part_range = score.parts["pianist"].range
-    for e in score.part_events("pianist"):
+    part_range = score.parts[part].range
+    for e in score.part_events(part):
         where = f"bar {e.bar} beat {e.beat:g}"
         if not keyboard.contains(e.pitch):
             problems.append(f"{where}: {midi_to_name(e.pitch)} is not on the keyboard")
@@ -117,6 +122,7 @@ def check_pianist(
     if level:
         rules = rules_for(level)
         problems += [
-            f"too hard for level {level}: {p}" for p in broken_rules(pianist_stats(score), rules)
+            f"too hard for level {level}: {p}"
+            for p in broken_rules(pianist_stats(score, part=part), rules)
         ]
     return problems

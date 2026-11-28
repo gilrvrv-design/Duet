@@ -28,29 +28,31 @@ def test_slower_and_faster():
     slow, note = vary(EXAMPLE, "slower")
     assert slow.meta.tempo_bpm == pytest.approx(84 * 0.85, abs=0.1) and "84 ->" in note
     fast, _ = vary(EXAMPLE, "Faster")
-    assert fast.meta.tempo_bpm > 84 and check_robot(fast, ROBOT).ok
+    assert fast.meta.tempo_bpm > 84 and check_robot(fast, ROBOT, part="robot").ok
 
 
 def test_faster_never_breaks_the_robot():
     tight = make_score(robot=[(1, 1, 1, "C5"), (1, 2, 1, "C6")], tempo=47)
     fast, _ = vary(tight, "faster")
-    assert check_robot(fast, ROBOT).ok and fast.meta.tempo_bpm == pytest.approx(47, abs=0.5)
+    assert check_robot(fast, ROBOT, part="robot").ok and fast.meta.tempo_bpm == pytest.approx(
+        47, abs=0.5
+    )
 
 
 def test_easier_steps_down_until_it_fits():
-    assert pianist_difficulty(HARD) == 5
+    assert pianist_difficulty(HARD, part="pianist") == 5
     level = 5
     score = HARD
     while level > 1:
         score, note = vary(score, "easier")
-        assert pianist_difficulty(score) < level, note
-        level = pianist_difficulty(score)
+        assert pianist_difficulty(score, part="pianist") < level, note
+        level = pianist_difficulty(score, part="pianist")
     assert score.part_events("robot") == HARD.part_events("robot")  # the robot part is untouched
 
 
 def test_swap_puts_each_part_on_its_instrument():
     swapped, _ = vary(EXAMPLE, "swap")
-    assert check_robot(swapped, ROBOT).ok
+    assert check_robot(swapped, ROBOT, part="robot").ok
     robot_pitches = [e.pitch for e in swapped.part_events("robot")]
     assert all(p in ROBOT.pitches for p in robot_pitches)
     assert len(swapped.part_events("pianist")) == len(EXAMPLE.part_events("robot"))
@@ -97,10 +99,10 @@ def test_easier_always_lowers_the_level_on_random_parts():
             for _ in range(rng.randint(4, 24))
         ]
         score = make_score(robot=[(1, 1, 1, "C5")], pianist=notes, tempo=rng.choice([60, 100, 140]))
-        level = pianist_difficulty(score)
+        level = pianist_difficulty(score, part="pianist")
         while level > 1:
             score, note = vary(score, "easier")
-            new = pianist_difficulty(score)
+            new = pianist_difficulty(score, part="pianist")
             assert new < level, (note, notes)
             level = new
 

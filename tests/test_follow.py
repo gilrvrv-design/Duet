@@ -42,9 +42,9 @@ def test_follower_limits_and_wrong_notes():
 def test_max_speed_up_comes_from_robot_slack():
     # C5 -> C6 needs 1.275 s with margin; at 47 bpm a beat is 1.277 s: almost no slack.
     tight = make_score(robot=[(1, 1, 1, "C5"), (1, 2, 1, "C6")], tempo=47)
-    assert max_speed_up(tight, ROBOT) == pytest.approx(1.0, abs=0.01)
+    assert max_speed_up(tight, ROBOT, part="robot") == pytest.approx(1.0, abs=0.01)
     # E5 -> G5 needs 0.475 s; a beat at 90 bpm is 0.667 s, so the robot can go 1.40x faster.
-    assert max_speed_up(SCORE, ROBOT) == pytest.approx(1.40, abs=0.01)
+    assert max_speed_up(SCORE, ROBOT, part="robot") == pytest.approx(1.40, abs=0.01)
 
 
 def perform_with(pianist):

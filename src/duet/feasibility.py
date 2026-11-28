@@ -70,13 +70,16 @@ class _Strike:
     vel: int
 
 
-def robot_strikes(score: DuetScore, profile: RobotProfile, tolerance_cents: float | None = None):
-    """Map robot events to bottles. Returns (strikes sorted by time, unmapped event indices)."""
+def robot_strikes(
+    score: DuetScore, profile: RobotProfile, *, part: str, tolerance_cents: float | None = None
+):
+    """Map a bot part's events to its notes. Returns (strikes sorted by time, unmapped
+    event indices)."""
     spb = seconds_per_beat(score.meta.tempo_bpm)
     per_bar = score.meta.beats_per_bar
     strikes, unmapped = [], []
     for i, event in enumerate(score.events):
-        if event.part != "robot":
+        if event.part != part:
             continue
         bottle = profile.bottle_index(event.pitch, tolerance_cents)
         if bottle is None:
@@ -119,11 +122,11 @@ def strike_gaps(
 
 
 def max_speed_up(
-    score: DuetScore, robot: RobotProfile, margin_s: float = DEFAULT_MARGIN_S
+    score: DuetScore, robot: RobotProfile, *, part: str, margin_s: float = DEFAULT_MARGIN_S
 ) -> float:
-    """How much faster than written the robot part can go and still be playable
+    """How much faster than written a bot part can go and still be playable
     (1.0 to ``MAX_SPEED_UP``)."""
-    strikes, _ = robot_strikes(score, robot)
+    strikes, _ = robot_strikes(score, robot, part=part)
     slack = min(
         (g.gap_s / g.needed_s for g in strike_gaps(strikes, robot, margin_s) if not g.simultaneous),
         default=float("inf"),
@@ -134,11 +137,14 @@ def max_speed_up(
 def check_robot(
     score: DuetScore,
     profile: RobotProfile,
+    *,
+    part: str,
     margin_s: float = DEFAULT_MARGIN_S,
     tolerance_cents: float | None = None,
 ) -> Report:
+    """What a carriage-striker bot cannot play in ``part``."""
     report = Report()
-    strikes, unmapped = robot_strikes(score, profile, tolerance_cents)
+    strikes, unmapped = robot_strikes(score, profile, part=part, tolerance_cents=tolerance_cents)
     available = ", ".join(midi_to_name(p) for p in profile.pitches)
 
     for i in unmapped:

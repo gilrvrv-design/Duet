@@ -55,7 +55,7 @@ def test_simulator_catches_a_bad_plan():
 
 def test_cli_check_play_convert_repair(tmp_path, capsys):
     assert main(["check", str(EXAMPLE)]) == 0
-    assert "robot part: playable" in capsys.readouterr().out
+    assert "robot (bot): playable" in capsys.readouterr().out
     midi = tmp_path / "rain.mid"
     assert main(["convert", str(EXAMPLE), str(midi)]) == 0
     assert main(["play", str(midi), "--sim"]) == 0

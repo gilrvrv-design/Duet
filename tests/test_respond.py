@@ -43,7 +43,7 @@ def test_reply_keeps_the_session_tempo():
     _, notes = Responder(ROBOT).respond(fast)
     score = reply_score(notes, 140, ROBOT)
     assert score.meta.tempo_bpm == 140
-    assert check_robot(score, ROBOT).ok
+    assert check_robot(score, ROBOT, part="robot").ok
 
 
 PHRASES = [

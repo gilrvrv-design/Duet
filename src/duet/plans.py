@@ -45,10 +45,10 @@ class RobotPlan:
 
 def robot_plan(score: DuetScore, profile: RobotProfile, start_steps: int = HOME_STEPS) -> RobotPlan:
     """``start_steps``: where the carriage is now (home, or where the last piece ended)."""
-    report = check_robot(score, profile)
+    report = check_robot(score, profile, part="robot")
     if not report.ok:
         raise InfeasibleScoreError(report.feedback())
-    strikes, _ = robot_strikes(score, profile)
+    strikes, _ = robot_strikes(score, profile, part="robot")
     latency = profile.striker.latency_ms / 1000
     commands = []
     position = start_steps

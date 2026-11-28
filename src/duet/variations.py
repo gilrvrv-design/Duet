@@ -40,7 +40,7 @@ BEGINNER_RANGE = (48, 84)  # C3..C6, when a score does not give the pianist's ra
 def change_tempo(score: DuetScore, factor: float, robot: RobotProfile) -> DuetScore:
     """Scale the tempo; when speeding up, never beyond what the robot can play."""
     if factor > 1:
-        factor = min(factor, max_speed_up(score, robot))
+        factor = min(factor, max_speed_up(score, robot, part="robot"))
         tempo = math.floor(score.meta.tempo_bpm * factor * 10) / 10  # round toward safe
     else:
         tempo = round(score.meta.tempo_bpm * factor, 1)
@@ -68,7 +68,10 @@ def simplify_pianist(score: DuetScore, target_level: int, keyboard: KeyboardProf
         lambda e: e.beat == 1.0 and e.bar % 2 == 1,
     ]
     for keep in keepers:
-        if pianist_stats(score.with_events(robot + events)).notes_per_s <= rules.max_notes_per_s:
+        if (
+            pianist_stats(score.with_events(robot + events), part="pianist").notes_per_s
+            <= rules.max_notes_per_s
+        ):
             break
         events = [e for e in events if keep(e)] or events[:1]
     events = _shrink_jumps(events, rules.max_jump, low, high, rules.black_keys)
@@ -149,7 +152,7 @@ def swap_parts(score: DuetScore, robot: RobotProfile, keyboard: KeyboardProfile)
     events = [e.revised({"part": "robot", "pitch": e.pitch + shift_robot}) for e in old_pianist]
     events += [e.revised({"part": "pianist", "pitch": e.pitch + shift_piano}) for e in old_robot]
     swapped = score.with_events(events)
-    return repair_robot(swapped, robot).score
+    return repair_robot(swapped, robot, part="robot").score
 
 
 def vary(
@@ -174,11 +177,11 @@ def vary(
         new = change_tempo(score, FASTER, robot)
         return new, f"tempo {score.meta.tempo_bpm:g} -> {new.meta.tempo_bpm:g} bpm"
     if word == "easier":
-        before = pianist_difficulty(score)
+        before = pianist_difficulty(score, part="pianist")
         target = clamp_level(before - 1)
         new = simplify_pianist(score, target, keyboard)
         new = new.revised({"meta": new.meta.revised({"difficulty_target": target})})
-        return new, f"pianist level {before} -> {pianist_difficulty(new)}"
+        return new, f"pianist level {before} -> {pianist_difficulty(new, part='pianist')}"
     if word == "swap":
         return swap_parts(score, robot, keyboard), "robot and pianist swapped parts"
     if edit is None:
@@ -187,10 +190,10 @@ def vary(
         )
     target = None
     if word == "harder":
-        target = clamp_level(pianist_difficulty(score) + 1)
+        target = clamp_level(pianist_difficulty(score, part="pianist") + 1)
         instruction = f"make the pianist part a little harder (level {target})"
     result = edit(score, instruction, robot=robot, keyboard=keyboard, difficulty=target)
-    if not check_robot(result.score, robot).ok:
+    if not check_robot(result.score, robot, part="robot").ok:
         raise VariationError("the edited duet is not playable by the robot")
     return result.score, result.explanation or instruction
 

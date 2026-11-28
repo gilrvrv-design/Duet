@@ -36,16 +36,16 @@ def test_arrangement_is_playable_and_easy():
     assert result.coverage_before < 0.5
     assert result.coverage_after == 1.0
     assert result.transpose == 17  # G major down here becomes C major on the bottles
-    assert check_robot(result.score, BOTTLES).ok
-    assert check_pianist(result.score, PIANO) == []
-    assert pianist_difficulty(result.score) == 1
+    assert check_robot(result.score, BOTTLES, part="robot").ok
+    assert check_pianist(result.score, PIANO, part="pianist") == []
+    assert pianist_difficulty(result.score, part="pianist") == 1
     assert len(result.chords) == result.score.bar_count
 
 
 @pytest.mark.parametrize("level", [1, 2, 4])
 def test_pianist_part_follows_level(level):
     result = arrange(melody(TWINKLE_G, beat_s=0.75), difficulty=level)
-    assert pianist_difficulty(result.score) <= max(level, 2)
+    assert pianist_difficulty(result.score, part="pianist") <= max(level, 2)
     pianist = result.score.part_events("pianist")
     if level >= 4:
         assert any(
@@ -76,4 +76,4 @@ def test_end_to_end_from_audio(tmp_path):
     audio = synth([(p, i * 0.5, 0.45) for i, p in enumerate([60, 64, 67, 72, 67, 64, 60])])
     result = arrange(transcribe(audio, 22050))
     assert result.coverage_after == 1.0
-    assert check_robot(result.score, BOTTLES).ok
+    assert check_robot(result.score, BOTTLES, part="robot").ok

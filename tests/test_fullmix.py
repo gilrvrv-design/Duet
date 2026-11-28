@@ -77,7 +77,7 @@ def test_arranger_uses_vocals_and_backing_for_chords(tmp_path):
     assert {n.track for n in melody_track(result)} == {"vocals"}
     arrangement = arrange(result)
     assert arrangement.chords[:2] == ["C", "G"]
-    assert check_robot(arrangement.score, robot_profile()).ok
+    assert check_robot(arrangement.score, robot_profile(), part="robot").ok
 
 
 @pytest.mark.skipif(

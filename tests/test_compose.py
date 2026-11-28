@@ -44,7 +44,7 @@ def test_falls_back_to_deterministic_repair():
     result = compose(REQUEST, composer)
     assert result.rounds == 4 and len(composer.calls) == 4
     assert result.repairs
-    assert check_robot(result.score, robot_profile()).ok
+    assert check_robot(result.score, robot_profile(), part="robot").ok
 
 
 def test_out_of_range_pianist_notes_dropped_at_the_end():

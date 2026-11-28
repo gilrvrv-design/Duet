@@ -14,12 +14,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from duet.compose.draft import DraftError, draft_to_score, score_to_draft
 from duet.compose.prompts import feedback_message, request_message, system_prompt
 from duet.copyright import CopyrightGuard
-from duet.difficulty import check_pianist, pianist_difficulty
-from duet.feasibility import check_robot
+from duet.difficulty import check_pianist
+from duet.performers import human_difficulty, repair_bots, score_problems
 from duet.pitch import midi_to_name
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.progress import Progress, no_progress
-from duet.repair import Change, repair_robot
+from duet.repair import Change
 from duet.score import DuetScore, Level, Tempo
 
 MAX_FEEDBACK_ROUNDS = 3
@@ -55,7 +55,7 @@ class CompositionResult:
 
     @property
     def difficulty(self) -> int:
-        return pianist_difficulty(self.score)
+        return human_difficulty(self.score)
 
 
 class CompositionError(Exception):
@@ -114,7 +114,7 @@ def revise(
     pianist_range = score.parts["pianist"].range or (keyboard.low, keyboard.high)
     request = CompositionRequest(
         prompt=score.meta.prompt or score.meta.title,
-        difficulty=difficulty or score.meta.difficulty_target or pianist_difficulty(score),
+        difficulty=difficulty or score.meta.difficulty_target or human_difficulty(score),
         bars=max(1, score.bar_count),
         pianist_range=tuple(midi_to_name(p) for p in pianist_range),
         tempo_bpm=score.meta.tempo_bpm,
@@ -153,8 +153,8 @@ def _converse(request, first_message, composer, robot, keyboard, max_rounds, pro
             problems = [str(exc)]
         else:
             best = (score, explanation)
-            problems = check_robot(score, robot).feedback().splitlines()
-            problems += check_pianist(score, keyboard)
+            in_use = {robot.id: robot.to_instrument(), keyboard.id: keyboard.to_instrument()}
+            problems = [p for found in score_problems(score, in_use).values() for p in found]
             if guard is not None:
                 problems += guard.check(score).problems()
             if not problems:
@@ -180,7 +180,9 @@ def _converse(request, first_message, composer, robot, keyboard, max_rounds, pro
 def _finish(best, robot, keyboard, rounds, history) -> CompositionResult:
     """Deterministic last resort: repair the robot part, drop unplayable pianist notes."""
     score, explanation = best
-    repaired = repair_robot(score, robot)
+    repaired = repair_bots(
+        score, {robot.id: robot.to_instrument(), keyboard.id: keyboard.to_instrument()}
+    )
     score = repaired.score
     low, high = score.parts["pianist"].range or (keyboard.low, keyboard.high)
     keep = [
@@ -192,5 +194,7 @@ def _finish(best, robot, keyboard, rounds, history) -> CompositionResult:
     if len(keep) < len(score.events):
         warnings.append(f"dropped {len(score.events) - len(keep)} pianist note(s) out of range")
         score = score.with_events(keep)
-    warnings += [p for p in check_pianist(score, keyboard) if p.startswith("too hard")]
+    warnings += [
+        p for p in check_pianist(score, keyboard, part="pianist") if p.startswith("too hard")
+    ]
     return CompositionResult(score, explanation, rounds, history, repaired.changes, warnings)

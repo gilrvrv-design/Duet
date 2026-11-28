@@ -22,7 +22,7 @@ from duet.compose import CompositionRequest, compose
 from duet.compose.draft import DRAFT_SCHEMA
 from duet.compose.prompts import feedback_message, request_message, system_prompt
 from duet.compose.service import Composer
-from duet.difficulty import pianist_difficulty
+from duet.performers import human_difficulty
 from duet.profile import RobotProfile, robot_profile
 from duet.score import MAX_LEVEL, MIN_LEVEL
 
@@ -98,7 +98,7 @@ def run_case(case: dict, composer_factory: Callable[[], Composer]) -> CaseResult
         rounds=result.rounds,
         repairs=len(result.repairs),
         difficulty_target=request.difficulty,
-        difficulty_actual=pianist_difficulty(result.score),
+        difficulty_actual=human_difficulty(result.score),
         robot_notes=len(result.score.part_events("robot")),
         seconds=round(time.monotonic() - started, 2),
     )

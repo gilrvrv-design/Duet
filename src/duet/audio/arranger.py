@@ -219,7 +219,7 @@ def arrange(
             "events": events,
         }
     )
-    repaired = repair_robot(score, robot)
+    repaired = repair_robot(score, robot, part="robot")
     return Arrangement(
         score=repaired.score,
         transpose=shift,

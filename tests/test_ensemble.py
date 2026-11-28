@@ -77,7 +77,7 @@ def test_whole_ensemble_plays_together_on_simulated_rigs(tmp_path):
     )
     for p in players:
         if p.instrument.is_robot:
-            assert check_robot(p.score, p.instrument.robot).ok
+            assert check_robot(p.score, p.instrument.robot, part="robot").ok
     results = perform_ensemble(players, PIANO, VirtualClock(1_000_000))
     for rig in rigs.values():
         rig.run()

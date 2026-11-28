@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from duet.difficulty import pianist_difficulty
+from duet.performers import human_difficulty
 from duet.score import DuetScore
 from duet.storage import Record, Store
 
@@ -64,7 +64,7 @@ def search(
     hits = []
     for record in store.list(KIND):
         score: DuetScore = record.data
-        if difficulty is not None and pianist_difficulty(score) != difficulty:
+        if difficulty is not None and human_difficulty(score) != difficulty:
             continue
         if max_bars is not None and score.bar_count > max_bars:
             continue

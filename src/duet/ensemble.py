@@ -146,7 +146,7 @@ def build_players(
         )
         if instrument.is_robot:
             fitted = score.with_events([e for e in score.events if instrument.fits(e.pitch)])
-            score = repair_robot(fitted, instrument.robot, keep_tempo=True).score
+            score = repair_robot(fitted, instrument.robot, part="robot", keep_tempo=True).score
         players.append(Player(instrument, score, devices.get(instrument.name, [])))
     return players
 

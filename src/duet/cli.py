@@ -9,9 +9,9 @@ from pathlib import Path
 
 from duet.calibration import SWEEP_INTERVAL_S
 from duet.conductor import RealClock, VirtualClock, perform
-from duet.difficulty import pianist_difficulty
-from duet.feasibility import check_robot
+from duet.instruments import Instrument
 from duet.midi_io import midi_to_score, save_midi
+from duet.performers import human_difficulty, repair_bots, score_problems
 from duet.profile import (
     RobotProfile,
     keyboard_profile,
@@ -19,7 +19,6 @@ from duet.profile import (
     robot_profile,
     save_profile_file,
 )
-from duet.repair import repair_robot
 from duet.score import DuetScore, load_score
 from duet.sim import SimulatedRig
 
@@ -47,20 +46,35 @@ def write_score(score: DuetScore, path: str) -> None:
         Path(path).write_text(score.to_json(), encoding="utf-8")
 
 
+def _in_use(args) -> dict[str, Instrument]:
+    """The instruments this command plays, by id: ``--robot`` may be a calibrated file."""
+    robot = _robot(args)
+    return {robot.id: robot.to_instrument()}
+
+
 def cmd_check(args) -> int:
+    """Every part, by its performer; fails if a bot cannot play its part."""
     score = read_score(args.score)
-    report = check_robot(score, _robot(args))
-    print(f"{score.meta.title}: {score.bar_count} bars, pianist level {pianist_difficulty(score)}")
-    if report.ok:
-        print("robot part: playable")
-        return 0
-    print(f"robot part: {len(report.violations)} problem(s)")
-    print(report.feedback())
-    return 1
+    problems = score_problems(score, _in_use(args))
+    print(f"{score.meta.title}: {score.bar_count} bars, level {human_difficulty(score)}")
+    for part, found in problems.items():
+        who = score.parts[part].performer
+        print(f"{part} ({who}): " + (f"{len(found)} problem(s)" if found else "playable"))
+        for line in found:
+            print(f"  {line}")
+    return 1 if any(problems[part] for part in score.parts_played_by("bot")) else 0
+
+
+def _playable(score, args):
+    """The score with every bot part repaired, saying so when something changed."""
+    result = repair_bots(score, _in_use(args))
+    if result.changes:
+        print(f"repaired {len(result.changes)} problem(s) so the bots can play it")
+    return result.score
 
 
 def cmd_repair(args) -> int:
-    result = repair_robot(read_score(args.score), _robot(args))
+    result = repair_bots(read_score(args.score), _in_use(args))
     write_score(result.score, args.out)
     print(result.summary() or "nothing to repair")
     return 0
@@ -78,10 +92,7 @@ def cmd_play(args) -> int:
         part = ONLY[args.only]
         score = score.only(part)
         print(f"playing the {args.only} part only ({len(score.events)} notes)")
-    if not check_robot(score, robot).ok:
-        result = repair_robot(score, robot)
-        print(f"repaired {len(result.changes)} problem(s) so the robot can play it")
-        score = result.score
+    score = _playable(score, args)
     if args.device:
         return _play_on_device(score, robot, keyboard_profile(args.piano), args.device)
     if not args.sim:
@@ -283,10 +294,7 @@ def cmd_upload(args) -> int:
     score = read_score(args.score)
     if args.only:
         score = score.only(ONLY[args.only])
-    if not check_robot(score, robot).ok:
-        result = repair_robot(score, robot)
-        print(f"repaired {len(result.changes)} problem(s) so the robot can play it")
-        score = result.score
+    score = _playable(score, args)
     try:
         slot = check_slot(args.slot)
         song = compile_song(score, robot, keyboard_profile(args.piano))

@@ -9,29 +9,37 @@ BOTTLES = robot_profile()
 
 def test_playable_score_passes():
     score = make_score(robot=[(1, 1, 1, "C5"), (1, 2, 1, "D5"), (2, 1, 1, "C6"), (3, 1, 1, "C5")])
-    report = check_robot(score, BOTTLES)
+    report = check_robot(score, BOTTLES, part="robot")
     assert report.ok, report.feedback()
 
 
 def test_pianist_notes_are_ignored():
-    assert check_robot(make_score(pianist=[(1, 1, 1, "C#4"), (1, 1, 1, "E4")]), BOTTLES).ok
+    assert check_robot(
+        make_score(pianist=[(1, 1, 1, "C#4"), (1, 1, 1, "E4")]), BOTTLES, part="robot"
+    ).ok
 
 
 def test_note_without_a_bottle():
-    report = check_robot(make_score(robot=[(1, 1, 1, "C#5"), (1, 3, 1, "C4")]), BOTTLES)
+    report = check_robot(
+        make_score(robot=[(1, 1, 1, "C#5"), (1, 3, 1, "C4")]), BOTTLES, part="robot"
+    )
     assert report.codes() == [Code.NOT_ON_BOTTLE, Code.NOT_ON_BOTTLE]
     assert "no bottle for C#5" in report.feedback()
     assert report.violations[0].event_index == 0
 
 
 def test_two_notes_at_once():
-    report = check_robot(make_score(robot=[(1, 1, 1, "C5"), (1, 1, 1, "E5")]), BOTTLES)
+    report = check_robot(
+        make_score(robot=[(1, 1, 1, "C5"), (1, 1, 1, "E5")]), BOTTLES, part="robot"
+    )
     assert report.codes() == [Code.SIMULTANEOUS]
 
 
 def test_jump_too_fast():
     # At 120 bpm an eighth note is 0.25 s; C5 to C6 needs about 1.28 s.
-    report = check_robot(make_score(robot=[(1, 1, 0.5, "C5"), (1, 1.5, 0.5, "C6")]), BOTTLES)
+    report = check_robot(
+        make_score(robot=[(1, 1, 0.5, "C5"), (1, 1.5, 0.5, "C6")]), BOTTLES, part="robot"
+    )
     (violation,) = report.violations
     assert violation.code == Code.TOO_FAST
     assert violation.available_s == pytest.approx(0.25)
@@ -46,14 +54,16 @@ def test_jump_too_fast():
 
 def test_neighbours_at_eighths_are_fine_but_sixteenths_are_not():
     eighths = [(1, 1 + i * 0.5, 0.5, "C5" if i % 2 == 0 else "D5") for i in range(8)]
-    assert check_robot(make_score(robot=eighths, tempo=90), BOTTLES).ok
+    assert check_robot(make_score(robot=eighths, tempo=90), BOTTLES, part="robot").ok
     sixteenths = [(1, 1 + i * 0.25, 0.25, "C5" if i % 2 == 0 else "D5") for i in range(4)]
-    assert set(check_robot(make_score(robot=sixteenths), BOTTLES).codes()) == {Code.TOO_FAST}
+    assert set(check_robot(make_score(robot=sixteenths), BOTTLES, part="robot").codes()) == {
+        Code.TOO_FAST
+    }
 
 
 def test_repeated_note_needs_recovery_only():
     fast_repeats = [(1, 1 + i * 0.25, 0.25, "E5") for i in range(16)]
-    assert check_robot(make_score(robot=fast_repeats, tempo=120), BOTTLES).ok
+    assert check_robot(make_score(robot=fast_repeats, tempo=120), BOTTLES, part="robot").ok
 
 
 def test_duty_cycle_limit():
@@ -65,6 +75,6 @@ def test_duty_cycle_limit():
         event["vel"] = 127
     from duet.score import load_score
 
-    report = check_robot(load_score(data), BOTTLES)
+    report = check_robot(load_score(data), BOTTLES, part="robot")
     assert Code.DUTY_CYCLE in report.codes()
     assert all(c == Code.DUTY_CYCLE for c in report.codes())

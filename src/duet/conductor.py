@@ -291,7 +291,9 @@ def _follow(perf, messages, score, robot, sender, clock, keys) -> Performance:
     from duet.feasibility import max_speed_up
     from duet.follow import Follower
 
-    follower = Follower(perf.expected_pianist(), min_rate=1 / max_speed_up(score, robot))
+    follower = Follower(
+        perf.expected_pianist(), min_rate=1 / max_speed_up(score, robot, part="robot")
+    )
     begin = getattr(keys, "begin", None)
     if begin is not None:  # a simulated pianist needs to know when to play
         begin(perf.expected_pianist())

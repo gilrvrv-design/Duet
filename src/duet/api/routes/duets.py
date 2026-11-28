@@ -18,8 +18,7 @@ from duet.api.views import duet_view, summary_view
 from duet.compose.service import ComposerError, CompositionError, revise
 from duet.jobs import JobFailure
 from duet.midi_io import read_midi, score_to_midi_bytes
-from duet.profile import robot_profile
-from duet.repair import repair_robot
+from duet.performers import repair_bots
 from duet.score import MAX_LEVEL, MIN_LEVEL, DuetScore
 from duet.variations import VariationError, is_built_in, vary
 
@@ -93,7 +92,7 @@ def duet_midi(ctx: Ctx, duet_id: str):
 @router.post("/v1/duets/{duet_id}/repair", status_code=201)
 def repair_duet(ctx: Ctx, duet_id: str):
     score = ctx.store.get("duet", duet_id).data
-    result = repair_robot(score, robot_profile(score.parts["robot"].instrument))
+    result = repair_bots(score)
     record = library.add_version(ctx.store, duet_id, result.score, source="repair")
     return {**duet_view(record, ctx.guard), "changes": result.summary().splitlines()}
 

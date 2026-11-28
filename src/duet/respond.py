@@ -147,4 +147,6 @@ def reply_score(
             "events": events,
         }
     )
-    return repair_robot(score, robot, keep_tempo=True).score  # the session's beat holds
+    return repair_robot(
+        score, robot, part="robot", keep_tempo=True
+    ).score  # the session's beat holds

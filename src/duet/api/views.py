@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from duet.copyright import CopyrightGuard
-from duet.difficulty import check_pianist, pianist_difficulty
-from duet.feasibility import check_robot
 from duet.jobs import job_view
 from duet.pedagogy import SkillModel, current_step
-from duet.profile import keyboard_profile, robot_profile
+from duet.performers import human_difficulty, score_problems
 from duet.score import DuetScore
 from duet.storage import Record
 
@@ -16,17 +14,24 @@ __all__ = ["duet_view", "job_view", "lesson_view", "skills_view", "summary_view"
 
 def duet_view(record: Record, guard: CopyrightGuard) -> dict:
     score: DuetScore = record.data
-    robot = robot_profile(score.parts["robot"].instrument)
-    keyboard = keyboard_profile(score.parts["pianist"].instrument)
-    report = check_robot(score, robot)
+    problems = score_problems(score)
+    bots = set(score.parts_played_by("bot"))
     return {
         "id": record.id,
         "score": score.to_dict(),
         "bars": score.bar_count,
-        "pianist_difficulty": pianist_difficulty(score),
-        "robot_playable": report.ok,
-        "robot_problems": report.feedback().splitlines(),
-        "pianist_problems": check_pianist(score, keyboard),
+        "difficulty": human_difficulty(score),
+        # Playable: every bot can play its part. People can try anything; their
+        # problems say what is too hard or off the instrument.
+        "playable": not any(problems[name] for name in bots),
+        "parts": {
+            name: {
+                "instrument": info.instrument,
+                "performer": info.performer,
+                "problems": problems[name],
+            }
+            for name, info in score.parts.items()
+        },
         "copyright": guard.check(score).status,
         **record.meta,
     }
@@ -40,7 +45,7 @@ def summary_view(record: Record) -> dict:
         "title": score.meta.title,
         "bars": score.bar_count,
         "tempo_bpm": score.meta.tempo_bpm,
-        "pianist_difficulty": pianist_difficulty(score),
+        "difficulty": human_difficulty(score),
         **{k: record.meta[k] for k in keep if k in record.meta},
     }
 

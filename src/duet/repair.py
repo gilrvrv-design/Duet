@@ -52,17 +52,20 @@ class RepairResult:
 def repair_robot(
     score: DuetScore,
     profile: RobotProfile,
+    *,
+    part: str,
     margin_s: float = DEFAULT_MARGIN_S,
     keep_tempo: bool = False,
 ) -> RepairResult:
-    """``keep_tempo``: never slow down (for live sessions); drop or shift notes instead."""
-    robot_notes = sum(e.part == "robot" for e in score.events)
-    result = _repair_once(score, profile, margin_s)
+    """Make a carriage-striker bot's ``part`` playable. ``keep_tempo``: never slow down
+    (for live sessions); drop or shift notes instead."""
+    robot_notes = sum(e.part == part for e in score.events)
+    result = _repair_once(score, profile, part, margin_s)
     too_many_dropped = robot_notes and result.count("drop") / robot_notes > MAX_DROP_RATIO
     if too_many_dropped and not keep_tempo:
-        slower = _slower_tempo(score, profile, margin_s)
+        slower = _slower_tempo(score, profile, part, margin_s)
         if slower is not None and slower < score.meta.tempo_bpm:
-            retry = _repair_once(score.with_tempo(slower), profile, margin_s)
+            retry = _repair_once(score.with_tempo(slower), profile, part, margin_s)
             if retry.count("drop") < result.count("drop"):
                 retry.changes.insert(
                     0,
@@ -74,26 +77,30 @@ def repair_robot(
                     ),
                 )
                 result = retry
-    final = check_robot(result.score, profile, margin_s)
+    final = check_robot(result.score, profile, part=part, margin_s=margin_s)
     if not final.ok:  # a bug, not a user error: repair must always succeed
         raise AssertionError(f"repair left violations:\n{final.feedback()}")
     return result
 
 
-def _repair_once(score: DuetScore, profile: RobotProfile, margin_s: float) -> RepairResult:
+def _repair_once(
+    score: DuetScore, profile: RobotProfile, part: str, margin_s: float
+) -> RepairResult:
     changes: list[Change] = []
     events = list(score.events)
-    events = _fold(events, profile, changes)
+    events = _fold(events, profile, part, changes)
     score = score.with_events(events)
-    score = _fix_timing(score, profile, margin_s, changes)
-    score = _fix_duty(score, profile, margin_s, changes)
+    score = _fix_timing(score, profile, part, margin_s, changes)
+    score = _fix_duty(score, profile, part, margin_s, changes)
     return RepairResult(score, changes)
 
 
-def _fold(events: list[Event], profile: RobotProfile, changes: list[Change]) -> list[Event]:
+def _fold(
+    events: list[Event], profile: RobotProfile, part: str, changes: list[Change]
+) -> list[Event]:
     out = []
     for event in events:
-        if event.part != "robot" or profile.bottle_index(event.pitch) is not None:
+        if event.part != part or profile.bottle_index(event.pitch) is not None:
             out.append(event)
             continue
         target = _fold_pitch(event.pitch, profile.pitches)
@@ -117,12 +124,12 @@ def _fold_pitch(pitch: int, available: list[int]) -> int:
 
 
 def _fix_timing(
-    score: DuetScore, profile: RobotProfile, margin_s: float, changes: list[Change]
+    score: DuetScore, profile: RobotProfile, part: str, margin_s: float, changes: list[Change]
 ) -> DuetScore:
     spb = seconds_per_beat(score.meta.tempo_bpm)
     per_bar = score.meta.beats_per_bar
     matrix = reachability(profile)
-    strikes, _ = robot_strikes(score, profile)
+    strikes, _ = robot_strikes(score, profile, part=part)
     # Among simultaneous notes, play the highest (usually the melody) first.
     strikes.sort(key=lambda s: (s.time_s, -score.events[s.index].pitch))
 
@@ -165,9 +172,9 @@ def _fix_timing(
 
 
 def _fix_duty(
-    score: DuetScore, profile: RobotProfile, margin_s: float, changes: list[Change]
+    score: DuetScore, profile: RobotProfile, part: str, margin_s: float, changes: list[Change]
 ) -> DuetScore:
-    report = check_robot(score, profile, margin_s)
+    report = check_robot(score, profile, part=part, margin_s=margin_s)
     drop = {v.event_index for v in report.violations if v.code == Code.DUTY_CYCLE}
     for i in sorted(drop):
         event = score.events[i]
@@ -177,9 +184,11 @@ def _fix_duty(
     return score.with_events([e for i, e in enumerate(score.events) if i not in drop])
 
 
-def _slower_tempo(score: DuetScore, profile: RobotProfile, margin_s: float) -> float | None:
+def _slower_tempo(
+    score: DuetScore, profile: RobotProfile, part: str, margin_s: float
+) -> float | None:
     """Tempo at which every robot gap is wide enough, rounded down to a whole bpm."""
-    strikes, _ = robot_strikes(score, profile)
+    strikes, _ = robot_strikes(score, profile, part=part)
     factor = max(
         # simultaneous notes are dropped whatever the tempo
         (
