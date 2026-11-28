@@ -159,21 +159,12 @@ class Step:
     difficulty: int
     tempo_factor: float
     score: DuetScore
-    passed: bool = False
 
 
 @dataclass
 class LessonPath:
     title: str
     steps: list[Step] = field(default_factory=list)
-
-    @property
-    def current(self) -> int | None:
-        return current_step([s.passed for s in self.steps])
-
-    def record(self, step: int, report: Report) -> bool:
-        self.steps[step].passed = self.steps[step].passed or step_passes(report)
-        return self.steps[step].passed
 
 
 def teach_song(

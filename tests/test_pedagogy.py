@@ -1,7 +1,7 @@
 import pytest
 
 from duet.listening import Expected, Grade, Report
-from duet.pedagogy import SkillModel, note_features, teach_song
+from duet.pedagogy import SkillModel, current_step, note_features, step_passes, teach_song
 from helpers import make_score
 
 
@@ -111,10 +111,10 @@ def test_teach_me_this_song():
         (2, 1.0),
     ]
     assert path.steps[0].score.meta.tempo_bpm == 70 and path.steps[1].score.meta.tempo_bpm == 100
-    assert path.current == 0
     notes = len(path.steps[0].score.part_events("pianist"))
-    assert not path.record(0, report(path.steps[0].score, ["missed"] * notes))
-    assert path.record(0, report(path.steps[0].score, ["hit"] * notes)) and path.current == 1
+    assert not step_passes(report(path.steps[0].score, ["missed"] * notes))
+    assert step_passes(report(path.steps[0].score, ["hit"] * notes))
+    assert current_step([True, False]) == 1 and current_step([True, True]) is None
 
 
 def test_cli_teach(tmp_path, capsys):

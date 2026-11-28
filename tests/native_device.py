@@ -1,6 +1,7 @@
 """The firmware as a Linux process (firmware/host/duet_device.cpp), for tests: its serial
 link over TCP, and its device API and web app over HTTP, as on the ESP32."""
 
+import functools
 import json
 import subprocess
 import urllib.error
@@ -57,9 +58,15 @@ class NativeDevice:
             self.process.kill()
 
 
-def start(planner: bool = True) -> NativeDevice:
+@functools.cache
+def build() -> None:
+    """Build both native devices, once per test session."""
     built = subprocess.run(["make", "-s", "-C", str(FIRMWARE), "device"], capture_output=True)
     assert built.returncode == 0, built.stderr.decode()
+
+
+def start(planner: bool = True) -> NativeDevice:
+    build()
     process = subprocess.Popen(
         [str(BINARY if planner else BASIC), "--port", "0", "--http-port", "0"],
         stdin=subprocess.PIPE,

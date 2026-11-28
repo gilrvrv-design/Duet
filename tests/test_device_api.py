@@ -1,21 +1,22 @@
 """The device API over HTTP, on the native device: what the web app asks the rig."""
 
-import time
-
 from duet.midi_io import score_to_midi_bytes
 from duet.profile import keyboard_profile, robot_profile
 from duet.score import load_score
 from duet.sim import RIG_CHANNELS
 from duet.songs import compile_song
-from helpers import ROOT
+from helpers import ROOT, eventually
 
 
 def wait_for_state(device, state, timeout_s=10):
-    deadline = time.monotonic() + timeout_s
-    while (info := device.api("GET", "/api/info")[1])["state"] != state:
-        assert time.monotonic() < deadline, f"still {info['state']}"
-        time.sleep(0.05)
-    return info
+    seen = []
+
+    def there():
+        seen.append(device.api("GET", "/api/info")[1])
+        return seen[-1]["state"] == state
+
+    assert eventually(there, timeout_s), f"still {seen[-1]['state']}"
+    return seen[-1]
 
 
 def test_info_is_what_the_hub_hears(device):

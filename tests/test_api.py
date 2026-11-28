@@ -10,7 +10,7 @@ from duet.api.codecs import default_codecs
 from duet.audio.fullmix import full_mix_available
 from duet.midi_io import midi_to_score, score_to_midi_bytes
 from duet.storage import MemoryStore, SqliteStore
-from helpers import GOOD, ROOT, ScriptedComposer, make_score, synth
+from helpers import GOOD, ROOT, ScriptedComposer, eventually, make_score, synth
 
 EXAMPLE = (ROOT / "examples" / "rain-on-the-bottles.json").read_text()
 
@@ -114,15 +114,13 @@ def test_transcription_and_arrangement(client):
 
 
 def wait_for(client, job_id, timeout=30):
-    import time
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    def finished():
         job = client.get(f"/v1/jobs/{job_id}").json()
-        if job["state"] in ("succeeded", "failed"):
-            return job
-        time.sleep(0.02)
-    raise AssertionError("job did not finish")
+        return job if job["state"] in ("succeeded", "failed") else None
+
+    job = eventually(finished, timeout, every_s=0.02)
+    assert job is not None, "job did not finish"
+    return job
 
 
 def test_background_composition_with_stream(client):

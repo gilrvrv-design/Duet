@@ -9,9 +9,9 @@ from fastapi.testclient import TestClient
 from duet.api.app import create_app
 from duet.listening import SimulatedPianist
 from duet.storage import MemoryStore
-from helpers import ROOT
+from helpers import ROOT, SIMULATED_PIANIST, eventually
 
-PIANIST = "Simulated pianist"
+PIANIST = SIMULATED_PIANIST
 
 
 @pytest.fixture
@@ -36,16 +36,15 @@ def practise(client, device, **request) -> dict:
     return reply.json()
 
 
-def until_over(client, practice_id: str, timeout_s: float = 60) -> dict:
-    deadline = time.monotonic() + timeout_s
-    while (view := client.get(f"/v1/live/{practice_id}").json())["state"] not in (
-        "done",
-        "stopped",
-        "failed",
-    ):
-        assert time.monotonic() < deadline, f"still {view['state']}"
-        time.sleep(0.1)
-    return view
+def until_over(client, practice_id: str, timeout_s: float = 30) -> dict:
+    seen = []
+
+    def over():
+        seen.append(client.get(f"/v1/live/{practice_id}").json())
+        return seen[-1]["state"] in ("done", "stopped", "failed")
+
+    assert eventually(over, timeout_s, every_s=0.1), f"still {seen[-1]['state']}"
+    return seen[-1]
 
 
 def test_the_server_offers_its_inputs(client):

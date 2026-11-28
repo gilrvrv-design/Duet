@@ -1,7 +1,6 @@
 """The web app with servers up, down and failing (docs/design/esp-first.md, step 4): it
 uses a server's library when one answers, and falls back to the songs on the rig."""
 
-import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -13,13 +12,7 @@ from playwright.sync_api import expect
 from duet.api.app import create_app
 from duet.listening import SimulatedPianist
 from duet.storage import MemoryStore
-from helpers import ROOT
-
-
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+from helpers import ROOT, SIMULATED_PIANIST, eventually, free_port
 
 
 class LibraryServer:
@@ -34,10 +27,7 @@ class LibraryServer:
         self._server = uvicorn.Server(uvicorn.Config(app, port=port, log_level="warning"))
         self._thread = threading.Thread(target=self._server.run, daemon=True)
         self._thread.start()
-        deadline = time.monotonic() + 10
-        while not self._server.started:
-            assert time.monotonic() < deadline, "the server did not start"
-            time.sleep(0.02)
+        assert eventually(lambda: self._server.started, 10, every_s=0.02), "did not start"
 
     def stop(self) -> None:
         self._server.should_exit = True
@@ -152,7 +142,7 @@ def test_a_server_that_goes_away(page, device):
 
 # Practice: the server plays a duet on the rig, live, listening to the pianist ----------
 
-PIANIST = "Simulated pianist"
+PIANIST = SIMULATED_PIANIST
 
 
 @pytest.fixture
@@ -163,7 +153,7 @@ def listening():
     server.stop()
 
 
-def poll_until(page, locator, text, timeout_s=60):
+def poll_until(page, locator, text, timeout_s=30):
     deadline = time.monotonic() + timeout_s
     while text not in (locator.text_content() or ""):
         assert time.monotonic() < deadline, f"no {text!r}: {locator.text_content()!r}"

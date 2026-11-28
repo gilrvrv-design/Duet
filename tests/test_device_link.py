@@ -75,7 +75,7 @@ def test_unknown_message():
 
 
 @pytest.fixture
-def device(request):
+def sim_device(request):
     options = dict(getattr(request, "param", {}))
     lines = options.pop("_lines", False)
     sim = SimulatedDevice(clock_offset_us=987_654_321, **options)
@@ -104,8 +104,8 @@ def device(request):
     loop.close()
 
 
-def test_clock_sync_over_a_real_socket(device):
-    sim, url = device
+def test_clock_sync_over_a_real_socket(sim_device):
+    sim, url = sim_device
     with DeviceGateway(url) as gateway:
         assert gateway.hello.device_id == "sim-1"
         error = abs(gateway.sync.offset_us - sim.clock_offset_us)
@@ -115,8 +115,8 @@ def test_clock_sync_over_a_real_socket(device):
         assert sim.heartbeats >= 2
 
 
-def test_performance_over_the_socket_lands_on_time(device):
-    sim, url = device
+def test_performance_over_the_socket_lands_on_time(sim_device):
+    sim, url = sim_device
     robot, piano = robot_profile(), keyboard_profile()
     score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
     with DeviceGateway(url) as gateway:
@@ -139,10 +139,10 @@ def test_performance_over_the_socket_lands_on_time(device):
     assert len(sim.rig.led_frames) == 22
 
 
-def test_cli_play_on_device(device, capsys):
+def test_cli_play_on_device(sim_device, capsys):
     from duet.cli import main
 
-    _, url = device
+    _, url = sim_device
     score = ROOT / "tests" / "data" / "two-notes.json"
     assert main(["play", str(score), "--device", url]) == 0
     out = capsys.readouterr().out
@@ -157,9 +157,9 @@ def test_drift_estimate_maths():
     assert second.to_device(2_000_000) == 2_000_000 + 2000 + 1000
 
 
-@pytest.mark.parametrize("device", [{"drift_ppm": 2000.0}], indirect=True)
-def test_periodic_resync_tracks_a_drifting_clock(device):
-    sim, url = device
+@pytest.mark.parametrize("sim_device", [{"drift_ppm": 2000.0}], indirect=True)
+def test_periodic_resync_tracks_a_drifting_clock(sim_device):
+    sim, url = sim_device
     with DeviceGateway(url, resync_every_s=0.25) as gateway:
         time.sleep(1.2)
         sync = gateway.sync
@@ -170,11 +170,11 @@ def test_periodic_resync_tracks_a_drifting_clock(device):
         assert error < 1000, f"prediction error {error:.0f} us"
 
 
-@pytest.mark.parametrize("device", [{"homing_s": 0.6}], indirect=True)
-def test_conductor_waits_for_slow_homing(device):
+@pytest.mark.parametrize("sim_device", [{"homing_s": 0.6}], indirect=True)
+def test_conductor_waits_for_slow_homing(sim_device):
     from duet.conductor import RealClock
 
-    sim, url = device
+    sim, url = sim_device
     score = load_score(ROOT / "tests" / "data" / "two-notes.json")
     with DeviceGateway(url) as gateway:
         sent_home = hub_now_us()
@@ -197,9 +197,9 @@ def test_messages_over_the_size_limit_are_refused():
         Fault(code="X", detail="y" * MAX_MESSAGE_BYTES).to_json()
 
 
-def test_two_performances_with_the_same_plan_seqs_are_acked_apart(device):
+def test_two_performances_with_the_same_plan_seqs_are_acked_apart(sim_device):
     """Plans number from 1 every time; the gateway's wire seqs keep acks apart."""
-    sim, url = device
+    sim, url = sim_device
     score = load_score(ROOT / "tests" / "data" / "two-notes.json")
     with DeviceGateway(url, profile=robot_profile()) as gateway:
         for _ in range(2):
@@ -214,8 +214,8 @@ def test_two_performances_with_the_same_plan_seqs_are_acked_apart(device):
     assert sim.commands > 0
 
 
-def test_an_error_ack_stops_the_performance(device):
-    sim, url = device
+def test_an_error_ack_stops_the_performance(sim_device):
+    sim, url = sim_device
     with DeviceGateway(url) as gateway:
         gateway.send(Estop())
         gateway.send(Home(seq=7))
@@ -226,9 +226,9 @@ def test_an_error_ack_stops_the_performance(device):
     assert gateway.errors == ["seq 7: error: emergency stop"]
 
 
-@pytest.mark.parametrize("device", [{"homing_fails": True, "homing_s": 0.1}], indirect=True)
-def test_a_homing_fault_wakes_wait_ready_at_once(device):
-    _, url = device
+@pytest.mark.parametrize("sim_device", [{"homing_fails": True, "homing_s": 0.1}], indirect=True)
+def test_a_homing_fault_wakes_wait_ready_at_once(sim_device):
+    _, url = sim_device
     with DeviceGateway(url) as gateway:
         gateway.send(Home(seq=1))
         started = time.monotonic()
@@ -237,8 +237,8 @@ def test_a_homing_fault_wakes_wait_ready_at_once(device):
         assert time.monotonic() - started < 2  # not the full ten seconds
 
 
-def test_a_lost_connection_is_raised_not_hung_on(device):
-    sim, url = device
+def test_a_lost_connection_is_raised_not_hung_on(sim_device):
+    sim, url = sim_device
     gateway = DeviceGateway(url, resync_every_s=None).connect()
     try:
         gateway._call(gateway._ws.close())  # as if the device rebooted
@@ -248,9 +248,9 @@ def test_a_lost_connection_is_raised_not_hung_on(device):
         gateway.close()
 
 
-@pytest.mark.parametrize("device", [{"profile": robot_profile("glock-v1")}], indirect=True)
-def test_a_device_with_other_limits_is_refused_at_connect(device):
-    _, url = device
+@pytest.mark.parametrize("sim_device", [{"profile": robot_profile("glock-v1")}], indirect=True)
+def test_a_device_with_other_limits_is_refused_at_connect(sim_device):
+    _, url = sim_device
     with pytest.raises(DeviceMismatch, match="profile: device glock-v1"):
         DeviceGateway(url, profile=robot_profile()).connect()
 
@@ -264,10 +264,10 @@ def test_the_simulated_device_reports_the_firmware_limits():
     assert mismatches(DeviceLimits.from_channel(carriage), robot_profile()) == []
 
 
-@pytest.mark.parametrize("device", [{"_lines": True}], indirect=True)
-def test_a_serial_line_link_plays_like_the_websocket(device):
+@pytest.mark.parametrize("sim_device", [{"_lines": True}], indirect=True)
+def test_a_serial_line_link_plays_like_the_websocket(sim_device):
     """tcp:// is a serial port as lines (QEMU, ser2net); boot noise goes to the console."""
-    sim, url = device
+    sim, url = sim_device
     score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
     with DeviceGateway(url, profile=robot_profile()) as gateway:
         assert gateway.hello.device_id == "sim-1"
@@ -294,23 +294,23 @@ def test_line_links_need_a_host_and_port():
         asyncio.run(LineLink.open("tcp://nohost"))
 
 
-@pytest.mark.parametrize("device", [{"protocol": 2}], indirect=True)
-def test_a_device_on_another_protocol_is_refused_at_connect(device):
-    _, url = device
+@pytest.mark.parametrize("sim_device", [{"protocol": 2}], indirect=True)
+def test_a_device_on_another_protocol_is_refused_at_connect(sim_device):
+    _, url = sim_device
     with pytest.raises(ConnectionError, match="protocol 2; this Hub speaks 5"):
         DeviceGateway(url).connect()
 
 
-def test_the_simulator_answers_greet_and_stop_as_the_firmware_does(device):
-    sim, url = device
+def test_the_simulator_answers_greet_and_stop_as_the_firmware_does(sim_device):
+    sim, url = sim_device
     assert [m for _, m in sim.handle(Greet())] == sim.greeting()  # no ack: the greeting
     sim.rig.send(StrikeAt(10**12, 20_000, ch=0))
     assert [m for _, m in sim.handle(Stop(seq=4))] == [Ack(seq=4)]
     assert sim.rig.received == []  # what was queued is dropped (protocol 5)
 
 
-def test_a_practice_stops_on_the_simulator_too(device):
-    _, url = device
+def test_a_practice_stops_on_the_simulator_too(sim_device):
+    _, url = sim_device
     clock = StoppableClock()
     rain = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
     with pytest.raises(Stopped):  # stopped, not failed: the simulator takes the stop

@@ -25,12 +25,6 @@ pytestmark = pytest.mark.skipif(shutil.which("g++") is None, reason="needs a C++
 REPAIR_FAILED = "repair left violations"  # the Hub's AssertionError: a bug either side
 
 
-@pytest.fixture(scope="module")
-def firmware_cli():
-    subprocess.run(["make", "-s", "-C", str(FIRMWARE), "build/duet_core_cli"], check=True)
-    return FIRMWARE / "build" / "duet_core_cli"
-
-
 def device(cli, data: bytes, tmp_path, instrument: str) -> list[dict] | dict:
     path = tmp_path / "upload.mid"
     path.write_bytes(data)

@@ -18,7 +18,6 @@ import os
 import re
 import select
 import shutil
-import socket
 import subprocess
 import threading
 import time
@@ -36,7 +35,7 @@ from duet.protocol import Estop, Greet, Heartbeat, Home, MoveAt, StrikeAt, parse
 from duet.score import load_score
 from duet.sim import RIG_CHANNELS
 from duet.songs import CompiledSong, compile_song
-from helpers import ROOT
+from helpers import ROOT, eventually, free_port, open_link
 
 FIRMWARE = ROOT / "firmware"
 QEMU_IMAGE = FIRMWARE / "build" / "qemu-flash.bin"
@@ -44,12 +43,6 @@ QEMU = os.environ.get("DUET_QEMU") or shutil.which("qemu-system-xtensa")
 BOOT_TIMEOUT_S = 30  # QEMU boots in a second or two; slow machines need more
 ONSET_TOLERANCE_US = 5000  # the firmware's own "late" threshold (Config::late_tolerance_us)
 STRIKE = re.compile(r"^# strike t_us=(-?\d+) position=(-?\d+)")
-
-
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def start_native():
@@ -85,15 +78,10 @@ def wait_for_boot(port: int) -> None:
     """Start the emulated chip and wait until its firmware is up (main_qemu.cpp). Bytes
     sent to a chip that is still booting crash QEMU (not a real ESP32), so nothing is
     sent until then; QEMU then takes the tests' own connection."""
-    deadline = time.monotonic() + BOOT_TIMEOUT_S
-    while True:  # QEMU opens its port a moment after it starts
-        try:
-            link = socket.create_connection(("127.0.0.1", port), timeout=BOOT_TIMEOUT_S)
-            break
-        except OSError:
-            assert time.monotonic() < deadline, "QEMU did not open its serial port"
-            time.sleep(0.2)
-    with link, link.makefile("r", errors="replace") as console:
+    with (
+        connect("127.0.0.1", port, BOOT_TIMEOUT_S) as link,
+        link.makefile("r", errors="replace") as console,
+    ):
         for line in console:
             if line.startswith("# duet: ready"):
                 return
@@ -162,10 +150,7 @@ def test_the_firmware_plays_a_score_on_time(device_url):
         )
         gateway.wait_acked()
         planned = [p for p in perf.planned if p.performer == "bot"]
-        deadline = time.monotonic() + (planned[-1].t_us - hub_now_us()) / 1e6 + 5
-        while len(strikes(gateway)) < len(planned) and time.monotonic() < deadline:
-            time.sleep(0.05)
-        heard = strikes(gateway)
+        heard = wait_for_strikes(gateway, len(planned), (planned[-1].t_us - hub_now_us()) / 1e6 + 5)
         assert gateway.errors == [] and gateway.faults == []
     finally:
         gateway.close()
@@ -200,9 +185,7 @@ def test_a_move_past_the_end_is_refused_and_the_music_goes_on(device_url):
         gateway.wait_ready(timeout_s=10)
         soon = hub_now_us() + 100_000
         gateway.send(MoveAt(soon, 999_999, 500.0, 5000.0, seq=2, ch=0))  # far beyond the travel
-        deadline = time.monotonic() + 2
-        while not gateway.faults and time.monotonic() < deadline:
-            time.sleep(0.02)
+        eventually(lambda: gateway.faults, 2, every_s=0.02)
         assert [f.code for f in gateway.faults] == ["SOFT_LIMIT"]
         gateway.send(Home(seq=3))  # a refused move is not fatal: the link carries on
         gateway.wait_acked()
@@ -216,15 +199,8 @@ def test_the_firmware_stops_when_the_hub_goes_silent(device_url):
     Raw socket on purpose: the gateway's heartbeats would keep the device happy."""
     _, address = device_url.split("://")
     host, port = address.split(":")
+    link = open_link(host, int(port), BOOT_TIMEOUT_S)
     deadline = time.monotonic() + BOOT_TIMEOUT_S
-    while True:
-        try:
-            link = socket.create_connection((host, int(port)), timeout=BOOT_TIMEOUT_S)
-            break
-        except OSError:
-            if time.monotonic() > deadline:
-                raise
-            time.sleep(0.2)
     pending = b""
 
     def until(kind: str, timeout_s: float = BOOT_TIMEOUT_S):
@@ -273,9 +249,7 @@ def test_the_firmware_stops_when_the_hub_goes_silent(device_url):
 
 
 def wait_for_strikes(gateway: DeviceGateway, count: int, timeout_s: float) -> list:
-    deadline = time.monotonic() + timeout_s
-    while len(strikes(gateway)) < count and time.monotonic() < deadline:
-        time.sleep(0.05)
+    eventually(lambda: len(strikes(gateway)) >= count, timeout_s)
     return strikes(gateway)
 
 
@@ -390,9 +364,9 @@ def test_the_firmware_plays_a_digital_piano_over_midi(device_url):
     try:
         perf = perform(score, one_rig(score, [gateway]), VirtualClock(hub_now_us()))
         gateway.wait_acked()
-        deadline = time.monotonic() + (perf.planned[-1].t_us - hub_now_us()) / 1e6 + 5
-        while len(midi_out(gateway)) < 4 and time.monotonic() < deadline:
-            time.sleep(0.05)
+        eventually(
+            lambda: len(midi_out(gateway)) >= 4, (perf.planned[-1].t_us - hub_now_us()) / 1e6 + 5
+        )
         sent = midi_out(gateway)
         assert gateway.errors == [] and gateway.faults == []
     finally:

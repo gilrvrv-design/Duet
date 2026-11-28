@@ -34,12 +34,6 @@ class Recorder:
         self.messages.append(msg)
 
 
-@pytest.fixture(scope="module")
-def firmware_cli():
-    subprocess.run(["make", "-s", "-C", str(FIRMWARE), "build/duet_core_cli"], check=True)
-    return FIRMWARE / "build" / "duet_core_cli"
-
-
 def hub_messages(score):
     recorder = Recorder()
     perform(

@@ -1,4 +1,6 @@
 import json
+import socket
+import time
 from pathlib import Path
 
 from duet.compose import CompositionRequest
@@ -70,3 +72,33 @@ class ScriptedComposer:
 
 
 REQUEST = CompositionRequest(prompt="a happy tune", difficulty=1, bars=2)
+
+
+SIMULATED_PIANIST = "Simulated pianist"  # the name practices know the simulated pianist by
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def eventually(probe, timeout_s: float, *, every_s: float = 0.05):
+    """Ask ``probe`` until its answer is truthy or ``timeout_s`` has passed; its last
+    answer, for the caller to check."""
+    deadline = time.monotonic() + timeout_s
+    while not (answer := probe()) and time.monotonic() < deadline:
+        time.sleep(every_s)
+    return answer
+
+
+def open_link(host: str, port: int, timeout_s: float) -> socket.socket:
+    """A connection to a port that opens a moment after its process starts."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            return socket.create_connection((host, port), timeout=timeout_s)
+        except OSError:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.2)

@@ -19,12 +19,6 @@ FIRMWARE = ROOT / "firmware"
 pytestmark = pytest.mark.skipif(shutil.which("g++") is None, reason="needs a C++ compiler")
 
 
-@pytest.fixture(scope="module")
-def firmware_cli():
-    subprocess.run(["make", "-s", "-C", str(FIRMWARE), "build/duet_core_cli"], check=True)
-    return FIRMWARE / "build" / "duet_core_cli"
-
-
 def device(cli, data: bytes, tmp_path) -> dict:
     path = tmp_path / "upload.mid"
     path.write_bytes(data)

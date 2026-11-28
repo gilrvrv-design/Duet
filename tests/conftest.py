@@ -1,16 +1,11 @@
 import os
-from pathlib import Path
+import subprocess
 
 import pytest
 from playwright.sync_api import sync_playwright
 
 import native_device
 from helpers import ROOT
-
-
-@pytest.fixture
-def root() -> Path:
-    return ROOT
 
 
 @pytest.fixture
@@ -51,3 +46,11 @@ def page(browser):
     opened.clock.install()
     yield opened
     opened.close()
+
+
+@pytest.fixture(scope="session")
+def firmware_cli():
+    """The firmware core's command line (duet_core_cli), built once."""
+    firmware = ROOT / "firmware"
+    subprocess.run(["make", "-s", "-C", str(firmware), "build/duet_core_cli"], check=True)
+    return firmware / "build" / "duet_core_cli"
