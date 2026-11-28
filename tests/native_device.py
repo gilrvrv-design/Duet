@@ -7,6 +7,10 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+from duet.profile import keyboard_profile, robot_profile
+from duet.score import load_score
+from duet.sim import RIG_CHANNELS
+from duet.songs import CompiledSong, compile_song
 from helpers import ROOT
 
 FIRMWARE = ROOT / "firmware"
@@ -34,6 +38,17 @@ class NativeDevice:
                 return reply.status, json.load(reply)
         except urllib.error.HTTPError as refused:
             return refused.code, json.load(refused)
+
+    def store(self, slot: int, song: CompiledSong) -> None:
+        """Store a song through the device API, as the web app does."""
+        assert self.api("PUT", f"/api/songs/{slot}", song.song_file()) == (200, {"ok": True})
+
+    def store_example(self, slot: int) -> CompiledSong:
+        """Store examples/rain-on-the-bottles.json, compiled for the rig."""
+        score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
+        song = compile_song(score, robot_profile(), keyboard_profile(), RIG_CHANNELS)
+        self.store(slot, song)
+        return song
 
     def stop(self) -> None:
         self.process.terminate()

@@ -2,34 +2,11 @@
 
 import time
 
-import pytest
-
-import native_device
-from duet.device.gateway import DeviceGateway
 from duet.profile import keyboard_profile, robot_profile
 from duet.score import load_score
 from duet.sim import RIG_CHANNELS
 from duet.songs import compile_song
 from helpers import ROOT
-
-
-@pytest.fixture
-def device():
-    running = native_device.start()
-    try:
-        yield running
-    finally:
-        running.stop()
-
-
-def upload(device, slot):
-    score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
-    song = compile_song(score, robot_profile(), keyboard_profile(), RIG_CHANNELS)
-    gateway = DeviceGateway(device.serial_url, profile=robot_profile()).connect()
-    try:
-        gateway.upload(slot, song)
-    finally:
-        gateway.close()
 
 
 def wait_for_state(device, state, timeout_s=10):
@@ -51,7 +28,7 @@ def test_info_is_what_the_hub_hears(device):
 
 def test_the_app_plays_a_stored_song_and_stops_it(device):
     assert device.api("GET", "/api/songs") == (200, {"slots": 8, "songs": []})
-    upload(device, 4)
+    device.store_example(4)
     assert device.api("GET", "/api/songs")[1]["songs"] == [
         {"slot": 4, "title": "Rain on the Bottles"}
     ]
@@ -65,7 +42,7 @@ def test_the_app_plays_a_stored_song_and_stops_it(device):
 
 
 def test_the_app_can_stop_the_rig(device):
-    upload(device, 0)
+    device.store_example(0)
     assert device.api("POST", "/api/estop") == (200, {"ok": True})
     assert device.api("GET", "/api/info")[1]["estopped"] is True
     assert device.api("POST", "/api/songs/0/play") == (409, {"error": "emergency stop"})

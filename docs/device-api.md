@@ -11,6 +11,20 @@ firmware gzipped, so a board serves it from program flash. It shows what the boa
 can do and what it cannot, and plays and stops the stored songs.
 `tests/test_web_app.py` drives it in Chromium against the native device.
 
+## Servers
+
+The servers saved in the settings add what the rig cannot do alone. The page checks each
+one's `/v1/health` when it opens, every 30 seconds, and after the settings change. It
+shows each server as up, not reachable, or failing. While one is up, the page shows its
+library. "Put on the rig" asks that server for the duet as a song file for this rig
+(`POST /v1/duets/{id}/song` with the rig's instrument and channels from `/api/info`),
+and stores it with `PUT /api/songs/<k>`. From then on the song plays with no server.
+With no server up, the page says so, and the songs on the rig still play.
+
+The browser talks to the servers itself; the rig never waits on one. A server lets
+pages from `.local` names and local-network addresses call it (CORS, README.md).
+`tests/test_web_servers.py` runs the page with servers up, down and failing.
+
 The Hub's real-time link is the device protocol (docs/device-protocol.md). The API is
 for people: it shows what the device is, and it plays the songs stored on it.
 
