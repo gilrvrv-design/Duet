@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from duet.conductor import build_messages
-from duet.plans import HOME_STEPS
+from duet.performers import in_use
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import Message, message_time_us
 from duet.score import DuetScore
@@ -38,8 +38,14 @@ def compile_song(
     score: DuetScore, robot: RobotProfile, keyboard: KeyboardProfile, count_in: bool = True
 ) -> CompiledSong:
     """The commands a live performance would send, from the home position, shifted so
-    the first one is at t_us 0. The robot part must already be playable."""
-    messages, _ = build_messages(score, robot, keyboard, 0, HOME_STEPS, count_in)
+    the first one is at t_us 0. A song lives on one device, which has one carriage: at
+    most one bot part, and it must already be playable."""
+    bots = score.parts_played_by("bot")
+    if len(bots) > 1:
+        raise SongError(f"a stored song plays on one device: one bot part at most, not {bots}")
+    messages = build_messages(
+        score, 0, instruments=in_use(robot, keyboard), count_in=count_in
+    ).messages
     if not messages:
         raise SongError("the score has nothing to play")
     if len(messages) > MAX_LINES:

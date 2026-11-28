@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from duet.difficulty import clamp_level, pianist_stats, rules_for
 from duet.feasibility import max_speed_up
-from duet.performers import Bot, human_difficulty, performer, performers
+from duet.performers import Bot, human_difficulty, in_use, performer, performers
 from duet.pitch import best_transpose, is_black_key
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.score import DuetScore, Event, clamp_tempo
@@ -170,8 +170,8 @@ def vary(
     ``robot``, ``keyboard`` and ``difficulty``."""
     robot = robot or robot_profile()
     keyboard = keyboard or keyboard_profile()
-    in_use = {robot.id: robot.to_instrument(), keyboard.id: keyboard.to_instrument()}
-    bots = [p for p in performers(score, in_use) if isinstance(p, Bot)]
+    playing = in_use(robot, keyboard)
+    bots = [p for p in performers(score, playing) if isinstance(p, Bot)]
     word = instruction.strip().lower()  # see is_built_in
     if word == "slower":
         new = change_tempo(score, SLOWER, bots)
@@ -188,7 +188,7 @@ def vary(
         new = new.revised({"meta": new.meta.revised({"difficulty_target": target})})
         return new, f"level {before} -> {human_difficulty(new)}"
     if word == "swap":
-        bot = performer(score, score.part_played_by("bot"), in_use)
+        bot = performer(score, score.part_played_by("bot"), playing)
         human = score.part_played_by("human")
         return swap_parts(score, bot, keyboard), f"{bot.part} and {human} swapped parts"
     if edit is None:

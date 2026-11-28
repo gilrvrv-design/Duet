@@ -65,6 +65,12 @@ Performer = Bot | Human
 Instruments = Mapping[str, Instrument]  # by id: the ones in use, e.g. a calibrated rig
 
 
+def in_use(*profiles: RobotProfile | KeyboardProfile) -> dict[str, Instrument]:
+    """The instruments a command plays, by id, from today's profile views (step 1f
+    replaces them with instruments themselves)."""
+    return {p.id: p.to_instrument() for p in profiles}
+
+
 def performer(score: DuetScore, part: str, instruments: Instruments = NO_OVERRIDES) -> Performer:
     """The part's performer, on the instrument in use: ``instruments`` (say, a rig's
     calibrated bottles) before the built-in one with the same id."""

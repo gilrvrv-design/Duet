@@ -1,9 +1,10 @@
 """Ensembles (spec Phase 4): many lines, many instruments, one performance.
 
-``assign`` decides which line each instrument plays. The whole piece shares one
+``assign`` decides which line each member plays. The whole piece shares one
 transposition so it stays in key; each part may also move by octaves. Robots play one
-note at a time, so they get the top line of a track (its "skyline"). ``perform_ensemble``
-then plays every robot and the pianist's lights from one clock.
+note at a time, so they get the top line of a track (its "skyline"). ``build_score``
+makes one score with a part per member; the conductor plays it, each part on its own
+rig (``duet.conductor.perform`` with routes).
 """
 
 from __future__ import annotations
@@ -11,17 +12,16 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 
-from duet.conductor import Clock, Device, Performance, build_messages, home_all, stream
+from duet.instruments import Instrument
 from duet.midi_io import TrackNote
-from duet.profile import KeyboardProfile, RobotProfile
-from duet.protocol import message_time_us
+from duet.profile import RobotProfile
 from duet.repair import repair_robot
-from duet.score import DUO, DuetScore
-from duet.timing import bar_and_beat, seconds_per_beat
+from duet.score import DuetScore, PartInfo
+from duet.timing import bar_and_beat
 
 
 @dataclass(frozen=True)
-class Instrument:
+class Member:
     name: str
     robot: RobotProfile | None = None  # None: a person
     low: int = 48  # a person's comfortable range
@@ -46,7 +46,7 @@ def skyline(notes: list[TrackNote]) -> list[TrackNote]:
     return [tops[b] for b in sorted(tops)]
 
 
-def _fit(notes: list[TrackNote], instrument: Instrument, shift: int) -> tuple[float, int]:
+def _fit(notes: list[TrackNote], instrument: Member, shift: int) -> tuple[float, int]:
     """(share of notes the instrument can play, best octave) at a global ``shift``."""
     line = skyline(notes) if instrument.is_robot else notes
     if not line:
@@ -66,7 +66,7 @@ class Assignment:
     unused: list[str] = field(default_factory=list)  # tracks nobody plays
 
 
-def assign(tracks: dict[str, list[TrackNote]], instruments: list[Instrument]) -> Assignment:
+def assign(tracks: dict[str, list[TrackNote]], instruments: list[Member]) -> Assignment:
     """Try every global transposition and every way to give tracks to instruments; keep
     the one where the instruments can play the most of their lines (FR: Phase 4)."""
     names = [t for t in tracks if tracks[t]]
@@ -95,120 +95,65 @@ def assign(tracks: dict[str, list[TrackNote]], instruments: list[Instrument]) ->
     )
 
 
-@dataclass
-class Player:
-    instrument: Instrument
-    score: DuetScore  # robot events for a robot; pianist events for the person
-    devices: list[Device]
-
-
-def build_players(
+def build_score(
     tracks: dict[str, list[TrackNote]],
-    instruments: list[Instrument],
+    members: list[Member],
     assignment: Assignment,
     tempo_bpm: float,
     time_signature: tuple[int, int],
-    devices: dict[str, list[Device]],
-) -> list[Player]:
-    """One score per instrument, each made playable (robots keep the tempo)."""
+    keyboard: str = "piano-88",
+) -> tuple[DuetScore, dict[str, Instrument]]:
+    """One score, one part per member that plays: a bot part per robot (its track's top
+    line, made playable at the written tempo), a human part per person (on
+    ``keyboard``). Returns the score and the robots' instruments in use."""
     per_bar = time_signature[0]
-    players = []
-    for instrument in instruments:
-        if instrument.name not in assignment.parts:
+    parts: dict[str, PartInfo] = {}
+    events: list[dict] = []
+    playing: dict[str, Instrument] = {}
+    for member in members:
+        if member.name not in assignment.parts:
             continue
-        track, octave = assignment.parts[instrument.name]
-        notes = skyline(tracks[track]) if instrument.is_robot else tracks[track]
-        part = DUO.bot if instrument.is_robot else DUO.human
-        events = []
+        track, octave = assignment.parts[member.name]
+        notes = skyline(tracks[track]) if member.is_robot else tracks[track]
+        if member.is_robot:
+            instrument = member.robot.to_instrument()
+            if playing.setdefault(instrument.id, instrument) != instrument:
+                raise ValueError(f"two different robots both call themselves {instrument.id!r}")
+            parts[member.name] = PartInfo(instrument=instrument.id, performer="bot")
+        else:
+            parts[member.name] = PartInfo(
+                instrument=keyboard,
+                performer="human",
+                role="accompaniment",
+                range=(member.low, member.high),
+            )
         for n in notes:
             bar, beat = bar_and_beat(n.beat, per_bar)
-            if beat >= per_bar + 1:
+            pitch = n.pitch + assignment.transpose + octave
+            if beat >= per_bar + 1 or not member.fits(pitch):
                 continue
             events.append(
                 {
-                    "part": part,
+                    "part": member.name,
                     "bar": bar,
                     "beat": beat,
                     "dur": n.dur,
-                    "pitch": n.pitch + assignment.transpose + octave,
+                    "pitch": pitch,
                     "vel": n.vel,
                 }
             )
-        score = DuetScore.model_validate(
-            {
-                "meta": {
-                    "title": f"{track} ({instrument.name})",
-                    "tempo_bpm": tempo_bpm,
-                    "time_signature": list(time_signature),
-                },
-                "events": events,
-            }
-        )
-        if instrument.is_robot:
-            fitted = score.with_events([e for e in score.events if instrument.fits(e.pitch)])
-            score = repair_robot(fitted, instrument.robot, part=DUO.bot, keep_tempo=True).score
-        players.append(Player(instrument, score, devices.get(instrument.name, [])))
-    return players
-
-
-def perform_ensemble(
-    players: list[Player],
-    keyboard: KeyboardProfile,
-    clock: Clock,
-    lookahead_s: float = 0.5,
-    buffer_s: float = 0.3,
-) -> dict[str, Performance]:
-    """Home every rig, start everyone at the same moment, and stream one time-ordered
-    message list, each message to its own player's devices."""
-    from duet.plans import robot_plan
-    from duet.protocol import LedFrameAt
-
-    home_all([d for p in players for d in p.devices])
-    silent = _silent_robot(players)
-    plans = {
-        p.instrument.name: robot_plan(p.score, p.instrument.robot or silent, part=DUO.bot)
-        for p in players
-    }
-    first = players[0].score
-    count_in_s = first.meta.beats_per_bar * seconds_per_beat(first.meta.tempo_bpm)
-    preroll = max(
-        (plans[p.instrument.name].preroll_s for p in players if p.instrument.is_robot),
-        default=0.0,
+    score = DuetScore.model_validate(
+        {
+            "meta": {
+                "title": "Ensemble",
+                "tempo_bpm": tempo_bpm,
+                "time_signature": list(time_signature),
+            },
+            "parts": parts,
+            "events": events,
+        }
     )
-    start = clock.now_us() + round((buffer_s + max(count_in_s, preroll)) * 1_000_000)
-    timeline, results, owner = [], {}, {}
-    # The lights show the person's part and count everyone in, once.
-    lights = next((p for p in players if not p.instrument.is_robot), None)
-    for p in players:
-        messages, planned = build_messages(
-            p.score,
-            p.instrument.robot or silent,
-            keyboard,
-            start,
-            count_in=p is (lights or players[0]),
-            plan=plans[p.instrument.name],
-        )
-        if p.instrument.is_robot and lights is not None:
-            messages = [m for m in messages if not isinstance(m, LedFrameAt)]
-        results[p.instrument.name] = Performance(start_us=start, planned=planned)
-        for i, m in enumerate(messages):
-            timeline.append((message_time_us(m), i, m))
-            owner[id(m)] = p
-    timeline.sort(key=lambda s: (s[0], s[1]))
-
-    def send(msg) -> None:
-        player = owner[id(msg)]
-        for device in player.devices:
-            device.send(msg)
-        results[player.instrument.name].messages_sent += 1
-
-    stream([m for _, _, m in timeline], clock, round(lookahead_s * 1_000_000), send)
-    return results
-
-
-def _silent_robot(players: list[Player]) -> RobotProfile:
-    """A person's part has no robot notes, but planning needs a profile: any robot's."""
-    robot = next((p.instrument.robot for p in players if p.instrument.is_robot), None)
-    if robot is None:
-        raise ValueError("an ensemble needs at least one robot")
-    return robot
+    for member in members:
+        if member.is_robot and member.name in parts:
+            score = repair_robot(score, member.robot, part=member.name, keep_tempo=True).score
+    return score, playing

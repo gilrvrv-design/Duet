@@ -2,8 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from duet.conductor import State, VirtualClock, perform
+from duet.conductor import State, VirtualClock, one_rig, perform
 from duet.listening import Expected, MidiKeys, PlayedNote, SimulatedPianist, grade
+from duet.performers import in_use
 from duet.profile import keyboard_profile, robot_profile
 from duet.sim import SimulatedRig
 from helpers import make_score
@@ -51,7 +52,9 @@ SCORE = make_score(
 
 def run(keys):
     rig = SimulatedRig(ROBOT)
-    perf = perform(SCORE, ROBOT, PIANO, [rig], VirtualClock(), keys=keys)
+    perf = perform(
+        SCORE, one_rig(SCORE, [rig]), VirtualClock(), instruments=in_use(ROBOT, PIANO), keys=keys
+    )
     rig.run()
     return perf, rig
 

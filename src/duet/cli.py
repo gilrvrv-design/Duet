@@ -8,10 +8,10 @@ import sys
 from pathlib import Path
 
 from duet.calibration import SWEEP_INTERVAL_S
-from duet.conductor import RealClock, VirtualClock, perform
+from duet.conductor import RealClock, VirtualClock, one_rig, perform
 from duet.instruments import Instrument
 from duet.midi_io import midi_to_score, save_midi
-from duet.performers import human_difficulty, repair_bots, score_problems
+from duet.performers import human_difficulty, in_use, repair_bots, score_problems
 from duet.profile import (
     RobotProfile,
     keyboard_profile,
@@ -48,8 +48,7 @@ def write_score(score: DuetScore, path: str) -> None:
 
 def _in_use(args) -> dict[str, Instrument]:
     """The instruments this command plays, by id: ``--robot`` may be a calibrated file."""
-    robot = _robot(args)
-    return {robot.id: robot.to_instrument()}
+    return in_use(_robot(args), keyboard_profile(args.piano))
 
 
 def cmd_check(args) -> int:
@@ -93,7 +92,7 @@ def cmd_play(args) -> int:
         print(f"playing the {args.only} part only ({len(score.events)} notes)")
     score = _playable(score, args)
     if args.device:
-        return _play_on_device(score, robot, keyboard_profile(args.piano), args.device)
+        return _play_on_device(score, robot, _in_use(args), args.device)
     if not args.sim:
         print("choose --sim or --device ws://host:port", file=sys.stderr)
         return 2
@@ -102,7 +101,9 @@ def cmd_play(args) -> int:
     live = args.midi_in or args.mic is not None
     clock = RealClock() if args.realtime or live else VirtualClock()
     mode = "follow" if args.follow else "wait"
-    perf = perform(score, robot, keyboard_profile(args.piano), [rig], clock, keys=keys, mode=mode)
+    perf = perform(
+        score, one_rig(score, [rig]), clock, instruments=_in_use(args), keys=keys, mode=mode
+    )
     rig.run()
     if keys is not None:
         from duet.listening import grade
@@ -173,16 +174,16 @@ def cmd_vary(args) -> int:
 
 def cmd_ensemble(args) -> int:
     """Play a multi-track MIDI file with several robots and the pianist."""
-    from duet.ensemble import Instrument, assign, build_players, perform_ensemble
+    from duet.ensemble import Member, assign, build_score
     from duet.midi_io import midi_tracks
     from duet.pitch import name_to_midi
 
     tempo, signature, tracks = midi_tracks(args.midi)
-    instruments = [Instrument(r, robot_profile(r)) for r in args.robots.split(",") if r]
+    members = [Member(r, robot_profile(r)) for r in args.robots.split(",") if r]
     if args.pianist != "none":
         low, high = (name_to_midi(n) for n in args.pianist.split("-"))
-        instruments.append(Instrument("pianist", low=low, high=high))
-    plan = assign(tracks, instruments)
+        members.append(Member("pianist", low=low, high=high))
+    plan = assign(tracks, members)
     print(f"transposed {plan.transpose:+d}")
     for name, (track, octave) in plan.parts.items():
         moved = f", {octave:+d} semitones" if octave else ""
@@ -192,11 +193,12 @@ def cmd_ensemble(args) -> int:
     if not args.sim:
         print("only simulated rigs so far; add --sim", file=sys.stderr)
         return 2
-    rigs = {i.name: SimulatedRig(i.robot or instruments[0].robot) for i in instruments}
-    players = build_players(
-        tracks, instruments, plan, tempo, signature, {k: [v] for k, v in rigs.items()}
-    )
-    perform_ensemble(players, keyboard_profile(args.piano), VirtualClock())
+    keyboard = keyboard_profile(args.piano)
+    score, playing = build_score(tracks, members, plan, tempo, signature, keyboard.id)
+    # One simulated rig per member: a robot's carriage, or the person's light strip.
+    rigs = {m.name: SimulatedRig(m.robot or members[0].robot) for m in members}
+    routes = {part: [rigs[part]] for part in score.parts}
+    perform(score, routes, VirtualClock(), instruments={**playing, **in_use(keyboard)})
     faults = 0
     for name, rig in rigs.items():
         rig.run()
@@ -314,14 +316,14 @@ def cmd_upload(args) -> int:
     return 0
 
 
-def _play_on_device(score, robot, keyboard, url: str) -> int:
+def _play_on_device(score, robot, instruments, url: str) -> int:
     from duet.device.gateway import DeviceGateway
 
     with DeviceGateway(url, profile=robot) as gateway:
         sync = gateway.sync
         print(f"connected to {describe(gateway.hello)}")
         print(f"clock offset {sync.offset_us} us (+/- {sync.error_bound_us:.0f} us)")
-        perf = perform(score, robot, keyboard, [gateway], RealClock())
+        perf = perform(score, one_rig(score, [gateway]), RealClock(), instruments=instruments)
         gateway.wait_acked()
         print(f"sent {perf.messages_sent} commands, errors: {len(gateway.errors)}")
         return 0 if not gateway.errors else 1

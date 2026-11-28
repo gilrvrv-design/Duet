@@ -3,6 +3,7 @@ import pytest
 
 from duet.listening import Expected, grade
 from duet.mic import MicKeys, MicListener, RobotSound
+from duet.performers import in_use
 from duet.pitch import midi_to_hz
 from duet.profile import robot_profile
 
@@ -119,7 +120,7 @@ def test_duet_in_a_noisy_room():
 
 
 def test_conductor_tells_the_microphone_about_every_strike():
-    from duet.conductor import VirtualClock, perform
+    from duet.conductor import VirtualClock, one_rig, perform
     from duet.profile import keyboard_profile
     from duet.sim import SimulatedRig
     from helpers import make_score
@@ -133,7 +134,14 @@ def test_conductor_tells_the_microphone_about_every_strike():
     score = make_score(robot=[(1, 1, 1, "E5"), (1, 3, 1, "G5")], pianist=[(1, 1, 4, "C4")])
     rig = SimulatedRig(GLASS)
     # Follow mode with nobody playing: the robot just keeps going at the written tempo.
-    perform(score, GLASS, keyboard_profile(), [rig], VirtualClock(), keys=keys, mode="follow")
+    perform(
+        score,
+        one_rig(score, [rig]),
+        VirtualClock(),
+        instruments=in_use(GLASS, keyboard_profile()),
+        keys=keys,
+        mode="follow",
+    )
     rig.run()
     told = [(s.t_us, s.pitch) for s in keys.listener.robot_sounds]
     assert told == [(s.t_us, s.pitch) for s in rig.sounds]

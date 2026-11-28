@@ -1,10 +1,10 @@
 import mido
 import pytest
 
-from duet.conductor import VirtualClock
-from duet.ensemble import Instrument, assign, build_players, perform_ensemble, skyline
-from duet.feasibility import check_robot
+from duet.conductor import VirtualClock, one_rig, perform
+from duet.ensemble import Member, assign, build_score, skyline
 from duet.midi_io import TrackNote, midi_tracks
+from duet.performers import in_use, score_problems
 from duet.profile import keyboard_profile, robot_profile
 from duet.sim import SimulatedRig
 
@@ -38,10 +38,10 @@ def song(tmp_path):
     return path
 
 
-INSTRUMENTS = [
-    Instrument("bottles", BOTTLES),
-    Instrument("glock", GLOCK),
-    Instrument("pianist", low=36, high=72),
+MEMBERS = [
+    Member("bottles", BOTTLES),
+    Member("glock", GLOCK),
+    Member("pianist", low=36, high=72),
 ]
 
 
@@ -56,29 +56,28 @@ def test_midi_tracks_and_skyline(tmp_path):
 
 def test_each_line_goes_to_the_instrument_that_fits_it(tmp_path):
     _, _, tracks = midi_tracks(song(tmp_path))
-    a = assign(tracks, INSTRUMENTS)
+    a = assign(tracks, MEMBERS)
     assert a.transpose == 0  # everything already fits in C
     assert a.parts == {"glock": ("descant", 0), "bottles": ("melody", 0), "pianist": ("bass", 0)}
     assert a.fit == {"glock": 1.0, "bottles": 1.0, "pianist": 1.0}
-    two = assign(tracks, INSTRUMENTS[:2])
+    two = assign(tracks, MEMBERS[:2])
     assert two.unused == ["bass"]
 
 
 def test_whole_ensemble_plays_together_on_simulated_rigs(tmp_path):
+    """One score, a part per member; each part plays on its own rig from one clock."""
     tempo, signature, tracks = midi_tracks(song(tmp_path))
+    score, playing = build_score(tracks, MEMBERS, assign(tracks, MEMBERS), tempo, signature)
+    assert score.parts_played_by("bot") == ["bottles", "glock"]
+    assert score.parts_played_by("human") == ["pianist"]
+    assert score_problems(score, playing) == {"bottles": [], "glock": [], "pianist": []}
     rigs = {
         "bottles": SimulatedRig(BOTTLES),
         "glock": SimulatedRig(GLOCK),
-        "pianist": SimulatedRig(BOTTLES),
+        "pianist": SimulatedRig(BOTTLES),  # stands in for the strip over the keys
     }
-    devices = {name: [rig] for name, rig in rigs.items()}
-    players = build_players(
-        tracks, INSTRUMENTS, assign(tracks, INSTRUMENTS), tempo, signature, devices
-    )
-    for p in players:
-        if p.instrument.is_robot:
-            assert check_robot(p.score, p.instrument.robot, part="robot").ok
-    results = perform_ensemble(players, PIANO, VirtualClock(1_000_000))
+    routes = {name: [rig] for name, rig in rigs.items()}
+    perf = perform(score, routes, VirtualClock(1_000_000), instruments={**playing, **in_use(PIANO)})
     for rig in rigs.values():
         rig.run()
         assert rig.faults == []
@@ -88,9 +87,18 @@ def test_whole_ensemble_plays_together_on_simulated_rigs(tmp_path):
     assert rigs["bottles"].led_frames == []  # the lights belong to the pianist's strip
     # One clock: the descant's first note and the melody's first note land together.
     beat_us = 60 / 80 * 1e6
-    t0 = results["bottles"].start_us
     assert rigs["glock"].sounds[0].t_us == pytest.approx(rigs["bottles"].sounds[0].t_us, abs=1)
-    assert rigs["glock"].sounds[1].t_us == pytest.approx(t0 + 2 * beat_us, abs=2)
+    assert rigs["glock"].sounds[1].t_us == pytest.approx(perf.start_us + 2 * beat_us, abs=2)
+
+
+def test_two_bots_cannot_share_one_carriage(tmp_path):
+    tempo, signature, tracks = midi_tracks(song(tmp_path))
+    score, playing = build_score(tracks, MEMBERS, assign(tracks, MEMBERS), tempo, signature)
+    rig = SimulatedRig(BOTTLES)
+    with pytest.raises(ValueError, match="would drive the same device"):
+        perform(score, one_rig(score, [rig]), VirtualClock(), instruments=playing)
+    with pytest.raises(ValueError, match=r"no devices for part\(s\) \['pianist'\]"):
+        perform(score, {"bottles": [rig], "glock": []}, VirtualClock(), instruments=playing)
 
 
 def test_a_piece_in_d_is_moved_to_c_for_everyone():
@@ -98,7 +106,7 @@ def test_a_piece_in_d_is_moved_to_c_for_everyone():
         return [TrackNote(b, 1, p + k, 80) for b, p in notes]
 
     tracks = {"descant": up(DESCANT), "melody": up(MELODY), "bass": up(BASS)}
-    a = assign(tracks, INSTRUMENTS)
+    a = assign(tracks, MEMBERS)
     assert a.transpose == -2 and all(f == 1.0 for f in a.fit.values())
 
 

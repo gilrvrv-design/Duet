@@ -23,9 +23,10 @@ import time
 
 import pytest
 
-from duet.conductor import VirtualClock, perform
+from duet.conductor import VirtualClock, one_rig, perform
 from duet.device.clock import hub_now_us
 from duet.device.gateway import DeviceFault, DeviceGateway
+from duet.performers import in_use
 from duet.plans import HOME_STEPS
 from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import Estop, Heartbeat, Home, MoveAt, StrikeAt, parse_message
@@ -131,7 +132,12 @@ def test_the_firmware_plays_a_score_on_time(device_url):
         assert gateway.hello.device_id == "duet-rig-1"  # the firmware's own hello
         assert gateway.hello.board in ("native", "qemu")
         assert gateway.limits.travel_steps == 48000
-        perf = perform(score, robot, keyboard_profile(), [gateway], VirtualClock(hub_now_us()))
+        perf = perform(
+            score,
+            one_rig(score, [gateway]),
+            VirtualClock(hub_now_us()),
+            instruments=in_use(robot, keyboard_profile()),
+        )
         gateway.wait_acked()
         planned = [p for p in perf.planned if p.performer == "bot"]
         deadline = time.monotonic() + (planned[-1].t_us - hub_now_us()) / 1e6 + 5

@@ -4,10 +4,11 @@ import time
 
 import pytest
 
-from duet.conductor import VirtualClock, perform
+from duet.conductor import VirtualClock, one_rig, perform
 from duet.device.clock import SyncSample, best_sync, hub_now_us
 from duet.device.gateway import DeviceFault, DeviceGateway, DeviceMismatch
 from duet.device.sim_server import SimulatedDevice
+from duet.performers import in_use
 from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import (
     Ack,
@@ -115,7 +116,12 @@ def test_performance_over_the_socket_lands_on_time(device):
     score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
     with DeviceGateway(url) as gateway:
         # Real Hub timestamps, but no waiting: the device queues commands (FR-D4).
-        perf = perform(score, robot, piano, [gateway], VirtualClock(hub_now_us()))
+        perf = perform(
+            score,
+            one_rig(score, [gateway]),
+            VirtualClock(hub_now_us()),
+            instruments=in_use(robot, piano),
+        )
         gateway.wait_acked()
         assert gateway.errors == []
     sim.rig.run()
@@ -167,7 +173,12 @@ def test_conductor_waits_for_slow_homing(device):
     score = load_score(ROOT / "tests" / "data" / "two-notes.json")
     with DeviceGateway(url) as gateway:
         sent_home = hub_now_us()
-        perf = perform(score, robot_profile(), keyboard_profile(), [gateway], RealClock())
+        perf = perform(
+            score,
+            one_rig(score, [gateway]),
+            RealClock(),
+            instruments=in_use(robot_profile(), keyboard_profile()),
+        )
         gateway.wait_acked()
         assert gateway.telemetry.homed
     assert perf.start_us - sent_home > 600_000  # the count-in started after homing
@@ -188,7 +199,10 @@ def test_two_performances_with_the_same_plan_seqs_are_acked_apart(device):
     with DeviceGateway(url, profile=robot_profile()) as gateway:
         for _ in range(2):
             perform(
-                score, robot_profile(), keyboard_profile(), [gateway], VirtualClock(hub_now_us())
+                score,
+                one_rig(score, [gateway]),
+                VirtualClock(hub_now_us()),
+                instruments=in_use(robot_profile(), keyboard_profile()),
             )
             gateway.wait_acked()
         assert gateway.errors == [] and not gateway._unacked
@@ -252,7 +266,12 @@ def test_a_serial_line_link_plays_like_the_websocket(device):
     with DeviceGateway(url, profile=robot_profile()) as gateway:
         assert gateway.hello.device_id == "sim-1"
         assert abs(gateway.sync.offset_us - sim.clock_offset_us) < 2000
-        perform(score, robot_profile(), keyboard_profile(), [gateway], VirtualClock(hub_now_us()))
+        perform(
+            score,
+            one_rig(score, [gateway]),
+            VirtualClock(hub_now_us()),
+            instruments=in_use(robot_profile(), keyboard_profile()),
+        )
         gateway.wait_acked()
         assert gateway.errors == []
         assert any("POWERON_RESET" in line for line in gateway.console)

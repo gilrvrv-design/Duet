@@ -2,9 +2,10 @@ import statistics
 
 import pytest
 
-from duet.conductor import VirtualClock, perform
+from duet.conductor import VirtualClock, one_rig, perform
 from duet.follow import Follower, TempoPianist, max_speed_up
 from duet.listening import Expected, PlayedNote
+from duet.performers import in_use
 from duet.profile import keyboard_profile, robot_profile
 from duet.sim import SimulatedRig
 from helpers import make_score
@@ -49,7 +50,14 @@ def test_max_speed_up_comes_from_robot_slack():
 
 def perform_with(pianist):
     rig = SimulatedRig(ROBOT)
-    perf = perform(SCORE, ROBOT, PIANO, [rig], VirtualClock(1_000_000), keys=pianist, mode="follow")
+    perf = perform(
+        SCORE,
+        one_rig(SCORE, [rig]),
+        VirtualClock(1_000_000),
+        instruments=in_use(ROBOT, PIANO),
+        keys=pianist,
+        mode="follow",
+    )
     rig.run()
     return perf, rig
 
@@ -69,7 +77,9 @@ def test_robot_stays_with_a_pianist_who_changes_tempo(args):
 
 def test_without_follow_the_robot_drifts_away():
     rig = SimulatedRig(ROBOT)
-    perf = perform(SCORE, ROBOT, PIANO, [rig], VirtualClock(1_000_000))
+    perf = perform(
+        SCORE, one_rig(SCORE, [rig]), VirtualClock(1_000_000), instruments=in_use(ROBOT, PIANO)
+    )
     rig.run()
     pianist = TempoPianist(stretch=1.15)
     pianist.begin(perf.expected_pianist())

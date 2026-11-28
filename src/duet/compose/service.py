@@ -15,7 +15,7 @@ from duet.compose.draft import DraftError, draft_to_score, score_to_draft
 from duet.compose.prompts import feedback_message, request_message, system_prompt
 from duet.copyright import CopyrightGuard
 from duet.difficulty import check_pianist
-from duet.performers import human_difficulty, repair_bots, score_problems
+from duet.performers import human_difficulty, in_use, repair_bots, score_problems
 from duet.pitch import midi_to_name
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.progress import Progress, no_progress
@@ -155,7 +155,7 @@ def _converse(request, first_message, composer, robot, keyboard, max_rounds, pro
             problems = [str(exc)]
         else:
             best = (score, explanation)
-            found = score_problems(score, _in_use(robot, keyboard)).values()
+            found = score_problems(score, in_use(robot, keyboard)).values()
             problems = [p for part_problems in found for p in part_problems]
             if guard is not None:
                 problems += guard.check(score).problems()
@@ -184,15 +184,11 @@ def _duo(robot: RobotProfile, keyboard: KeyboardProfile) -> Duo:
     return Duo(bot_instrument=robot.id, human_instrument=keyboard.id)
 
 
-def _in_use(robot: RobotProfile, keyboard: KeyboardProfile) -> dict:
-    return {robot.id: robot.to_instrument(), keyboard.id: keyboard.to_instrument()}
-
-
 def _finish(best, robot, keyboard, rounds, history) -> CompositionResult:
     """Deterministic last resort: repair the bot's part, drop the person's notes that are
     off the keyboard or out of their range."""
     score, explanation = best
-    repaired = repair_bots(score, _in_use(robot, keyboard))
+    repaired = repair_bots(score, in_use(robot, keyboard))
     score = repaired.score
     human = score.part_played_by("human")
     low, high = score.parts[human].range or (keyboard.low, keyboard.high)

@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from duet.conductor import Clock, Device, home_all, perform
+from duet.conductor import Clock, Device, home_all, one_rig, perform
 from duet.kinematics import move_time_s
 from duet.listening import KeyInput, PlayedNote
+from duet.performers import in_use
 from duet.plans import HOME_STEPS, led_count
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import LedFrameAt, MoveAt
@@ -73,19 +74,20 @@ def call_and_response(
         kind, notes = responder.respond(phrase)
         reply_at = end
         if notes:
+            answer = reply_score(notes, tempo_bpm, robot, beats_per_bar)
+            bot = answer.part_played_by("bot")
             perf = perform(
-                reply_score(notes, tempo_bpm, robot, beats_per_bar),
-                robot,
-                keyboard,
-                devices,
+                answer,
+                one_rig(answer, devices),
                 clock,
+                instruments=in_use(robot, keyboard),
                 home=False,
                 count_in=False,
-                start_steps=position,
+                start_steps={bot: position},
                 start_at_us=end,
                 buffer_s=REPLY_BUFFER_S,
             )
-            position, reply_at = perf.end_steps, perf.start_us
+            position, reply_at = perf.end_steps[bot], perf.start_us
         session.turns.append(Turn(phrase, kind, notes, start, end, reply_at))
         start = reply_at + turn_beats * spb_us  # the pianist's next turn follows the answer
     session.played = list(keys.played)

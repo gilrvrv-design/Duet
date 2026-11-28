@@ -1,5 +1,6 @@
 from duet.cli import main
-from duet.conductor import State, VirtualClock, build_messages, perform
+from duet.conductor import State, VirtualClock, build_messages, one_rig, perform
+from duet.performers import in_use
 from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import Home, MoveAt, StrikeAt, message_time_us
 from duet.score import load_score
@@ -13,7 +14,8 @@ EXAMPLE = ROOT / "examples" / "rain-on-the-bottles.json"
 
 def test_messages_are_sorted_numbered_and_serialisable():
     score = make_score(robot=[(1, 1, 1, "C5"), (1, 3, 1, "G5")], pianist=[(1, 1, 2, "C4")])
-    messages, planned = build_messages(score, BOTTLES, PIANO, start_us=5_000_000)
+    program = build_messages(score, 5_000_000, instruments=in_use(BOTTLES, PIANO))
+    messages, planned = program.messages, program.planned
     times = [message_time_us(m) for m in messages]
     assert times == sorted(times)
     assert [m.seq for m in messages] == list(range(len(messages)))
@@ -26,7 +28,7 @@ def test_messages_are_sorted_numbered_and_serialisable():
 def test_simulated_performance_plays_every_note_on_time():
     score = load_score(EXAMPLE)
     rig = SimulatedRig(BOTTLES)
-    perf = perform(score, BOTTLES, PIANO, [rig], VirtualClock())
+    perf = perform(score, one_rig(score, [rig]), VirtualClock(), instruments=in_use(BOTTLES, PIANO))
     rig.run()
     assert rig.faults == []
     robot_planned = [p for p in perf.planned if p.performer == "bot"]

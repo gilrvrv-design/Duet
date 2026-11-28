@@ -122,7 +122,7 @@ flowchart TB
         compose["compose/<br/>Claude composer"]
         audio["audio/<br/>transcribe · arrange"]
         respond["respond<br/>call and response"]
-        ens["ensemble<br/>parts → instruments"]
+        ens["ensemble<br/>tracks → one score, a part per member"]
     end
 
     subgraph play["Playing"]
@@ -300,7 +300,13 @@ on the beat.
 
 ## The conductor
 
-The conductor turns plans into device messages and streams them ahead of time.
+The conductor turns plans into device messages and streams them ahead of time. Every
+part is played: each bot part's moves and strikes, each human part's light cues (the
+first human part's lights also count everyone in). ``routes`` say which devices play
+each part: ``one_rig(score, devices)`` for the usual single board, or a rig per part for
+an ensemble. Two bot parts on one device are refused: one carriage cannot be in two
+places. ``instruments`` are the ones in use (say, a calibrated rig), before the
+built-in ones.
 
 ```mermaid
 stateDiagram-v2

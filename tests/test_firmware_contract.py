@@ -8,7 +8,8 @@ import subprocess
 
 import pytest
 
-from duet.conductor import VirtualClock, perform
+from duet.conductor import VirtualClock, one_rig, perform
+from duet.performers import in_use
 from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import Home, MoveAt, StrikeAt
 from duet.repair import repair_robot
@@ -36,7 +37,12 @@ def firmware_cli():
 
 def hub_messages(score):
     recorder = Recorder()
-    perform(score, robot_profile(), keyboard_profile(), [recorder], VirtualClock(5_000_000))
+    perform(
+        score,
+        one_rig(score, [recorder]),
+        VirtualClock(5_000_000),
+        instruments=in_use(robot_profile(), keyboard_profile()),
+    )
     return recorder.messages
 
 
