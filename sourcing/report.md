@@ -15,12 +15,12 @@ Checked **2026-11-28**. Prices, tariffs and stock change. Every figure below is 
 - The cost is a joint: a connector between the two strip halves and a joiner in the rail.
 
 **2. Choose the price, the sales channel and the cost target together, because the brief's numbers do not fit yet.**
-- With the cheapest listed parts at 500 units, landed cost is **$57.90**. Of that, $14.59 is duty at 41.4%, $7.16 is air freight and $30.49 is parts.
-- At **$79 retail** that leaves 27% gross margin, and **12% after a 15% Amazon referral fee**. Amazon fulfilment fees aren't counted yet.
+- With the cheapest listed parts at 500 units, landed cost is **$62.96**. Of that, $16.07 is duty at 41.4%, $7.16 is air freight and $34.06 is parts (the printed parts alone are $10.45, now measured from the CAD).
+- At **$79 retail** that leaves 20% gross margin, and **5% after a 15% Amazon referral fee**. Amazon fulfilment fees aren't counted yet.
 - Pick one or more of these:
   - (a) Sell mainly on your own site.
-  - (b) Price at about $99. Margin after Amazon's fee is 26% at 500 units, still before fulfilment.
-  - (c) Bring the ex-factory cost down to about **$28** (for 40% gross margin selling direct at $79) or about **$19** (for 40% on Amazon at $79). It is now $35.23.
+  - (b) Price at about $99. Margin after Amazon's fee is 21% at 500 units, still before fulfilment.
+  - (c) Bring the ex-factory cost down to about **$28** (for 40% gross margin selling direct at $79) or about **$19** (for 40% on Amazon at $79). It is now $38.80.
 - Every $1 off the factory price saves $1.41 landed, because duty is charged on it.
 
 **3. Decide where the controller comes from.**
@@ -250,35 +250,35 @@ The model has two price levels at each volume:
 - **High:** page-verified distributor and retail prices for parts that meet the spec.
 - **Low:** the cheapest factory and marketplace listings found.
 
-Real quotes should land between them. Yellow cells are assumptions with no supplier price behind them; replace them with quotes. They account for $10.68–17.38 per unit before duty, depending on the column.
+Real quotes should land between them. Yellow cells are assumptions with no supplier price behind them; replace them with quotes. They account for $14.25–20.95 per unit before duty, depending on the column.
 
 | Per unit, USD | High @100 | High @500 | Low @100 | Low @500 |
 |---|---|---|---|---|
-| Parts cost | 71.08 | 70.09 | **30.49** | **30.49** |
-| Parts cost vs $35 target | +36.08 | +35.09 | −4.51 | −4.51 |
+| Parts cost | 74.65 | 73.67 | **34.06** | **34.06** |
+| Parts cost vs $35 target | +39.65 | +38.67 | −0.94 | −0.94 |
 | Box + assembly | 8.88 | 6.74 | 6.88 | 4.74 |
-| Ex-factory value | 79.96 | 76.83 | 37.37 | 35.23 |
+| Ex-factory value | 83.53 | 80.41 | 40.95 | 38.80 |
 | Air freight (0.85 kg chargeable × $8.40/kg) | 7.16 | 7.16 | 7.16 | 7.16 |
 | Forwarder fees (assumed $400 per shipment) | 4.00 | 0.80 | 4.00 | 0.80 |
-| Duty at 41.4% plus processing fee | 33.45 | 32.08 | 15.82 | 14.71 |
-| **Landed cost** | **124.56** | **116.87** | **64.34** | **57.90** |
+| Duty at 41.4% plus processing fee | 34.93 | 33.57 | 17.30 | 16.20 |
+| **Landed cost** | **129.62** | **121.94** | **69.40** | **62.96** |
 
 | Retail price | Gross margin, Low @500 | After 15% Amazon fee, Low @500 |
 |---|---|---|
-| $59 | $1.11 (1.9%) | −$7.75 |
-| $69 | $11.11 (16.1%) | $0.76 (1.1%) |
-| $79 | $21.11 (26.7%) | $9.26 (11.7%) |
-| $89 | $31.11 (34.9%) | $17.76 (19.9%) |
-| $99 | $41.11 (41.5%) | $26.26 (26.5%) |
+| $59 | −$3.96 (−6.7%) | −$12.81 |
+| $69 | $6.04 (8.7%) | −$4.31 |
+| $79 | $16.04 (20.3%) | $4.19 (5.3%) |
+| $89 | $26.04 (29.3%) | $12.69 (14.3%) |
+| $99 | $36.04 (36.4%) | $21.19 (21.4%) |
 
 **What the model says:**
-- The **$35 parts target is reachable only at factory prices** (Low: $30.49).
+- The **$35 parts target is only just reachable, and only at factory prices** (Low: $34.06).
 - **Landed cost is the real problem.** Duty adds about 41% on top of the factory price, and air freight about $7.
 - The High column is a ceiling rather than a real plan. Buying retail parts and then paying import duty again on them double-counts.
 
 **Biggest costs that can still come down:**
 1. Controller, $15–25. Your own board is the lever.
-2. Printed parts, about $6.88, an estimate. An injection mould can cut this at 500+ units.
+2. Printed parts, $10.45 (38 g of nylon from the CAD). At 500+ units an injection-moulded end cap (aluminum mould from about $1,500) should cut this to a few dollars including the mould; get quotes.
 3. Air freight, $7.16. Sea freight at 500 units.
 4. Duty, about 41% of the factory price. The only legal levers are classification, a binding ruling, first-sale valuation and exclusions. **Ask a customs broker; don't move assembly just for tariff reasons without legal advice.**
 
