@@ -11,9 +11,11 @@
 #include "duet_executor.hpp"
 #include "duet_features.hpp"
 #include "duet_midi.hpp"
+#include "duet_planner.hpp"
 #include "duet_protocol.hpp"
 #include "duet_queue.hpp"
 #include "duet_sim_hal.hpp"
+#include "duet_instrument_data.hpp"
 
 using namespace duet;
 
@@ -752,6 +754,187 @@ static void test_midi_warns_of_what_a_score_cannot_hold() {
                       }));
 }
 
+// The planner, on the rig's instruments: bottles-v1 (C5..C6, a diatonic octave) and
+// piano-88 under a 176-LED strip.
+static const CarriageInstrument& kBottles =
+    kCarriageInstruments[instrument_index(kCarriageInstruments, "bottles-v1")];
+static const KeyboardInstrument& kPiano88 =
+    kKeyboardInstruments[instrument_index(kKeyboardInstruments, "piano-88")];
+
+struct SongLines : SongSink {
+  std::vector<Command> commands;
+  void line(const char* json) override {
+    Command c;
+    CHECK(std::strlen(json) <= kMaxMessage && parse(json, c));
+    commands.push_back(c);
+  }
+  std::vector<Command> of(Type type) const {
+    std::vector<Command> out;
+    for (const Command& c : commands)
+      if (c.type == type) out.push_back(c);
+    return out;
+  }
+};
+
+static MidiScore duet_score(double tempo_bpm, int beats_per_bar = 4) {
+  MidiScore s;
+  s.tempo_bpm = tempo_bpm;
+  s.beats_per_bar = beats_per_bar;
+  return s;
+}
+
+static void bot(MidiScore& s, int32_t bar, double beat, uint8_t pitch, uint8_t vel = 80) {
+  s.events.push_back({beat, 0.25, bar, pitch, vel, DuoPart::Bot});
+}
+
+static void human(MidiScore& s, int32_t bar, double beat, uint8_t pitch) {
+  s.events.push_back({beat, 1.0, bar, pitch, 70, DuoPart::Human});
+}
+
+static SongLines plan(const MidiScore& s, const Channels& channels = kRig) {
+  SongLines song;
+  std::string why;
+  CHECK(plan_song(s, kBottles, kPiano88, channels, song, why));
+  CHECK(why.empty());
+  return song;
+}
+
+static std::string plan_refusal(const MidiScore& s, const Channels& channels = kRig) {
+  SongLines song;
+  std::string why;
+  CHECK(!plan_song(s, kBottles, kPiano88, channels, song, why));
+  CHECK(song.commands.empty());
+  return why;
+}
+
+static void test_planner_counts_in_then_plays_in_time_order() {
+  MidiScore s = duet_score(120, 3);
+  bot(s, 1, 1.0, 72);  // C5, the first bottle: a move from home, then a strike
+  SongLines song = plan(s);
+  const std::vector<Command>& c = song.commands;
+  for (size_t i = 0; i < c.size(); ++i) {
+    CHECK(c[i].seq == static_cast<int64_t>(i));
+    CHECK(i == 0 || c[i - 1].t_us <= c[i].t_us);
+    CHECK(c[i].ch == (c[i].type == Type::LedFrameAt ? 1 : 0));
+  }
+  CHECK(c[0].type == Type::LedFrameAt && c[0].t_us == 0);  // the count-in starts the song
+  // A bar's count-in in 3/4 at 120 bpm: the whole strip, a beat apart, half a beat each.
+  std::vector<Command> leds = song.of(Type::LedFrameAt);
+  std::vector<Command> count_in;
+  for (const Command& l : leds)
+    if (l.first == 0 && l.count == 176 && l.rgb[2] == 255) count_in.push_back(l);
+  CHECK(count_in.size() == 3);
+  for (size_t i = 1; i < count_in.size(); ++i)
+    CHECK(count_in[i].t_us - count_in[i - 1].t_us == 500000);
+  std::vector<Command> strikes = song.of(Type::StrikeAt);
+  CHECK(strikes.size() == 1);
+  // Bar 1 beat 1 sounds a bar after the count-in starts; the strike fires 12 ms early.
+  CHECK(strikes[0].t_us - count_in[0].t_us == 1500000 - 12000);
+  CHECK(strikes[0].pulse_us == 24405);  // velocity 80 of 1..127 over 15..30 ms
+  // The carriage leaves home just in time: 15 mm, a triangular move, then 15 ms to settle.
+  std::vector<Command> moves = song.of(Type::MoveAt);
+  CHECK(moves.size() == 1 && moves[0].target_steps == 1200);
+  CHECK(moves[0].v_max_mm_s == 500.0f && moves[0].a_max_mm_s2 == 5000.0f);
+  CHECK(strikes[0].t_us - moves[0].t_us == 124545);
+}
+
+static void test_planner_folds_notes_onto_bottles() {
+  MidiScore s = duet_score(60);
+  bot(s, 1, 1.0, 61);  // C#4: no bottle has a C#, so the nearest one, C5
+  bot(s, 2, 1.0, 96);  // C7: the same pitch class an octave down, C6
+  bot(s, 3, 1.0, 76);  // E5 is a bottle
+  std::vector<Command> moves = plan(s).of(Type::MoveAt);
+  CHECK(moves.size() == 3);
+  CHECK(moves[0].target_steps == 1200 && moves[1].target_steps == 46000);
+  CHECK(moves[2].target_steps == 14000);
+}
+
+static void test_planner_moves_a_too_fast_note_to_the_next_grid_point() {
+  // C5 to D5 takes 0.315 s; half a beat at 120 bpm is 0.25 s, so D5 waits a quarter beat.
+  MidiScore s = duet_score(120);
+  bot(s, 1, 1.0, 72);
+  bot(s, 1, 1.5, 74);
+  std::vector<Command> strikes = plan(s).of(Type::StrikeAt);
+  CHECK(strikes.size() == 2 && strikes[1].t_us - strikes[0].t_us == 375000);
+}
+
+static void test_planner_drops_a_note_it_cannot_reach() {
+  // C6 a quarter beat after C5 at 120 bpm: the carriage needs over a second, too far to
+  // move it; one drop in five notes is not enough to slow the piece down.
+  MidiScore s = duet_score(120);
+  for (int beat = 1; beat <= 4; ++beat) bot(s, 1, beat, 72);
+  bot(s, 1, 4.25, 84);
+  SongLines song = plan(s);
+  CHECK(song.of(Type::StrikeAt).size() == 4);
+  CHECK(song.of(Type::MoveAt).size() == 1);  // only from home: it never goes to C6
+}
+
+static void test_planner_drops_strikes_over_the_duty_limit() {
+  // G5 at full force every 0.125 s: the solenoid may be on 20% of any 10 s, which is 66
+  // pulses of 30 ms.
+  MidiScore s = duet_score(120);
+  for (int i = 0; i < 120; ++i) bot(s, 1 + i / 16, 1 + (i % 16) * 0.25, 79, 127);
+  std::vector<Command> strikes = plan(s).of(Type::StrikeAt);
+  CHECK(strikes.size() < 120);
+  for (size_t i = 0; i < strikes.size(); ++i) {
+    CHECK(strikes[i].pulse_us == 30000);
+    size_t in_window = 0;
+    for (size_t j = i; j < strikes.size() && strikes[j].t_us - strikes[i].t_us < 10000000; ++j)
+      ++in_window;
+    CHECK(in_window <= 66);
+  }
+}
+
+static void test_planner_slows_down_rather_than_drop_many_notes() {
+  // A scale in half beats at 120 bpm: every step comes too soon, and moving them drops
+  // too many, so the piece plays at the tempo that fits them all: 95 bpm.
+  MidiScore s = duet_score(120);
+  const uint8_t scale[] = {72, 74, 76, 77, 79, 81, 83, 84};
+  for (int i = 0; i < 8; ++i) bot(s, 1 + i / 8, 1 + (i % 8) * 0.5, scale[i]);
+  SongLines song = plan(s);
+  std::vector<Command> strikes = song.of(Type::StrikeAt);
+  CHECK(strikes.size() == 8);
+  for (size_t i = 1; i < strikes.size(); ++i) {
+    int64_t gap = strikes[i].t_us - strikes[i - 1].t_us;
+    CHECK(gap >= 315789 && gap <= 315790);  // half a beat at 95 bpm
+  }
+  CHECK(song.of(Type::LedFrameAt)[2].t_us - song.of(Type::LedFrameAt)[0].t_us == 631579);
+}
+
+static void test_planner_lights_the_keys_at_both_ends_of_the_keyboard() {
+  MidiScore s = duet_score(100);
+  human(s, 1, 1.0, 21);   // A0
+  human(s, 1, 3.0, 108);  // C8
+  std::vector<Command> keys;
+  for (const Command& c : plan(s).of(Type::LedFrameAt))
+    if (c.count != 176) keys.push_back(c);
+  // Each key: a dim cue a beat ahead, off, white while it sounds, off.
+  CHECK(keys.size() == 8);
+  for (const Command& c : keys) {
+    bool low = c.first == 1 && c.count == 2;
+    bool high = c.first == 174 && c.count == 2;  // the strip's last two LEDs
+    CHECK(low || high);
+  }
+  CHECK(keys[0].rgb[0] == 40 && keys[1].rgb[0] == 0 && keys[2].rgb[0] == 255);
+  CHECK(keys[1].t_us == keys[2].t_us);  // at the same time, the dim cue's end comes first
+  CHECK(plan_refusal([] {
+          MidiScore off = duet_score(100);
+          human(off, 1, 2.0, 109);
+          human(off, 1, 1.0, 20);  // the first in time is the one named
+          return off;
+        }()) == "key 20 is not on the keyboard");
+}
+
+static void test_planner_refuses_what_the_rig_cannot_store_or_play() {
+  MidiScore s = duet_score(200);
+  for (int i = 0; i < 1001; ++i) human(s, 1 + i / 4, 1 + i % 4, 60);
+  CHECK(plan_refusal(s) == "4012 commands; a stored song holds at most 4000");
+  static constexpr Channel kNoLeds[] = {{ChannelKind::CarriageStriker, 0}};
+  MidiScore one = duet_score(100);
+  bot(one, 1, 1.0, 72);
+  CHECK(plan_refusal(one, Channels{kNoLeds, 1}) == "the rig has no channel for: led_strip");
+}
+
 int main() {
   test_parse();
   test_queue_orders_by_time();
@@ -785,6 +968,14 @@ int main() {
   test_midi_named_tracks_win_over_pitch();
   test_midi_one_track_is_split_by_skyline();
   test_midi_warns_of_what_a_score_cannot_hold();
+  test_planner_counts_in_then_plays_in_time_order();
+  test_planner_folds_notes_onto_bottles();
+  test_planner_moves_a_too_fast_note_to_the_next_grid_point();
+  test_planner_drops_a_note_it_cannot_reach();
+  test_planner_drops_strikes_over_the_duty_limit();
+  test_planner_slows_down_rather_than_drop_many_notes();
+  test_planner_lights_the_keys_at_both_ends_of_the_keyboard();
+  test_planner_refuses_what_the_rig_cannot_store_or_play();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

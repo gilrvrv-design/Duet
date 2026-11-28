@@ -13,10 +13,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from duet.conductor import build_messages
-from duet.performers import Bot, in_use, performers
+from duet.performers import Bot, Human, in_use, performers
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import CHANNEL_KIND, TITLE_BYTES, Message, message_time_us
 from duet.score import DuetScore
+from duet.timing import timed_events
 
 SLOTS = 8  # firmware kSongSlots
 MAX_LINES = 4000  # firmware kMaxSongLines
@@ -66,6 +67,11 @@ def compile_song(
     carriages = [p.part for p in performers(score, playing) if isinstance(p, Bot) and p.moves]
     if len(carriages) > 1:
         raise SongError(f"a stored song plays on one device, which has one carriage: {carriages}")
+    for p in (p for p in performers(score, playing) if isinstance(p, Human)):
+        # The light guide shows only the keyboard's keys.
+        off = [t for t in timed_events(score, p.part) if not p.profile.contains(t.event.pitch)]
+        if off:
+            raise SongError(f"key {off[0].event.pitch} is not on the keyboard")
     messages = build_messages(score, 0, instruments=playing, count_in=count_in).messages
     if not messages:
         raise SongError("the score has nothing to play")

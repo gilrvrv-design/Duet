@@ -2,10 +2,10 @@
 CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Werror
 CORE := lib/duet_core/src
-SRCS := $(addprefix $(CORE)/,duet_protocol.cpp duet_executor.cpp duet_device.cpp duet_api.cpp duet_json.cpp duet_settings.cpp duet_midi.cpp)
+SRCS := $(addprefix $(CORE)/,duet_protocol.cpp duet_executor.cpp duet_device.cpp duet_api.cpp duet_json.cpp duet_settings.cpp duet_midi.cpp duet_planner.cpp)
 INC := -I$(CORE)
 
-.PHONY: test clean qemu-image device
+.PHONY: test clean qemu-image device instruments
 test: build/test_core build/duet_core_cli build/duet_device
 	./build/test_core
 
@@ -13,9 +13,9 @@ build/test_core: test/native/test_core.cpp $(SRCS) $(wildcard $(CORE)/*.hpp)
 	@mkdir -p build
 	$(CXX) $(CXXFLAGS) $(INC) -o $@ test/native/test_core.cpp $(SRCS)
 
-build/duet_core_cli: test/native/duet_core_cli.cpp $(SRCS) $(wildcard $(CORE)/*.hpp)
+build/duet_core_cli: test/native/duet_core_cli.cpp src/rig.h $(SRCS) $(wildcard $(CORE)/*.hpp)
 	@mkdir -p build
-	$(CXX) $(CXXFLAGS) $(INC) -o $@ test/native/duet_core_cli.cpp $(SRCS)
+	$(CXX) $(CXXFLAGS) $(INC) -Isrc -o $@ test/native/duet_core_cli.cpp $(SRCS)
 
 # A 4 MB flash image of the QEMU build (env:qemu) for Espressif's ESP32 emulator.
 PIO ?= pio
@@ -40,6 +40,14 @@ build/duet_device: host/duet_device.cpp host/http_server.hpp build/gen/web_asset
 # The web app, compiled into the firmware (tools/embed_web.py).
 build/gen/web_assets.h: tools/embed_web.py $(wildcard web/*)
 	python3 tools/embed_web.py web $@
+
+# The planner's instruments, from the Hub's instrument files, read by the Hub's own
+# loader (tools/embed_instruments.py). The header is committed, so building the firmware
+# needs no Python packages; run this after changing an instrument file. make check
+# fails while the header is out of date (tests/test_planner_contract.py).
+INSTRUMENTS := $(CORE)/duet_instrument_data.hpp
+instruments:
+	../.venv/bin/python tools/embed_instruments.py ../src/duet/profiles $(INSTRUMENTS)
 
 clean:
 	rm -rf build

@@ -175,7 +175,7 @@ def check_robot(
                 )
             )
             continue
-        if gap.gap_s < needed:
+        if gap.gap_s < needed - EPSILON:  # as repair: float noise is not a shortfall
             source = midi_to_name(profile.pitches[prev.bottle])
             report.violations.append(
                 Violation(

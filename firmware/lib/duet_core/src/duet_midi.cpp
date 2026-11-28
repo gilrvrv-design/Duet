@@ -1,10 +1,10 @@
 #include "duet_midi.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
+
+#include "duet_pymath.hpp"
 
 namespace duet {
 namespace {
@@ -12,27 +12,10 @@ namespace {
 constexpr uint32_t kDefaultTempoUs = 500000;  // MIDI's default: 120 bpm in quarter notes
 constexpr double kMinTempoBpm = 20.0;         // duet.score: exclusive
 constexpr double kMaxTempoBpm = 300.0;        // inclusive
-constexpr double kEpsilon = 1e-9;             // duet.timing.EPSILON
 constexpr double kMinDur = 1.0 / 64;          // in beats, for a note released at once
 // A released note takes at least six bytes: a delta and two data bytes to start it
 // (under running status), as many to release it.
 constexpr size_t kMinNoteBytes = 6;
-
-// Python's round(x, digits): the decimal correctly rounded from x's exact value, ties
-// to even, read back as a double. printf's %f and strtod do just that (glibc, newlib).
-double py_round(double x, int digits) {
-  char buf[48];  // ample: positions stay below 2^30 beats, tempos below 2^28 bpm
-  std::snprintf(buf, sizeof buf, "%.*f", digits, x);
-  return std::strtod(buf, nullptr);
-}
-
-// Python's x // w for positive floats (CPython's _float_div_mod), which can differ from
-// floor(x / w) when the quotient rounds to a whole number.
-double py_floor_div(double x, double w) {
-  double div = (x - std::fmod(x, w)) / w;
-  double whole = std::floor(div);
-  return div - whole > 0.5 ? whole + 1.0 : whole;
-}
 
 // What str.isspace() is true of in Latin-1, the charset mido decodes track names with.
 bool py_space(uint8_t c) {
@@ -366,12 +349,8 @@ bool read_midi(const uint8_t* data, size_t size, MidiScore& score, std::string& 
   for (const Note& n : smf.notes) {
     double start = to_beats(n.start);
     double dur = std::max(to_beats(n.end) - start, kMinDur);
-    // duet.timing.bar_and_beat
-    double bar = py_floor_div(start + kEpsilon, beats);
-    double beat = start - bar * beats;
-    if (std::fabs(beat) < kEpsilon) beat = 0.0;
-    score.events.push_back({py_round(beat + 1, 6), py_round(dur, 6),
-                            static_cast<int32_t>(bar) + 1, n.pitch, n.vel, n.part});
+    BarBeat at = bar_and_beat(start, beats);
+    score.events.push_back({at.beat, py_round(dur, 6), at.bar, n.pitch, n.vel, n.part});
   }
 
   score.beats_per_bar = beats;

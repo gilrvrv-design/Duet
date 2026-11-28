@@ -9,6 +9,10 @@
 //
 // --midi <file>: the duet the core makes of a MIDI file, as one JSON object (or
 // {"error": reason}, exit status 1), for tests/test_midi_contract.py.
+//
+// --song <file> [instrument]: the song the planner makes of a MIDI file for the rig (its
+// carriage instrument, rig.h's PROFILE_ID unless named, and piano-88), one command per
+// line (or {"error": reason}, exit status 1), for tests/test_planner_contract.py.
 #include <algorithm>
 #include <cinttypes>
 #include <cstdio>
@@ -23,7 +27,10 @@
 #include "duet_features.hpp"
 #include "duet_json.hpp"
 #include "duet_midi.hpp"
+#include "duet_planner.hpp"
 #include "duet_sim_hal.hpp"
+#include "duet_instrument_data.hpp"  // generated from the Hub's instrument files
+#include "rig.h"
 
 using namespace duet;
 
@@ -42,15 +49,26 @@ struct Print : Sink {
   }
 };
 
-static int print_midi(const char* path) {
+static constexpr int kRigInstrument = instrument_index(kCarriageInstruments, PROFILE_ID);
+static_assert(kRigInstrument >= 0, "rig.h's PROFILE_ID names no carriage instrument");
+static constexpr int kPiano = instrument_index(kKeyboardInstruments, "piano-88");
+static_assert(kPiano >= 0, "no piano-88 among the instruments");
+
+static int refuse(const std::string& why) {
+  std::printf("{\"error\":%s}\n", json_string(why).c_str());
+  return 1;
+}
+
+static bool read_file(const char* path, MidiScore& score, std::string& why) {
   std::ifstream file(path, std::ios::binary);
   std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), {});
+  return read_midi(bytes.data(), bytes.size(), score, why);
+}
+
+static int print_midi(const char* path) {
   MidiScore score;
   std::string why;
-  if (!read_midi(bytes.data(), bytes.size(), score, why)) {
-    std::printf("{\"error\":%s}\n", json_string(why).c_str());
-    return 1;
-  }
+  if (!read_file(path, score, why)) return refuse(why);
   // %.17g: every double reads back exactly.
   std::printf("{\"tempo_bpm\":%.17g,\"time_signature\":[%d,%d],\"warnings\":[", score.tempo_bpm,
               score.beats_per_bar, score.beat_unit);
@@ -68,8 +86,27 @@ static int print_midi(const char* path) {
   return 0;
 }
 
+struct PrintLines : SongSink {
+  void line(const char* json) override { std::printf("%s\n", json); }
+};
+
+static int print_song(const char* path, const char* instrument) {
+  int robot = instrument_index(kCarriageInstruments, instrument);
+  if (robot < 0) return refuse(std::string("no carriage instrument ") + instrument);
+  MidiScore score;
+  std::string why;
+  PrintLines out;
+  const KeyboardInstrument& piano = kKeyboardInstruments[kPiano];
+  if (!read_file(path, score, why) ||
+      !plan_song(score, kCarriageInstruments[robot], piano, kRig, out, why))
+    return refuse(why);
+  return 0;
+}
+
 int main(int argc, char** argv) {
   if (argc > 2 && std::string(argv[1]) == "--midi") return print_midi(argv[2]);
+  if (argc > 2 && std::string(argv[1]) == "--song")
+    return print_song(argv[2], argc > 3 ? argv[3] : PROFILE_ID);
   if (argc > 1 && std::string(argv[1]) == "--channels") {  // the rig's channels and limits
     char buf[kMaxMessage + 1];
     for (size_t ch = 0; ch < kRig.count; ++ch) {
