@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
   for (auto& e : hal.events) {
     if (e.kind[0] == 's')
       std::printf("{\"event\":\"strike\",\"t_us\":%" PRId64 ",\"position\":%d}\n", e.t_us, e.a);
-    else
+    else if (e.kind[0] == 'l')
       std::printf("{\"event\":\"led\",\"t_us\":%" PRId64 ",\"first\":%d,\"count\":%d}\n", e.t_us,
                   e.a, e.b);
   }

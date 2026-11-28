@@ -10,9 +10,11 @@ namespace duet {
 
 class LineReader {
  public:
-  // Feed one received character. A complete line goes to the executor; a line longer
-  // than a message can be is read to its end and refused whole, never acted on in part.
-  void feed(char c, Executor& executor, int64_t now_us) {
+  // Feed one received character. A complete line goes to the target (an Executor or a
+  // Device); a line longer than a message can be is read to its end and refused whole,
+  // never acted on in part.
+  template <class Target>
+  void feed(char c, Target& executor, int64_t now_us) {
     if (c == '\n') {
       line_[len_] = '\0';
       if (too_long_) {

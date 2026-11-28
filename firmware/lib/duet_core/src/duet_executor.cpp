@@ -72,17 +72,12 @@ void Executor::on_message(const char* json, int64_t now_us) {
     return;
   }
   if (c.type == Type::Home) {
-    queue_.clear();
-    homed_ = false;
-    homing_ = true;
-    homing_started_us_ = now_us;
     ack(c.seq, "ok");
-    if (hal_.home_sensor()) {
-      finish_homing();
-    } else {
-      hal_.move_to(-cfg_.travel_steps * 2, cfg_.homing_speed_steps_s,
-                   cfg_.homing_speed_steps_s * 4.0f);
-    }
+    start_homing(now_us);
+    return;
+  }
+  if (!c.timed()) {  // song, play and stop are handled by duet::Device, not here
+    ack(c.seq, "error: not supported");
     return;
   }
   if (!queue_.push(c)) {
@@ -91,6 +86,35 @@ void Executor::on_message(const char* json, int64_t now_us) {
   }
   ack(c.seq, "ok");
 }
+
+void Executor::start_homing(int64_t now_us) {
+  queue_.clear();
+  homed_ = false;
+  homing_ = true;
+  homing_started_us_ = now_us;
+  if (hal_.home_sensor()) {
+    finish_homing();
+  } else {
+    hal_.move_to(-cfg_.travel_steps * 2, cfg_.homing_speed_steps_s,
+                 cfg_.homing_speed_steps_s * 4.0f);
+  }
+}
+
+bool Executor::submit(const Command& c) {
+  if (estopped_ || !c.timed()) return false;
+  return queue_.push(c);
+}
+
+void Executor::cancel() {
+  queue_.clear();
+  hal_.stop();
+  hal_.solenoid(false);
+  hal_.led_clear();  // a stopped song must not leave a key lit
+  pulse_end_us_ = -1;
+  homing_ = false;
+}
+
+void Executor::keepalive(int64_t now_us) { last_message_us_ = now_us; }
 
 void Executor::poll(int64_t now_us) {
   if (pulse_end_us_ >= 0 && now_us >= pulse_end_us_) {

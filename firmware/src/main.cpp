@@ -68,6 +68,10 @@ class Esp32Hal : public duet::Hal {
     strip_.fill(Adafruit_NeoPixel::Color(r, g, b), first, count);
   }
   void led_show() override { strip_.show(); }
+  void led_clear() override {
+    strip_.clear();
+    strip_.show();
+  }
 
  private:
   FastAccelStepperEngine engine_;

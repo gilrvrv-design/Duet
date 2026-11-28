@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "duet_protocol.hpp"
 #include "duet_queue.hpp"
@@ -195,6 +196,146 @@ static void test_time_ping() {
   CHECK(out.has(R"({"type":"time_pong","seq":9,"t1":111,"t2":5555,"t3":5555})"));
 }
 
+// Play from memory -------------------------------------------------------------
+
+struct Rig {
+  SimHal hal;
+  Capture out;
+  Executor ex{hal, out};
+  MemorySongStore store;
+  Device dev{ex, store, out};
+
+  void msg(const char* json) { dev.on_message(json, hal.now_us); }
+  void run_until(int64_t t_us) {
+    for (; hal.now_us <= t_us; hal.now_us += 50) dev.poll(hal.now_us);
+  }
+  int strikes() const {
+    int n = 0;
+    for (auto& e : hal.events) n += e.kind[0] == 's';
+    return n;
+  }
+  const SimEvent* first_strike() const {
+    for (auto& e : hal.events)
+      if (e.kind[0] == 's') return &e;
+    return nullptr;
+  }
+};
+
+// A tiny song: move to 6400 steps at 0.1 s, strike at 0.5 s, light a key at 0.5 s.
+static const char* kSong[] = {
+    R"({"type":"move_at","seq":0,"t_us":100000,"target_steps":6400,"v_max_mm_s":500.0,"a_max_mm_s2":5000.0})",
+    R"({"type":"strike_at","seq":1,"t_us":500000,"pulse_us":20000})",
+    R"({"type":"led_frame_at","seq":2,"t_us":500000,"first":10,"count":2,"rgb":[255,255,255]})",
+};
+
+static void upload(Rig& r, int slot, int seq = 7) {
+  char header[96];
+  std::snprintf(header, sizeof header, R"({"type":"song","seq":%d,"slot":%d,"lines":3})", seq,
+                slot);
+  r.msg(header);
+  r.msg(kSong[0]);
+  r.msg(R"({"type":"heartbeat","seq":0})");  // the Hub's heartbeats go on during uploads
+  r.msg(kSong[1]);
+  size_t replies = r.out.sent.size();
+  r.msg(kSong[2]);
+  CHECK(r.out.sent.size() == replies + 1);  // one ack, only after the last line
+}
+
+static void test_upload_then_play_from_memory() {
+  Rig r;
+  r.hal.place(4000);  // power-on: not homed, away from home
+  upload(r, 2);
+  CHECK(r.out.has(R"({"type":"ack","seq":7,"status":"ok"})"));
+  CHECK(r.store.has(2) && !r.store.has(0));
+  CHECK(r.strikes() == 0);  // stored, not played
+
+  r.msg(R"({"type":"play","seq":8,"slot":2})");
+  CHECK(r.out.has(R"({"type":"ack","seq":8,"status":"ok"})") && r.dev.playing());
+  while (!r.ex.homed() && r.hal.now_us < 3000000) r.run_until(r.hal.now_us);
+  int64_t homed_at = r.hal.now_us;
+  r.run_until(5000000);
+  CHECK(r.ex.homed() && !r.dev.playing());  // homed by itself, played, finished
+  CHECK(r.strikes() == 1);
+  const SimEvent* s = r.first_strike();
+  CHECK(s && s->a == 6400);  // on the bottle the song moved to
+  // The song's t_us 0 is the lead after homing; the strike is at t_us 0.5 s.
+  int64_t due = homed_at + kPlayLeadUs + 500000;
+  CHECK(s && s->t_us >= due && s->t_us <= due + 200);
+  CHECK(!r.out.has("fault"));
+}
+
+static void test_a_bad_song_is_refused_whole() {
+  Rig r;
+  r.msg(R"({"type":"song","seq":3,"slot":0,"lines":2})");
+  r.msg(kSong[0]);
+  r.msg(R"({"type":"strike_at","seq":1,"t_us":-5,"pulse_us":20000})");  // before the start
+  CHECK(r.out.has(R"({"type":"ack","seq":3,"status":"error: bad song line"})"));
+  CHECK(!r.store.has(0));
+  r.msg(R"({"type":"play","seq":4,"slot":0})");
+  CHECK(r.out.has(R"({"type":"ack","seq":4,"status":"error: no song in that slot"})"));
+  r.msg(R"({"type":"song","seq":5,"slot":9,"lines":2})");
+  CHECK(r.out.has(R"({"type":"ack","seq":5,"status":"error: bad song slot"})"));
+  r.msg(R"({"type":"song","seq":6,"slot":1,"lines":0})");
+  CHECK(r.out.has(R"({"type":"ack","seq":6,"status":"error: bad song length"})"));
+}
+
+static void test_a_stalled_upload_is_dropped() {
+  Rig r;
+  r.msg(R"({"type":"song","seq":3,"slot":0,"lines":3})");
+  r.msg(kSong[0]);
+  r.run_until(kUploadTimeoutUs + 1000);
+  CHECK(r.out.has(R"({"type":"ack","seq":3,"status":"error: upload stalled"})"));
+  CHECK(!r.store.has(0));
+  // Timed commands are live commands again, not song lines.
+  r.msg(R"({"type":"strike_at","seq":4,"t_us":99999999,"pulse_us":20000})");
+  CHECK(r.out.has(R"({"type":"ack","seq":4,"status":"ok"})") && r.ex.queued() == 1);
+}
+
+static void test_the_button_plays_the_next_song_and_stops() {
+  Rig r;
+  upload(r, 1, 7);
+  upload(r, 4, 8);
+  r.dev.button(r.hal.now_us);
+  CHECK(r.dev.playing() && r.dev.slot() == 1);
+  r.run_until(r.hal.now_us + 200000);
+  r.dev.button(r.hal.now_us);  // a press while playing stops
+  CHECK(!r.dev.playing() && r.ex.queued() == 0);
+  bool cleared = false;
+  for (auto& e : r.hal.events) cleared = cleared || e.kind[0] == 'c';
+  CHECK(cleared);  // no key left lit
+  r.dev.button(r.hal.now_us);
+  CHECK(r.dev.playing() && r.dev.slot() == 4);  // the next stored song
+  r.run_until(r.hal.now_us + 5000000);
+  r.dev.button(r.hal.now_us);
+  CHECK(r.dev.slot() == 1);  // and round again
+}
+
+static void test_no_watchdog_stop_while_playing_from_memory() {
+  // A slow move: 6400 steps at 10 mm/s (800 steps/s) takes 8 s.
+  Rig r;
+  r.msg(R"({"type":"song","seq":1,"slot":0,"lines":1})");
+  r.msg(R"({"type":"move_at","seq":0,"t_us":0,"target_steps":6400,"v_max_mm_s":10.0,"a_max_mm_s2":5000.0})");
+  r.msg(R"({"type":"play","seq":2,"slot":0})");
+  r.run_until(3000000);  // seconds with no Hub message, the carriage moving all along
+  CHECK(r.hal.is_moving() && r.dev.playing() && !r.out.has("WATCHDOG"));
+  r.run_until(10000000);
+  CHECK(!r.dev.playing() && r.hal.position() == 6400 && r.ex.homed());
+}
+
+static void test_playing_from_memory_keeps_the_rig_safe() {
+  Rig r;
+  upload(r, 0);
+  r.msg(R"({"type":"play","seq":8,"slot":0})");
+  r.msg(R"({"type":"strike_at","seq":9,"t_us":1,"pulse_us":20000})");  // the Hub interrupts
+  CHECK(r.out.has(R"({"type":"ack","seq":9,"status":"error: playing from memory"})"));
+  r.msg(R"({"type":"play","seq":10,"slot":0})");
+  CHECK(r.out.has(R"({"type":"ack","seq":10,"status":"error: already playing"})"));
+  r.msg(R"({"type":"estop","seq":11})");
+  CHECK(!r.dev.playing() && r.ex.estopped());
+  r.msg(R"({"type":"play","seq":12,"slot":0})");
+  CHECK(r.out.has(R"({"type":"ack","seq":12,"status":"error: emergency stop"})"));
+}
+
 int main() {
   test_parse();
   test_queue_orders_by_time();
@@ -205,6 +346,12 @@ int main() {
   test_duty_cannot_be_bypassed_with_short_pulses();
   test_hello_reports_limits_and_oversize_is_rejected();
   test_time_ping();
+  test_upload_then_play_from_memory();
+  test_a_bad_song_is_refused_whole();
+  test_a_stalled_upload_is_dropped();
+  test_the_button_plays_the_next_song_and_stops();
+  test_no_watchdog_stop_while_playing_from_memory();
+  test_playing_from_memory_keeps_the_rig_safe();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

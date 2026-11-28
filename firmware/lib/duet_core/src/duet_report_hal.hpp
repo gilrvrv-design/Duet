@@ -29,6 +29,11 @@ class ReportingHal : public SimHal {
                   (long long)now_us, first, count, r, g, b);
     out_(line);
   }
+  void led_clear() override {
+    char line[48];
+    std::snprintf(line, sizeof line, "# led clear t_us=%lld", (long long)now_us);
+    out_(line);
+  }
 
  private:
   Out out_;

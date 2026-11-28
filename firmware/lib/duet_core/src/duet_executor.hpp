@@ -38,7 +38,19 @@ class Executor {
   const Config& config() const { return cfg_; }
   void poll(int64_t now_us);  // call as often as possible (every loop iteration)
 
+  // For commands that come from the device itself (playing a stored song) instead of
+  // the Hub. Every safety rule still applies once a command is queued.
+  bool submit(const Command& c);   // queue a timed command; false if refused
+  void start_homing(int64_t now_us);
+  void cancel();                   // drop the queue, stop the carriage and the solenoid
+  void keepalive(int64_t now_us);  // the device is its own conductor: no watchdog stop
+
   bool homed() const { return homed_; }
+  bool homing() const { return homing_; }
+  // Nothing queued and nothing running: no move, no homing, no solenoid pulse.
+  bool at_rest() const {
+    return queue_.empty() && !homing_ && !hal_.is_moving() && pulse_end_us_ < 0;
+  }
   bool estopped() const { return estopped_; }
   size_t queued() const { return queue_.size(); }
   const Stats& stats() const { return stats_; }

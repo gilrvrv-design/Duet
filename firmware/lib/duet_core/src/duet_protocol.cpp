@@ -60,6 +60,19 @@ bool parse(const char* json, Command& out) {
     out.type = Type::Heartbeat;
   } else if (type_is(json, "estop")) {
     out.type = Type::Estop;
+  } else if (type_is(json, "song")) {
+    int64_t slot = 0, lines = 0;
+    if (!get_int(json, "slot", slot) || !get_int(json, "lines", lines)) return false;
+    out.slot = static_cast<int32_t>(slot);
+    out.lines = static_cast<int32_t>(lines);
+    out.type = Type::Song;
+  } else if (type_is(json, "play")) {
+    int64_t slot = 0;
+    if (!get_int(json, "slot", slot)) return false;
+    out.slot = static_cast<int32_t>(slot);
+    out.type = Type::Play;
+  } else if (type_is(json, "stop")) {
+    out.type = Type::Stop;
   } else if (type_is(json, "time_ping")) {
     if (!get_int(json, "t1", out.t1)) return false;
     out.type = Type::TimePing;

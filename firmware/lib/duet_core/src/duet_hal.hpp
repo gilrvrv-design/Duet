@@ -17,6 +17,7 @@ class Hal {
   virtual void solenoid(bool on) = 0;
   virtual void led_fill(int first, int count, uint8_t r, uint8_t g, uint8_t b) = 0;
   virtual void led_show() = 0;
+  virtual void led_clear() = 0;  // every LED off, shown at once
 };
 
 }  // namespace duet

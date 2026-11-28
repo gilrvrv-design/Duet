@@ -21,6 +21,9 @@ enum class Type : uint8_t {
   Estop,
   TimePing,
   Heartbeat,  // proof of life from the Hub; keeps the watchdog quiet, never acked
+  Song,       // the next `lines` timed commands are a song to store in `slot`
+  Play,       // play the song stored in `slot` from memory
+  Stop,       // stop playing from memory
 };
 
 struct Command {
@@ -35,6 +38,8 @@ struct Command {
   int32_t count = 0;
   uint8_t rgb[3] = {0, 0, 0};
   int64_t t1 = 0;
+  int32_t slot = 0;   // song, play
+  int32_t lines = 0;  // song
 
   bool timed() const {
     return type == Type::MoveAt || type == Type::StrikeAt || type == Type::LedFrameAt;
