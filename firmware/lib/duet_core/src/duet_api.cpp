@@ -6,14 +6,13 @@
 #include <cstring>
 
 #include "duet_json.hpp"
+#include "duet_midi.hpp"  // kMaxMidiBytes only: the planner is linked only if installed
 
 namespace duet {
 
 namespace {
 
-Response error(int status, const char* why) {
-  return {status, std::string("{\"error\":\"") + why + "\"}"};
-}
+Response error(int status, const char* why) { return refused(status, why); }
 
 const Response kOk{200, "{\"ok\":true}"};
 
@@ -30,6 +29,10 @@ int song_slot(const char* path, const char* rest) {
 }
 
 }  // namespace
+
+Response refused(int status, const std::string& why) {
+  return {status, "{\"error\":" + json_string(why) + "}"};
+}
 
 Response Api::handle(const char* method, const char* path, const char* body, int64_t now_us) {
   bool get = std::strcmp(method, "GET") == 0;
@@ -71,12 +74,18 @@ Response Api::handle(const char* method, const char* path, const char* body, int
   return error(404, "no such path");
 }
 
-Response Api::begin_upload(const char* path) {
-  int slot = song_slot(path, "");
+Response Api::begin_upload(const char* path, const std::string& title) {
+  int midi_slot = song_slot(path, "/midi");
+  int slot = midi_slot >= 0 ? midi_slot : song_slot(path, "");
   if (slot < 0) return error(404, "no such path");
+  if (midi_slot >= 0 && !planner_) return error(404, "this board has no MIDI planner");
+  if (midi_slot >= 0 && !valid_song_title(title)) return error(400, "bad song title");
   if (device_.writing_song()) return error(409, "another song is being stored");
   if (!device_.at_rest()) return error(409, "the rig is busy playing");
   upload_slot_ = slot;
+  upload_midi_ = midi_slot >= 0;
+  midi_title_ = title;
+  midi_.clear();
   upload_lines_ = 0;
   first_bad_line_ = 0;
   failed_status_ = 0;
@@ -86,6 +95,14 @@ Response Api::begin_upload(const char* path) {
 }
 
 void Api::upload_data(const char* data, size_t n) {
+  if (upload_midi_) {
+    if (midi_.size() + n > kMaxMidiBytes)
+      upload_failed(413, ("the file is larger than " + std::to_string(kMaxMidiBytes) +
+                          " bytes").c_str());
+    else if (!failed_status_)
+      midi_.insert(midi_.end(), data, data + n);
+    return;
+  }
   for (size_t i = 0; i < n; ++i) {
     char c = data[i];
     if (c == '\n') {
@@ -122,6 +139,14 @@ void Api::upload_failed(int status, const char* why) {
 }
 
 Response Api::end_upload() {
+  if (upload_midi_) {
+    int slot = upload_slot_;
+    upload_slot_ = -1;
+    std::vector<uint8_t> midi;
+    midi.swap(midi_);  // freed on return: the planner needs the room
+    if (failed_status_) return error(failed_status_, failed_why_.c_str());
+    return planner_->plan_midi(midi, midi_title_, slot);
+  }
   if (!line_.empty() || line_too_long_) upload_line();  // the last line had no newline
   upload_slot_ = -1;
   if (failed_status_) return error(failed_status_, failed_why_.c_str());
@@ -135,7 +160,8 @@ Response Api::end_upload() {
 
 void Api::abort_upload() {
   if (upload_slot_ < 0) return;
-  if (!failed_status_ && upload_lines_ > 0) device_.abort_song();
+  if (!upload_midi_ && !failed_status_ && upload_lines_ > 0) device_.abort_song();
+  std::vector<uint8_t>().swap(midi_);
   upload_slot_ = -1;
 }
 

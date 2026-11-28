@@ -11,6 +11,27 @@ firmware gzipped, so a board serves it from program flash. It shows what the boa
 can do and what it cannot, and plays and stops the stored songs.
 `tests/test_web_app.py` drives it in Chromium against the native device.
 
+## The planner module
+
+The planner is an optional module. With it, a MIDI file goes onto the rig with no Hub and
+no server: the device reads it (`duet_midi`) and plans it (`duet_planner`). It makes
+exactly the song the Hub would make of it, which `tests/test_midi_contract.py` and
+`tests/test_planner_contract.py` check on hundreds of files. It plans for the rig's own
+instruments (`PROFILE_ID` and `KEYBOARD_ID` in `firmware/src/rig.h`). Their data is
+compiled in from the Hub's instrument files, so a rig's own calibration still goes
+through the Hub (`duet --robot calibrated.yaml song ...`).
+
+Whoever builds the firmware chooses whether to install it. It adds about 40 KB of
+program and, while it plans, up to about 150 KB of RAM:
+
+```bash
+cd firmware && pio run -e esp32-classic-planner -t upload
+```
+
+(`esp32-s3-planner` likewise.) The board then reports the `planner` feature, and the page
+offers MIDI files as well as song files. Every board, with the module or without,
+takes song files made by the Hub (`duet song`).
+
 ## Servers
 
 The servers saved in the settings add what the rig cannot do alone. The page checks each
@@ -33,6 +54,7 @@ for people: it shows what the device is, and it plays the songs stored on it.
 | `GET /api/info` | `{"hello":{..},"channels":[..],"state":"idle"\|"homing"\|"playing","slot":k,"estopped":bool,"network":"station"\|"setup"}`. `hello` and `channels` are the messages the Hub hears on connecting. `slot` is the song playing or last played (-1 before any). `network` is `setup` while the board serves its setup network. |
 | `GET /api/songs` | `{"slots":8,"songs":[{"slot":k,"title":".."},..]}`: the slots that hold a song, and its title |
 | `PUT /api/songs/<k>` | Store a song in slot *k*. The body is a song file (below). A bad line refuses the whole song, `400 {"error":"bad song line 12"}`, and the old song stays. Refused (409) while the rig plays, or while the Hub is storing a song. |
+| `PUT /api/songs/<k>/midi?title=..` | On a board with the planner module: plan a MIDI file (the body, at most 32 KB) into slot *k*, as the Hub would (below). Answers `{"ok":true,"warnings":[..]}` (what the import ignored), or why not: `400` (not a MIDI file the device reads), `422` (the Hub refuses that score too, say a key off the keyboard). Without the module: `404 {"error":"this board has no MIDI planner"}`. |
 | `DELETE /api/songs/<k>` | Forget the song in slot *k* |
 | `POST /api/songs/<k>/play` | Home, then play stored song *k* |
 | `POST /api/stop` | Stop playing |

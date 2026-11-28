@@ -27,6 +27,7 @@ constexpr int64_t kMaxSongUs = 3600000000;     // a song line later than an hour
 // The title in a song message or a song file's first line ({"title":".."}): optional,
 // at most kMaxTitle bytes, one line. False if it is not that.
 bool read_song_title(const char* json, std::string& title);
+bool valid_song_title(const std::string& title);  // at most kMaxTitle bytes, one line
 
 class Device {
  public:

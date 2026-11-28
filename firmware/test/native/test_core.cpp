@@ -11,6 +11,7 @@
 #include "duet_executor.hpp"
 #include "duet_features.hpp"
 #include "duet_midi.hpp"
+#include "duet_midi_planner.hpp"
 #include "duet_planner.hpp"
 #include "duet_protocol.hpp"
 #include "duet_queue.hpp"
@@ -935,6 +936,53 @@ static void test_planner_refuses_what_the_rig_cannot_store_or_play() {
   CHECK(plan_refusal(one, Channels{kNoLeds, 1}) == "the rig has no channel for: led_strip");
 }
 
+// The planner module, as a board installs it in the device API.
+static Bytes two_tracks() {  // the bot's C5 D5 E5, the pianist's C3: a quarter each
+  Bytes melody, bass;
+  for (uint8_t p : {72, 74, 76}) melody.insert(melody.end(), {0x00, 0x90, p, 80, 0x83, 0x60, 0x80, p, 0});
+  bass.insert(bass.end(), {0x00, 0x91, 48, 70, 0x83, 0x60, 0x81, 48, 0});
+  return smf({melody, bass});
+}
+
+static void test_the_api_plans_a_midi_file_with_the_planner_installed() {
+  Rig r;
+  MemorySettingsStore settings;
+  Api api(r.dev, settings);
+  Bytes file = two_tracks();
+  CHECK(api.begin_upload("/api/songs/3/midi", "Three notes").body ==
+        R"({"error":"this board has no MIDI planner"})");
+
+  MidiPlanner planner(r.dev, kBottles, kPiano88, kRig);
+  api.install_planner(planner);
+  CHECK(api.begin_upload("/api/songs/3/midi", "Three notes").status == 200);
+  for (size_t at = 0; at < file.size(); at += 5)  // in pieces, as a web server hands it over
+    api.upload_data(reinterpret_cast<const char*>(file.data()) + at,
+                    std::min<size_t>(5, file.size() - at));
+  Response planned = api.end_upload();
+  CHECK(planned.status == 200 && planned.body == R"({"ok":true,"warnings":[]})");
+  CHECK(r.store.has(3) && r.store.title(3) == "Three notes");
+
+  CHECK(api.handle("POST", "/api/songs/3/play", "", r.hal.now_us).status == 200);
+  r.run_until(12000000);
+  CHECK(r.strikes() == 3 && !r.out.has("fault"));  // the bot's three notes
+
+  // Refused, and the stored song stays: not MIDI, a bad title, a key off the keyboard.
+  CHECK(api.begin_upload("/api/songs/3/midi", "x").status == 200);
+  api.upload_data("not a midi file", 15);
+  CHECK(api.end_upload().status == 400);
+  CHECK(api.begin_upload("/api/songs/3/midi", "two\nlines").status == 400);
+  Bytes low = smf({{0x00, 0x90, 72, 80, 0x83, 0x60, 0x80, 72, 0},
+                   {0x00, 0x91, 10, 70, 0x83, 0x60, 0x81, 10, 0}});
+  CHECK(api.begin_upload("/api/songs/3/midi", "low").status == 200);
+  api.upload_data(reinterpret_cast<const char*>(low.data()), low.size());
+  CHECK(api.end_upload().body == R"({"error":"key 10 is not on the keyboard"})");
+  Bytes huge(kMaxMidiBytes + 1, 0);
+  CHECK(api.begin_upload("/api/songs/3/midi", "huge").status == 200);
+  api.upload_data(reinterpret_cast<const char*>(huge.data()), huge.size());
+  CHECK(api.end_upload().status == 413);
+  CHECK(r.store.title(3) == "Three notes" && !r.dev.writing_song());
+}
+
 int main() {
   test_parse();
   test_queue_orders_by_time();
@@ -959,6 +1007,7 @@ int main() {
   test_the_api_refuses_unknown_paths_and_wrong_methods();
   test_the_api_stores_a_song_file();
   test_the_api_refuses_a_bad_song_file_whole();
+  test_the_api_plans_a_midi_file_with_the_planner_installed();
   test_json_objects_of_strings_and_lists();
   test_settings_are_saved_and_the_password_never_leaves();
   test_bad_settings_are_refused_and_nothing_is_saved();

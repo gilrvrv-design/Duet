@@ -16,6 +16,31 @@
 #include <map>
 #include <string>
 
+// The value of `name` in a query string ("a=1&title=Rain%20on"), decoded; "" if absent.
+inline std::string query_param(const std::string& query, const std::string& name) {
+  size_t at = 0;
+  while (at <= query.size()) {
+    size_t end = query.find('&', at);
+    if (end == std::string::npos) end = query.size();
+    std::string pair = query.substr(at, end - at);
+    if (pair.rfind(name + "=", 0) == 0) {
+      std::string raw = pair.substr(name.size() + 1), value;
+      for (size_t i = 0; i < raw.size(); ++i) {
+        if (raw[i] == '%' && i + 2 < raw.size() && std::isxdigit(raw[i + 1]) &&
+            std::isxdigit(raw[i + 2])) {
+          value += static_cast<char>(std::stoi(raw.substr(i + 1, 2), nullptr, 16));
+          i += 2;
+        } else {
+          value += raw[i] == '+' ? ' ' : raw[i];
+        }
+      }
+      return value;
+    }
+    at = end + 1;
+  }
+  return "";
+}
+
 struct HttpReply {
   int status;
   std::string type;  // Content-Type
@@ -26,7 +51,7 @@ struct HttpReply {
 class HttpServer {
  public:
   using Handler = std::function<HttpReply(const std::string& method, const std::string& path,
-                                          const std::string& body)>;
+                                          const std::string& query, const std::string& body)>;
 
   explicit HttpServer(Handler handler) : handler_(std::move(handler)) {}
 
@@ -93,8 +118,10 @@ class HttpServer {
       return true;
     }
     std::string path = target;
-    path = path.substr(0, path.find('?'));
-    answer(fd, handler_(method, path, request.substr(head_end + 4, body_size)));
+    size_t mark = path.find('?');
+    std::string query = mark == std::string::npos ? "" : path.substr(mark + 1);
+    path = path.substr(0, mark);
+    answer(fd, handler_(method, path, query, request.substr(head_end + 4, body_size)));
     return true;
   }
 

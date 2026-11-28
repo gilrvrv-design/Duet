@@ -108,5 +108,5 @@ not fit a board is switched off for that board, explicitly. CI builds every boar
 | 2 | Protocol channels; multi-channel executor; MIDI-out mechanism; a bot plays the piano (done, in slices 2a–2c) | native tests, full loop |
 | 3 | Device web server, web app, device API (docs/device-api.md), Wi-Fi setup (done, in slices 3a–3d) | the native device serves the same API; browser tests |
 | 4 | The app finds and uses servers, and falls back (done, in slices 4a–4d) | browser tests with servers up, down, failing |
-| 5 | Offline songs: song files from the Hub on every board; the optional planner module (MIDI → song on the device) | browser tests; contract tests against the Python planner |
+| 5 | Offline songs: song files from the Hub on every board; the optional planner module (MIDI → song on the device) (done, in slices 5a–5c) | browser tests; contract tests against the Python planner |
 | 6 | Wait and follow modes started from the app | full loop |

@@ -14,7 +14,8 @@ from duet.songs import CompiledSong, compile_song
 from helpers import ROOT
 
 FIRMWARE = ROOT / "firmware"
-BINARY = FIRMWARE / "build" / "duet_device"
+BINARY = FIRMWARE / "build" / "duet_device"  # built with the optional planner module
+BASIC = FIRMWARE / "build" / "duet_device_basic"  # built without it
 
 
 @dataclass
@@ -28,10 +29,13 @@ class NativeDevice:
         self.process.stdin.write("press\n")
         self.process.stdin.flush()
 
-    def api(self, method: str, path: str, body: dict | str | None = None) -> tuple[int, dict]:
-        """Call the device API: the status and the JSON answer. A str body goes as is."""
-        data = None if body is None else (body if isinstance(body, str) else json.dumps(body))
-        data = None if data is None else data.encode()
+    def api(
+        self, method: str, path: str, body: dict | str | bytes | None = None
+    ) -> tuple[int, dict]:
+        """Call the device API: the status and the JSON answer. A str or bytes body goes
+        as is; a dict as JSON."""
+        data = json.dumps(body) if isinstance(body, dict) else body
+        data = data.encode() if isinstance(data, str) else data
         request = urllib.request.Request(self.http_url + path, data=data, method=method)
         try:
             with urllib.request.urlopen(request, timeout=5) as reply:
@@ -58,11 +62,11 @@ class NativeDevice:
             self.process.kill()
 
 
-def start() -> NativeDevice:
+def start(planner: bool = True) -> NativeDevice:
     built = subprocess.run(["make", "-s", "-C", str(FIRMWARE), "device"], capture_output=True)
     assert built.returncode == 0, built.stderr.decode()
     process = subprocess.Popen(
-        [str(BINARY), "--port", "0", "--http-port", "0"],
+        [str(BINARY if planner else BASIC), "--port", "0", "--http-port", "0"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,

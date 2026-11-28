@@ -9,6 +9,8 @@
 //   PUT  /api/songs/<k>           store a song in slot k. The body is a song file: its
 //                                 title line {"title":".."}, then one timed command per
 //                                 line (t_us from 0), as the device keeps it in flash
+//   PUT  /api/songs/<k>/midi?title=..  plan a MIDI file into slot k, on a board with the
+//                                 planner module: {"ok":true,"warnings":[..]}
 //   DELETE /api/songs/<k>         forget the song in slot k
 //   POST /api/songs/<k>/play      play stored song k
 //   POST /api/stop                stop playing
@@ -26,6 +28,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "duet_device.hpp"
 #include "duet_protocol.hpp"
@@ -39,6 +42,23 @@ struct Response {
   bool restart = false;  // the board restarts once the answer is sent
 };
 
+// Refused: {"error":why} with this status.
+Response refused(int status, const std::string& why);
+
+// The optional planner module (duet_midi_planner.hpp). A board built with it installs
+// one; the API knows only this interface, so a board without it links none of the
+// planner.
+class Planner {
+ public:
+  // Plans the MIDI file into `slot`, titled `title`: 200 {"ok":true,"warnings":[..]},
+  // or why it cannot.
+  virtual Response plan_midi(const std::vector<uint8_t>& midi, const std::string& title,
+                             int slot) = 0;
+
+ protected:
+  ~Planner() = default;
+};
+
 // How the board is on the network: joined to the saved Wi-Fi ("station"), or serving
 // its own setup network for a phone to connect to ("setup").
 enum class Network { Station, Setup };
@@ -48,13 +68,15 @@ class Api {
   Api(Device& device, SettingsStore& settings) : device_(device), settings_(settings) {}
 
   void set_network(Network network) { network_ = network; }
+  void install_planner(Planner& planner) { planner_ = &planner; }
   Response handle(const char* method, const char* path, const char* body, int64_t now_us);
 
-  // PUT /api/songs/<k>, streamed for transports that receive the body in pieces (the
-  // ESP32 holds a 4000-line song in flash, not in RAM): begin_upload with the path; if
-  // it answers 200, upload_data for each piece, then end_upload (or abort_upload if the
-  // client goes away). handle() does all of it for a body that arrives whole.
-  Response begin_upload(const char* path);
+  // PUT /api/songs/<k> and /api/songs/<k>/midi, streamed for transports that receive
+  // the body in pieces (the ESP32 holds a 4000-line song in flash, not in RAM):
+  // begin_upload with the path (and a MIDI song's title, from the query); if it answers
+  // 200, upload_data for each piece, then end_upload (or abort_upload if the client goes
+  // away). handle() does all of it for a song file that arrives whole.
+  Response begin_upload(const char* path, const std::string& title = "");
   void upload_data(const char* data, size_t n);
   Response end_upload();
   void abort_upload();
@@ -70,9 +92,13 @@ class Api {
   Device& device_;
   SettingsStore& settings_;
   Network network_ = Network::Station;
+  Planner* planner_ = nullptr;  // none installed
 
-  // The song being uploaded through the API.
+  // The song being uploaded through the API: a song file, or a MIDI file to plan.
   int upload_slot_ = -1;  // none
+  bool upload_midi_ = false;
+  std::vector<uint8_t> midi_;  // the MIDI file, as it arrives
+  std::string midi_title_;
   int upload_lines_ = 0;  // lines read, the title line included
   int first_bad_line_ = 0;
   int failed_status_ = 0;  // the upload was refused before its end ...

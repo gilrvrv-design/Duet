@@ -279,7 +279,7 @@ make -C firmware test
 cd firmware && pio run -e esp32-classic -t upload && pio device monitor
 ```
 
-On an ESP32-S3, use `-e esp32-s3`.
+On an ESP32-S3, use `-e esp32-s3`. To plan MIDI files on the rig with no server, build with the optional planner module: `-e esp32-classic-planner` (or `esp32-s3-planner`; docs/device-api.md).
 
 ## Bench test over serial
 

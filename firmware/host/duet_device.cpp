@@ -36,6 +36,9 @@
 #include "duet_line_reader.hpp"
 #include "duet_report_hal.hpp"
 #include "http_server.hpp"
+#ifdef DUET_PLANNER
+#include "rig_planner.h"  // the optional planner module
+#endif
 #include "web_assets.h"  // generated from firmware/web/ (tools/embed_web.py)
 
 namespace {
@@ -113,8 +116,20 @@ int main(int argc, char** argv) {
   duet::MemorySettingsStore settings;
   duet::Api api(device, settings);
   api.set_network(duet::Network::Setup);  // nothing saved yet
+#ifdef DUET_PLANNER
+  duet::MidiPlanner planner = rig_planner(device, BOARD_CHANNELS);
+  api.install_planner(planner);
+#endif
   HttpServer http([&](const std::string& method, const std::string& path,
-                      const std::string& body) {
+                      const std::string& query, const std::string& body) {
+    if (method == "PUT" && path.rfind("/api/songs/", 0) == 0) {  // as the ESP32 streams it
+      duet::Response r = api.begin_upload(path.c_str(), query_param(query, "title"));
+      if (r.status == 200) {
+        api.upload_data(body.data(), body.size());
+        r = api.end_upload();
+      }
+      return HttpReply{r.status, "application/json", r.body};
+    }
     if (path.rfind("/api/", 0) == 0) {
       duet::Response r = api.handle(method.c_str(), path.c_str(), body.c_str(), hal.now_us);
       if (r.restart) api.set_network(duet::Network::Station);  // "restarted and joined"

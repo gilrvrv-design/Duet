@@ -10,5 +10,6 @@ FLASH = "flash"  # stored songs survive power-off
 PLAY_BUTTON = "play_button"  # a button that plays stored songs without the Hub
 ESTOP_BUTTON = "estop_button"  # a hardware emergency stop
 WEB = "web"  # the web app and the device API over HTTP (docs/device-api.md)
+PLANNER = "planner"  # the optional planner module: MIDI files planned on the device
 
-KNOWN = (WIFI, FLASH, PLAY_BUTTON, ESTOP_BUTTON, WEB)
+KNOWN = (WIFI, FLASH, PLAY_BUTTON, ESTOP_BUTTON, WEB, PLANNER)

@@ -21,6 +21,9 @@
 #include "nvs_settings.h"
 #include "serial_link.h"
 #include "web_assets.h"  // generated from firmware/web/ (tools/embed_web.py)
+#ifdef DUET_PLANNER
+#include "rig_planner.h"  // the optional planner module
+#endif
 #ifdef DUET_WOKWI
 #include "wokwi.h"  // simulator build: Wokwi's open Wi-Fi and a virtual home sensor
 #endif
@@ -114,6 +117,9 @@ FlashSongStore songs;
 duet::Device device(executor, songs, link, IDENTITY);  // songs in flash, played without the Hub
 NvsSettingsStore settings;
 duet::Api api(device, settings);
+#ifdef DUET_PLANNER
+duet::MidiPlanner planner = rig_planner(device, BOARD_CHANNELS);
+#endif
 WebServer web(HTTP_PORT);
 DNSServer dns;  // on the setup network, every name leads to the setup page
 bool setup_network = false;
@@ -150,14 +156,14 @@ void serve_web() {
   web.send_P(200, asset->type, reinterpret_cast<const char*>(asset->gzip), asset->size);
 }
 
-// PUT /api/songs/<k>: the song file streams into flash as it arrives, a piece at a time,
-// so a long song never has to fit in RAM.
+// PUT /api/songs/<k> (and /api/songs/<k>/midi, with the planner): the song file streams
+// into flash as it arrives, a piece at a time, so a long song never has to fit in RAM.
 duet::Response upload_answer{0, ""};
 
 void receive_song() {
   HTTPRaw& raw = web.raw();
   if (raw.status == RAW_START) {
-    upload_answer = api.begin_upload(web.uri().c_str());
+    upload_answer = api.begin_upload(web.uri().c_str(), web.arg("title").c_str());
   } else if (raw.status == RAW_WRITE && upload_answer.status == 200) {
     api.upload_data(reinterpret_cast<const char*>(raw.buf), raw.currentSize);
   } else if (raw.status == RAW_ABORTED) {
@@ -268,6 +274,10 @@ void setup() {
   server.begin();
   server.onEvent(on_ws_event);
   web.on(UriBraces("/api/songs/{}"), HTTP_PUT, song_received, receive_song);
+  web.on(UriBraces("/api/songs/{}/midi"), HTTP_PUT, song_received, receive_song);
+#ifdef DUET_PLANNER
+  api.install_planner(planner);
+#endif
   web.onNotFound(serve_web);
   web.begin();
   if (!setup_network)

@@ -11,7 +11,8 @@
 
 constexpr const char* BOARD = "esp32-s3";
 constexpr uint32_t FEATURES =
-    duet::kWifi | duet::kFlash | duet::kPlayButton | duet::kEstopButton | duet::kWeb;
+    duet::kWifi | duet::kFlash | duet::kPlayButton | duet::kEstopButton | duet::kWeb |
+    duet::kModules;  // + the optional modules this build installs
 
 constexpr int PIN_STEP = 4;
 constexpr int PIN_DIR = 5;

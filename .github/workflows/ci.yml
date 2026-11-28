@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [esp32-classic, esp32-s3, wokwi, qemu]
+        board: [esp32-classic, esp32-classic-planner, esp32-s3, esp32-s3-planner, wokwi, qemu]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

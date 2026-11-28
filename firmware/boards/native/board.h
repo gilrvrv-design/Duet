@@ -9,7 +9,7 @@
 #include "rig.h"
 
 constexpr const char* BOARD = "native";
-constexpr uint32_t FEATURES = duet::kPlayButton | duet::kWeb;
+constexpr uint32_t FEATURES = duet::kPlayButton | duet::kWeb | duet::kModules;
 
 // Channel 0: the carriage and its striker; 1: the LED strip over the keys; 2: MIDI out.
 constexpr duet::Channel CHANNELS[] = {

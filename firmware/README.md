@@ -55,7 +55,9 @@ make -C firmware test
 ```
 
 A board (needs [PlatformIO](https://platformio.org)). On first boot it opens the Wi-Fi
-network `Duet-setup`; join it from a phone to choose the rig's Wi-Fi (docs/rig-guide.md):
+network `Duet-setup`; join it from a phone to choose the rig's Wi-Fi (docs/rig-guide.md).
+Add `-planner` to the environment (`esp32-classic-planner`) to install the optional
+planner module, which plans MIDI files on the rig (docs/device-api.md):
 
 ```bash
 cd firmware && pio run -e esp32-classic -t upload

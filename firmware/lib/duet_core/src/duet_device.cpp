@@ -75,13 +75,17 @@ void Device::on_oversize(int64_t now_us) {
 }
 
 // A song's title: optional; short, and no control characters (it is shown as one line).
-bool read_song_title(const char* json, std::string& title) {
-  title.clear();
-  if (std::strstr(json, "\"title\"") && !string_field(json, "title", title)) return false;
+bool valid_song_title(const std::string& title) {
   if (title.size() > kMaxTitle) return false;
   for (char ch : title)
     if (static_cast<unsigned char>(ch) < 0x20) return false;
   return true;
+}
+
+bool read_song_title(const char* json, std::string& title) {
+  title.clear();
+  if (std::strstr(json, "\"title\"") && !string_field(json, "title", title)) return false;
+  return valid_song_title(title);
 }
 
 const char* Device::begin_song(int slot, const std::string& title) {

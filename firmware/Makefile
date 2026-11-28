@@ -2,11 +2,11 @@
 CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Werror
 CORE := lib/duet_core/src
-SRCS := $(addprefix $(CORE)/,duet_protocol.cpp duet_executor.cpp duet_device.cpp duet_api.cpp duet_json.cpp duet_settings.cpp duet_midi.cpp duet_planner.cpp)
+SRCS := $(addprefix $(CORE)/,duet_protocol.cpp duet_executor.cpp duet_device.cpp duet_api.cpp duet_json.cpp duet_settings.cpp duet_midi.cpp duet_planner.cpp duet_midi_planner.cpp)
 INC := -I$(CORE)
 
 .PHONY: test clean qemu-image device instruments
-test: build/test_core build/duet_core_cli build/duet_device
+test: build/test_core build/duet_core_cli build/duet_device build/duet_device_basic
 	./build/test_core
 
 build/test_core: test/native/test_core.cpp $(SRCS) $(wildcard $(CORE)/*.hpp)
@@ -31,9 +31,15 @@ qemu-image:
 		0xe000 $(BOOT_APP0) 0x10000 $(QEMU_BUILD)/firmware.bin
 
 # The firmware as a Linux process, its serial link over TCP (host/duet_device.cpp).
-device: build/duet_device
+device: build/duet_device build/duet_device_basic
 
-build/duet_device: host/duet_device.cpp host/http_server.hpp build/gen/web_assets.h boards/native/board.h src/rig.h $(SRCS) $(wildcard $(CORE)/*.hpp)
+# Two builds, as a board can be built with or without the optional planner module.
+DEVICE_DEPS := host/duet_device.cpp host/http_server.hpp build/gen/web_assets.h boards/native/board.h src/rig.h src/rig_planner.h $(SRCS) $(wildcard $(CORE)/*.hpp)
+build/duet_device: $(DEVICE_DEPS)
+	@mkdir -p build
+	$(CXX) $(CXXFLAGS) $(INC) -Iboards/native -Isrc -Ibuild/gen -DDUET_PLANNER -o $@ host/duet_device.cpp $(SRCS)
+
+build/duet_device_basic: $(DEVICE_DEPS)
 	@mkdir -p build
 	$(CXX) $(CXXFLAGS) $(INC) -Iboards/native -Isrc -Ibuild/gen -o $@ host/duet_device.cpp $(SRCS)
 

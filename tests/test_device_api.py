@@ -2,6 +2,7 @@
 
 import time
 
+from duet.midi_io import score_to_midi_bytes
 from duet.profile import keyboard_profile, robot_profile
 from duet.score import load_score
 from duet.sim import RIG_CHANNELS
@@ -92,3 +93,21 @@ def test_a_song_file_is_stored_through_the_api_and_plays(device):
     assert device.api("PUT", "/api/songs/7", broken) == (400, {"error": "bad song line 2"})
     assert device.api("DELETE", "/api/songs/7") == (200, {"ok": True})
     assert device.api("GET", "/api/songs")[1]["songs"] == []
+
+
+def test_a_midi_file_is_planned_on_a_board_with_the_planner(device, basic_device):
+    rain = score_to_midi_bytes(load_score(ROOT / "examples" / "rain-on-the-bottles.json"))
+    assert device.api("PUT", "/api/songs/2/midi?title=Rain%20%E2%99%AA", rain) == (
+        200,
+        {"ok": True, "warnings": []},
+    )
+    assert device.api("GET", "/api/songs")[1]["songs"] == [{"slot": 2, "title": "Rain ♪"}]
+    assert device.api("POST", "/api/songs/2/play") == (200, {"ok": True})
+    wait_for_state(device, "playing")
+    assert "planner" in device.api("GET", "/api/info")[1]["hello"]["features"]
+
+    assert basic_device.api("PUT", "/api/songs/2/midi?title=Rain", rain) == (
+        404,
+        {"error": "this board has no MIDI planner"},
+    )
+    assert "planner" not in basic_device.api("GET", "/api/info")[1]["hello"]["features"]

@@ -3,7 +3,8 @@
 #include <cstdint>
 
 constexpr const char* DEVICE_ID = "duet-rig-1";
-constexpr const char* PROFILE_ID = "bottles-v1";
+constexpr const char* PROFILE_ID = "bottles-v1";  // the instrument its carriage plays
+constexpr const char* KEYBOARD_ID = "piano-88";   // the keyboard under its LED strip
 constexpr uint16_t WS_PORT = 8765;   // the Hub's link
 constexpr uint16_t HTTP_PORT = 80;  // the web app and device API
 constexpr const char* SETUP_SSID = "Duet-setup";  // open; up only while no Wi-Fi is joined
