@@ -14,6 +14,24 @@ namespace {
 
 Response error(int status, const char* why) { return refused(status, why); }
 
+int http_status(Refusal why) {
+  switch (why) {
+    case Refusal::NoSong:
+    case Refusal::BadSlot:
+      return 404;
+    case Refusal::BadTitle:
+    case Refusal::BadLine:
+    case Refusal::BadLength:
+      return 400;
+    case Refusal::StorageFull:
+      return 507;
+    case Refusal::StorageFailed:
+      return 500;
+    default:  // playing, stopped or busy: not now
+      return 409;
+  }
+}
+
 const Response kOk{200, "{\"ok\":true}"};
 
 // The slot in "/api/songs/<k><rest>", or -1 if the path is not that.
@@ -33,6 +51,8 @@ int song_slot(const char* path, const char* rest) {
 Response refused(int status, const std::string& why) {
   return {status, "{\"error\":" + json_string(why) + "}"};
 }
+
+Response refused(Refusal why) { return refused(http_status(why), refusal_text(why)); }
 
 Response Api::handle(const char* method, const char* path, const char* body, int64_t now_us) {
   bool get = std::strcmp(method, "GET") == 0;
@@ -56,14 +76,14 @@ Response Api::handle(const char* method, const char* path, const char* body, int
   int slot = song_slot(path, "/play");
   if (slot >= 0) {
     if (!post) return error(405, "use POST");
-    const char* why = device_.request_play(slot, now_us);
-    return why ? error(409, why) : kOk;
+    Refusal why = device_.request_play(slot, now_us);
+    return why == Refusal::None ? kOk : refused(why);
   }
   slot = song_slot(path, "");
   if (slot >= 0) {
     if (std::strcmp(method, "DELETE") == 0) {
-      const char* why = device_.delete_song(slot);
-      return !why ? kOk : device_.songs().has(slot) ? error(409, why) : error(404, why);
+      Refusal why = device_.delete_song(slot);
+      return why == Refusal::None ? kOk : refused(why);
     }
     if (std::strcmp(method, "PUT") != 0) return error(405, "use PUT or DELETE");
     Response accepted = begin_upload(path);
@@ -126,7 +146,8 @@ void Api::upload_line() {
     if (too_long || line.find("\"title\"") == std::string::npos ||
         !read_song_title(line.c_str(), title))
       return upload_failed(400, "a song file starts with its title: {\"title\":\"..\"}");
-    if (const char* why = device_.begin_song(upload_slot_, title)) upload_failed(409, why);
+    if (Refusal why = device_.begin_song(upload_slot_, title); why != Refusal::None)
+      upload_failed(http_status(why), refusal_text(why));
     return;
   }
   bool ok = too_long ? (device_.song_line_lost(), false) : device_.song_line(line.c_str());
@@ -151,11 +172,11 @@ Response Api::end_upload() {
   upload_slot_ = -1;
   if (failed_status_) return error(failed_status_, failed_why_.c_str());
   if (upload_lines_ == 0) return error(400, "the song file is empty");
-  const char* why = device_.end_song();
-  if (!why) return kOk;
-  if (std::strcmp(why, "bad song line") == 0)
+  Refusal why = device_.end_song();
+  if (why == Refusal::None) return kOk;
+  if (why == Refusal::BadLine)  // which line, for the person who made the file
     return error(400, ("bad song line " + std::to_string(first_bad_line_)).c_str());
-  return std::strcmp(why, "storage full") == 0 ? error(507, why) : error(400, why);
+  return refused(why);
 }
 
 void Api::abort_upload() {

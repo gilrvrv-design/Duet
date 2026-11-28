@@ -23,18 +23,12 @@ void Device::on_message(const char* json, int64_t now_us) {
         return;
       case Type::Play:
         ex_.keepalive(now_us);
-        if (const char* why = request_play(c.slot, now_us)) {
-          char status[64];
-          std::snprintf(status, sizeof status, "error: %s", why);
-          ack(c.seq, status);
-        } else {
-          ack(c.seq, "ok");
-        }
+        ack(c.seq, request_play(c.slot, now_us));
         return;
       case Type::Stop:
         ex_.keepalive(now_us);
         stop();
-        ack(c.seq, "ok");
+        ack(c.seq, Refusal::None);
         return;
       case Type::Greet:
         greet();
@@ -46,7 +40,7 @@ void Device::on_message(const char* json, int64_t now_us) {
       default:
         if (c.timed() && playing()) {
           ex_.keepalive(now_us);
-          ack(c.seq, "error: playing from memory");
+          ack(c.seq, Refusal::PlayingFromMemory);
           return;
         }
         break;
@@ -68,7 +62,7 @@ void Device::greet() {
 void Device::on_oversize(int64_t now_us) {
   if (receiving_) {
     song_line_lost();  // the song would have a hole in it
-    if (--upload_left_ == 0) end_upload(nullptr);
+    if (--upload_left_ == 0) end_upload(Refusal::None);
     return;
   }
   ex_.on_oversize(now_us);
@@ -88,14 +82,34 @@ bool read_song_title(const char* json, std::string& title) {
   return valid_song_title(title);
 }
 
-const char* Device::begin_song(int slot, const std::string& title) {
-  if (writing_) return "another song is being stored";
-  if (playing()) return "playing from memory";
-  if (!store_.begin(slot, title)) return "bad song slot";
+const char* refusal_text(Refusal why) {
+  switch (why) {
+    case Refusal::None: return "ok";
+    case Refusal::AlreadyPlaying: return "already playing";
+    case Refusal::NoSong: return "no song in that slot";
+    case Refusal::EmergencyStop: return "emergency stop";
+    case Refusal::Busy: return "another song is being stored";
+    case Refusal::PlayingFromMemory: return "playing from memory";
+    case Refusal::BadSlot: return "bad song slot";
+    case Refusal::BadTitle: return "bad song title";
+    case Refusal::BadLine: return "bad song line";
+    case Refusal::BadLength: return "bad song length";
+    case Refusal::StorageFull: return "storage full";
+    case Refusal::StorageFailed: return "storage failed";
+    case Refusal::UploadReplaced: return "upload replaced";
+    case Refusal::UploadStalled: return "upload stalled";
+  }
+  return "refused";  // unreachable: every kind is above (-Wswitch checks it)
+}
+
+Refusal Device::begin_song(int slot, const std::string& title) {
+  if (writing_) return Refusal::Busy;
+  if (playing()) return Refusal::PlayingFromMemory;
+  if (!store_.begin(slot, title)) return Refusal::BadSlot;
   writing_ = true;
   song_lines_ = 0;
   song_bad_ = false;
-  return nullptr;
+  return Refusal::None;
 }
 
 bool Device::song_line(const char* json) {
@@ -111,13 +125,13 @@ void Device::song_line_lost() {
   song_bad_ = true;
 }
 
-const char* Device::end_song() {
+Refusal Device::end_song() {
   writing_ = false;
-  const char* why = song_bad_         ? "bad song line"
-                    : song_lines_ == 0 ? "bad song length"
-                    : !store_.finish() ? "storage full"
-                                       : nullptr;
-  if (why) store_.abort();
+  Refusal why = song_bad_         ? Refusal::BadLine
+                : song_lines_ == 0 ? Refusal::BadLength
+                : !store_.finish() ? Refusal::StorageFull
+                                   : Refusal::None;
+  if (why != Refusal::None) store_.abort();
   return why;
 }
 
@@ -130,15 +144,15 @@ void Device::abort_song() {
 void Device::begin_upload(const Command& c, const char* json, int64_t now_us) {
   if (receiving_) {
     abort_song();
-    ack(upload_seq_, "error: upload replaced");
+    ack(upload_seq_, Refusal::UploadReplaced);
     receiving_ = false;
   }
   std::string title;
-  const char* why = c.lines < 1 || c.lines > kMaxSongLines ? "bad song length"
-                    : !read_song_title(json, title)       ? "bad song title"
-                                                          : begin_song(c.slot, title);
-  if (why) {
-    ack(c.seq, (std::string("error: ") + why).c_str());
+  Refusal why = c.lines < 1 || c.lines > kMaxSongLines ? Refusal::BadLength
+                : !read_song_title(json, title)       ? Refusal::BadTitle
+                                                      : begin_song(c.slot, title);
+  if (why != Refusal::None) {
+    ack(c.seq, why);
     return;
   }
   receiving_ = true;
@@ -151,32 +165,31 @@ void Device::receive_line(const char* json, int64_t now_us) {
   ex_.keepalive(now_us);
   upload_last_us_ = now_us;
   song_line(json);
-  if (--upload_left_ == 0) end_upload(nullptr);
+  if (--upload_left_ == 0) end_upload(Refusal::None);
 }
 
-void Device::end_upload(const char* stalled) {
+void Device::end_upload(Refusal stalled) {
   receiving_ = false;
-  if (stalled) {
+  if (stalled != Refusal::None) {
     abort_song();
     ack(upload_seq_, stalled);
     return;
   }
-  const char* why = end_song();
-  ack(upload_seq_, why ? (std::string("error: ") + why).c_str() : "ok");
+  ack(upload_seq_, end_song());
 }
 
-const char* Device::delete_song(int slot) {
-  if (playing() && slot == slot_) return "playing from memory";
-  if (!store_.has(slot)) return "no song in that slot";
-  return store_.remove(slot) ? nullptr : "storage failed";
+Refusal Device::delete_song(int slot) {
+  if (playing() && slot == slot_) return Refusal::PlayingFromMemory;
+  if (!store_.has(slot)) return Refusal::NoSong;
+  return store_.remove(slot) ? Refusal::None : Refusal::StorageFailed;
 }
 
-const char* Device::request_play(int slot, int64_t now_us) {
-  if (playing()) return "already playing";
-  if (!store_.has(slot)) return "no song in that slot";
-  if (ex_.estopped()) return "emergency stop";
+Refusal Device::request_play(int slot, int64_t now_us) {
+  if (playing()) return Refusal::AlreadyPlaying;
+  if (!store_.has(slot)) return Refusal::NoSong;
+  if (ex_.estopped()) return Refusal::EmergencyStop;
   play(slot, now_us);
-  return nullptr;
+  return Refusal::None;
 }
 
 const char* Device::state_name() const {
@@ -228,7 +241,7 @@ void Device::feed(int64_t now_us) {
 void Device::poll(int64_t now_us) {
   if (receiving_ && now_us - upload_last_us_ > kUploadTimeoutUs) {
     upload_left_ = 0;
-    end_upload("error: upload stalled");
+    end_upload(Refusal::UploadStalled);
   }
   if (state_ != State::Idle && ex_.estopped()) state_ = State::Idle;
   if (state_ == State::Homing) {
@@ -268,8 +281,11 @@ void Device::stop() {
   ex_.cancel();  // a stored song, or what the Hub has queued: the rig goes quiet
 }
 
-void Device::ack(int64_t seq, const char* status) {
-  char buf[96];
+void Device::ack(int64_t seq, Refusal why) {
+  char status[48];
+  std::snprintf(status, sizeof status, why == Refusal::None ? "%s" : "error: %s",
+                refusal_text(why));
+  char buf[kMaxMessage + 1];
   write_ack(buf, sizeof buf, seq, status);
   sink_.send(buf);
 }

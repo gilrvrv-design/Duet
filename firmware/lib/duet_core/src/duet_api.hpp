@@ -45,6 +45,8 @@ struct Response {
 
 // Refused: {"error":why} with this status.
 Response refused(int status, const std::string& why);
+// The device refused: its text, with the status of its kind (decided here only).
+Response refused(Refusal why);
 
 // The optional planner module (duet_midi_planner.hpp). A board built with it installs
 // one; the API knows only this interface, so a board without it links none of the

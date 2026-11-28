@@ -153,6 +153,9 @@ class HttpServer {
       case 405: return "Method Not Allowed";
       case 409: return "Conflict";
       case 413: return "Content Too Large";
+      case 422: return "Unprocessable Content";
+      case 500: return "Internal Server Error";
+      case 507: return "Insufficient Storage";
       default: return "Error";
     }
   }

@@ -494,7 +494,7 @@ static void test_the_api_reports_the_device_and_plays_its_songs() {
         R"({"slots":8,"songs":[{"slot":2,"title":""},{"slot":5,"title":""}]})");
 
   Response none = api.handle("POST", "/api/songs/0/play", "", r.hal.now_us);
-  CHECK(none.status == 409 && none.body == R"({"error":"no song in that slot"})");
+  CHECK(none.status == 404 && none.body == R"({"error":"no song in that slot"})");
   CHECK(api.handle("POST", "/api/songs/2/play", "", r.hal.now_us).status == 200);
   CHECK(r.dev.playing() && r.dev.slot() == 2);
   CHECK(api.handle("POST", "/api/songs/5/play", "", r.hal.now_us).body ==

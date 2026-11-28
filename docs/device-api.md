@@ -65,11 +65,17 @@ for people: it shows what the device is, and it plays the songs stored on it.
 Success is `200 {"ok":true}`. Errors are `{"error":"..."}` with one of these statuses:
 - 400: a bad request body (settings: a network name of 1-32 bytes, a password of
   8-63 characters or none, at most 4 `http://` or `https://` servers);
-- 404: no such path;
+- 404: no such path, or no song in that slot;
 - 405: the wrong method;
 - 409: the device cannot do it now (`already playing`, `emergency stop`, `the rig is
   busy playing`, `another song is being stored`);
+- 413: a MIDI file larger than 32 KB;
+- 422: a MIDI file whose score the Hub refuses too;
+- 500: the device failed (flash it could not write; a planner bug);
 - 507: no room in flash for the song.
+
+The device decides each status from the kind of refusal (`Refusal` in
+`firmware/lib/duet_core/src/duet_device.hpp`), never from its wording.
 
 ## Song files
 

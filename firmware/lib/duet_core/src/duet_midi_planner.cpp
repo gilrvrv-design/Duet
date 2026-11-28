@@ -22,14 +22,16 @@ Response MidiPlanner::plan_midi(const std::vector<uint8_t>& midi, const std::str
   MidiScore score;
   std::string why;
   if (!read_midi(midi.data(), midi.size(), score, why)) return refused(400, why);
-  if (const char* busy = device_.begin_song(slot, title)) return refused(409, busy);
+  if (Refusal busy = device_.begin_song(slot, title); busy != Refusal::None) return refused(busy);
   IntoSong into(device_);
   if (!plan_song(score, robot_, keyboard_, channels_, into, why)) {
     device_.abort_song();
     return refused(422, why);  // the Hub refuses the same score (SONG_INVALID)
   }
-  if (const char* failed = device_.end_song())  // "storage full", or a planner bug
-    return refused(std::string(failed) == "storage full" ? 507 : 500, failed);
+  Refusal failed = device_.end_song();
+  if (failed == Refusal::BadLine)  // the planner made a line the device refuses: a bug
+    return refused(500, "the planner made a song line the rig refuses");
+  if (failed != Refusal::None) return refused(failed);
   std::string body = "{\"ok\":true,\"warnings\":[";
   for (size_t i = 0; i < score.warnings.size(); ++i)
     body += (i ? "," : "") + json_string(score.warnings[i]);

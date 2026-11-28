@@ -24,6 +24,26 @@ constexpr int64_t kPlayLookaheadUs = 500000;  // stored commands are queued this
 constexpr int64_t kUploadTimeoutUs = 2000000;  // an upload that stalls this long is dropped
 constexpr int64_t kMaxSongUs = 3600000000;     // a song line later than an hour is refused
 
+// Why the device will not do something (Refusal::None: it will). Its text is what an ack
+// says ("error: <text>") and what the API answers; callers act on the kind, not the text.
+enum class Refusal : uint8_t {
+  None,
+  AlreadyPlaying,
+  NoSong,          // no song in that slot
+  EmergencyStop,
+  Busy,            // another song is being stored
+  PlayingFromMemory,
+  BadSlot,
+  BadTitle,
+  BadLine,         // a line of the song: the whole song is refused
+  BadLength,
+  StorageFull,
+  StorageFailed,
+  UploadReplaced,  // a new song message came before this one's last line
+  UploadStalled,
+};
+const char* refusal_text(Refusal why);
+
 // The title in a song message or a song file's first line ({"title":".."}): optional,
 // at most kMaxTitle bytes, one line. False if it is not that.
 bool read_song_title(const char* json, std::string& title);
@@ -42,18 +62,17 @@ class Device {
   void poll(int64_t now_us);  // call every loop iteration, instead of executor.poll
   void button(int64_t now_us);  // the play button: next stored song, or stop
 
-  // Play a stored song: nullptr if it starts, else why not ("already playing", ...).
-  const char* request_play(int slot, int64_t now_us);
+  Refusal request_play(int slot, int64_t now_us);  // play a stored song
   void stop();  // stop playing: a stored song, or the Hub's queued commands
-  const char* delete_song(int slot);  // nullptr if gone, else why not
+  Refusal delete_song(int slot);
 
   // Storing a song, from the Hub (the song message) or the device API (a song file), one
   // at a time: begin_song, song_line for each command, then end_song or abort_song. A
   // bad line spoils the whole song: end_song refuses it and the old song stays.
-  const char* begin_song(int slot, const std::string& title);  // nullptr: go on
-  bool song_line(const char* json);                             // false: a bad line
-  void song_line_lost();                                        // one was too long to read
-  const char* end_song();                                       // nullptr: stored
+  Refusal begin_song(int slot, const std::string& title);
+  bool song_line(const char* json);  // false: a bad line
+  void song_line_lost();             // one was too long to read
+  Refusal end_song();                // None: stored
   void abort_song();
   bool writing_song() const { return writing_; }
 
@@ -71,11 +90,11 @@ class Device {
 
   void begin_upload(const Command& c, const char* json, int64_t now_us);
   void receive_line(const char* json, int64_t now_us);
-  void end_upload(const char* stalled);
+  void end_upload(Refusal stalled);  // None: the last line came
   void play(int slot, int64_t now_us);
   void start_song(int64_t now_us);
   void feed(int64_t now_us);
-  void ack(int64_t seq, const char* status);
+  void ack(int64_t seq, Refusal why);  // "ok", or "error: <why>"
   void fault(const char* code, const char* detail);
 
   Executor& ex_;
