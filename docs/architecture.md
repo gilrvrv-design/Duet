@@ -206,9 +206,9 @@ flowchart TB
 ```mermaid
 classDiagram
     class DuetScore {
-        schema: "duetscore/1"
+        schema: "duetscore/2"
         meta: Meta
-        parts: robot, pianist
+        parts: name → PartInfo
         events: Event[]
         sections: Section[]
         turns: Turn[]
@@ -221,7 +221,7 @@ classDiagram
         difficulty_target: 1..5
     }
     class Event {
-        part: robot | pianist
+        part: a part's name
         bar: 1-based
         beat: 1-based
         dur: beats
@@ -229,15 +229,20 @@ classDiagram
         vel: 1..127
     }
     class PartInfo {
-        instrument_profile: "bottles-v1"
+        instrument: "bottles-v1"
+        performer: bot | human
         range: (low, high)
     }
     DuetScore --> Meta
     DuetScore --> "many" Event
-    DuetScore --> "2" PartInfo
+    DuetScore --> "many" PartInfo
 ```
 
 - Scores are **immutable** (frozen pydantic models). Every change makes a new score.
+- Each part names an **instrument** (`duet.instruments`) and its **performer**: a bot or
+  a human. Version-1 files (exactly "robot" and "pianist", with `instrument_profile`)
+  are read as version 2. Until step 1e of `docs/design/esp-first.md`, a score has those
+  two parts; the rule is checked when a score is made.
 - Pitches are stored as MIDI numbers and written as names (`"E5"`), so JSON stays readable.
 - `timing` is the only module that turns bars and beats into seconds.
 - Claude never writes a DuetScore directly. It writes a smaller, strict **draft** JSON

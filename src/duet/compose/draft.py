@@ -95,9 +95,10 @@ def draft_to_score(
             "difficulty_target": difficulty,
         },
         "parts": {
-            "robot": {"instrument_profile": robot_profile_id, "role": "melody"},
+            "robot": {"instrument": robot_profile_id, "performer": "bot", "role": "melody"},
             "pianist": {
-                "instrument_profile": keyboard_profile_id,
+                "instrument": keyboard_profile_id,
+                "performer": "human",
                 "role": "accompaniment",
                 "hand": "right",
                 "range": list(pianist_range),

@@ -72,7 +72,7 @@ def test_defaults_fill_parts():
         ({"turns": [{"bars": [2, 1], "lead": "robot"}]}, "turns"),
         ({"meta": {"time_signature": [5, 3]}}, "time signature"),
         ({"meta": {"tempo_bpm": 5}}, "tempo_bpm"),
-        ({"parts": {"robot": {"instrument_profile": "x"}}}, "missing parts"),
+        ({"parts": {"robot": {"instrument_profile": "x"}}}, "a bot part 'robot'"),
         ({"unknown": 1}, "unknown"),
     ],
 )
@@ -115,3 +115,46 @@ def test_one_part_alone():
     piano = score.only("pianist")
     assert [e.pitch for e in piano.events] == [60]
     assert piano.sections == ()  # bar 3 is gone with the robot's last note
+
+
+def test_version_1_scores_are_read_as_version_2():
+    score = load_score(EXAMPLE)  # a version-1 score: robot and pianist, instrument_profile
+    assert score.schema_id == "duetscore/2"
+    assert score.parts["robot"].instrument == "bottles-v1"
+    assert score.parts["robot"].performer == "bot"
+    assert score.parts["pianist"].performer == "human"
+    assert score.parts["pianist"].range == (60, 72)
+    saved = score.to_dict()
+    assert saved["schema"] == "duetscore/2" and "instrument_profile" not in str(saved)
+    assert load_score(saved) == score
+
+
+def test_parts_by_performer():
+    score = make_score(robot=[(1, 1, 1, "C5")])
+    assert score.parts_played_by("bot") == ["robot"]
+    assert score.parts_played_by("human") == ["pianist"]
+
+
+@pytest.mark.parametrize(
+    ("parts", "message"),
+    [
+        (
+            {
+                "robot": {"instrument": "bottles-v1", "performer": "human"},
+                "pianist": {"instrument": "piano-88", "performer": "human"},
+            },
+            "for now a score has a bot part 'robot'",
+        ),
+        (
+            {
+                "robot": {"instrument": "bottles-v1", "performer": "bot"},
+                "Pianist!": {"instrument": "piano-88", "performer": "human"},
+            },
+            "pattern",
+        ),
+    ],
+)
+def test_line_ups_this_version_cannot_play_are_refused(parts, message):
+    v2 = {"schema": "duetscore/2", "parts": parts}
+    with pytest.raises(ValidationError, match=message):
+        load_score(v2)

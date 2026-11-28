@@ -1,5 +1,5 @@
 {
-  "schema": "duetscore/1",
+  "schema": "duetscore/2",
   "meta": {
     "title": "Two notes",
     "key": "C major",
@@ -12,11 +12,13 @@
   },
   "parts": {
     "robot": {
-      "instrument_profile": "bottles-v1",
+      "instrument": "bottles-v1",
+      "performer": "bot",
       "role": "melody"
     },
     "pianist": {
-      "instrument_profile": "piano-88",
+      "instrument": "piano-88",
+      "performer": "human",
       "role": "accompaniment",
       "hand": "right"
     }

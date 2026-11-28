@@ -93,7 +93,7 @@ def duet_midi(ctx: Ctx, duet_id: str):
 @router.post("/v1/duets/{duet_id}/repair", status_code=201)
 def repair_duet(ctx: Ctx, duet_id: str):
     score = ctx.store.get("duet", duet_id).data
-    result = repair_robot(score, robot_profile(score.parts["robot"].instrument_profile))
+    result = repair_robot(score, robot_profile(score.parts["robot"].instrument))
     record = library.add_version(ctx.store, duet_id, result.score, source="repair")
     return {**duet_view(record, ctx.guard), "changes": result.summary().splitlines()}
 

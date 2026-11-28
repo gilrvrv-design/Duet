@@ -22,10 +22,15 @@ from pydantic import (
 
 from duet.pitch import PitchError, midi_to_name, to_midi
 
-SCHEMA_ID = "duetscore/1"
+SCHEMA_ID = "duetscore/2"  # 2: named parts, each with an instrument and a performer
 
-PartName = Literal["robot", "pianist"]
-PARTS: tuple[PartName, ...] = ("robot", "pianist")
+PartName = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$")]
+Performer = Literal["bot", "human"]
+# Until step 1e of docs/design/esp-first.md moves the code to any line-up, a score has
+# these two parts. The rule is checked when a score is made, so no code path ever meets
+# a line-up it cannot play.
+PARTS: tuple[str, ...] = ("robot", "pianist")
+LINE_UP: dict[str, Performer] = {"robot": "bot", "pianist": "human"}
 COMMON_TIME = (4, 4)
 MIN_LEVEL, MAX_LEVEL = 1, 5  # pianist difficulty levels; the rules are in duet.difficulty
 Level = Annotated[int, Field(ge=MIN_LEVEL, le=MAX_LEVEL)]
@@ -90,7 +95,8 @@ class Meta(_Model):
 
 
 class PartInfo(_Model):
-    instrument_profile: str
+    instrument: str  # an instrument id (duet.instruments)
+    performer: Performer
     role: str = "melody"
     hand: Literal["left", "right", "both"] | None = None
     range: tuple[Pitch, Pitch] | None = None
@@ -105,8 +111,10 @@ class PartInfo(_Model):
 
 def _default_parts() -> dict[str, PartInfo]:
     return {
-        "robot": PartInfo(instrument_profile="bottles-v1", role="melody"),
-        "pianist": PartInfo(instrument_profile="piano-88", role="accompaniment", hand="right"),
+        "robot": PartInfo(instrument="bottles-v1", performer="bot", role="melody"),
+        "pianist": PartInfo(
+            instrument="piano-88", performer="human", role="accompaniment", hand="right"
+        ),
     }
 
 
@@ -140,8 +148,33 @@ class Annotation(_Model):
     text: str
 
 
+def _from_v1(data: object) -> object:
+    """Version 1 had exactly two parts, "robot" and "pianist", each naming an
+    ``instrument_profile``: the bot played the first, a human the second."""
+    if not isinstance(data, dict):
+        return data
+    schema = data.get("schema", data.get("schema_id"))
+    parts = data.get("parts", {})
+    is_v1 = schema == "duetscore/1" or any(
+        isinstance(p, dict) and "instrument_profile" in p for p in parts.values()
+    )
+    if not is_v1:
+        return data
+    converted = {k: v for k, v in data.items() if k not in ("schema", "schema_id")}
+    converted["schema"] = SCHEMA_ID
+    converted["parts"] = {
+        name: {
+            **{k: v for k, v in info.items() if k != "instrument_profile"},
+            "instrument": info["instrument_profile"],
+            "performer": LINE_UP[name],
+        }
+        for name, info in parts.items()
+    }
+    return converted
+
+
 class DuetScore(_Model):
-    schema_id: Literal["duetscore/1"] = Field(SCHEMA_ID, alias="schema")
+    schema_id: Literal["duetscore/2"] = Field(SCHEMA_ID, alias="schema")
     meta: Meta = Field(default_factory=Meta)
     parts: dict[PartName, PartInfo] = Field(default_factory=_default_parts)
     events: tuple[Event, ...] = ()
@@ -151,11 +184,25 @@ class DuetScore(_Model):
 
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _upgrade(cls, data: object) -> object:
+        return _from_v1(data)
+
     @model_validator(mode="after")
     def _check_consistency(self) -> DuetScore:
-        missing = set(PARTS) - set(self.parts)
-        if missing:
-            raise ValueError(f"missing parts: {sorted(missing)}")
+        line_up = {name: info.performer for name, info in self.parts.items()}
+        if line_up != LINE_UP:
+            raise ValueError(
+                "for now a score has a bot part 'robot' and a human part 'pianist' "
+                f"(got {line_up}); other line-ups come with step 1e"
+            )
+        for i, event in enumerate(self.events):
+            if event.part not in self.parts:
+                raise ValueError(f"events[{i}]: no part named {event.part!r}")
+        for i, turn in enumerate(self.turns):
+            if turn.lead not in self.parts:
+                raise ValueError(f"turns[{i}]: no part named {turn.lead!r}")
         beats = self.meta.beats_per_bar
         for i, event in enumerate(self.events):
             if event.beat >= beats + 1:
@@ -178,6 +225,10 @@ class DuetScore(_Model):
         beats = self.meta.beats_per_bar
         end = max((e.bar - 1) * beats + (e.beat - 1) + e.dur for e in self.events)
         return max(1, -(-int(end * 1000) // (beats * 1000)))
+
+    def parts_played_by(self, performer: Performer) -> list[str]:
+        """The names of the parts a bot (or a human) plays, in score order."""
+        return [name for name, info in self.parts.items() if info.performer == performer]
 
     def part_events(self, part: PartName) -> list[Event]:
         """Events of one part, sorted by position."""

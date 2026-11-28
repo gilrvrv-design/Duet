@@ -92,8 +92,8 @@ def test_drafts_name_the_profiles_they_were_composed_for():
         robot_profile_id="glock-v1",
         keyboard_profile_id="piano-61",
     )
-    assert score.parts["robot"].instrument_profile == "glock-v1"
-    assert score.parts["pianist"].instrument_profile == "piano-61"
+    assert score.parts["robot"].instrument == "glock-v1"
+    assert score.parts["pianist"].instrument == "piano-61"
 
 
 def test_schema_is_strict_friendly():

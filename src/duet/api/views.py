@@ -16,8 +16,8 @@ __all__ = ["duet_view", "job_view", "lesson_view", "skills_view", "summary_view"
 
 def duet_view(record: Record, guard: CopyrightGuard) -> dict:
     score: DuetScore = record.data
-    robot = robot_profile(score.parts["robot"].instrument_profile)
-    keyboard = keyboard_profile(score.parts["pianist"].instrument_profile)
+    robot = robot_profile(score.parts["robot"].instrument)
+    keyboard = keyboard_profile(score.parts["pianist"].instrument)
     report = check_robot(score, robot)
     return {
         "id": record.id,

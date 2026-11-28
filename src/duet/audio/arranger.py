@@ -207,9 +207,10 @@ def arrange(
                 "style_tags": ["transcribed"],
             },
             "parts": {
-                "robot": {"instrument_profile": robot.id, "role": "melody"},
+                "robot": {"instrument": robot.id, "performer": "bot", "role": "melody"},
                 "pianist": {
-                    "instrument_profile": keyboard.id,
+                    "instrument": keyboard.id,
+                    "performer": "human",
                     "role": "accompaniment",
                     "hand": "left",
                     "range": list(pianist_range),
