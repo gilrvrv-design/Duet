@@ -13,12 +13,12 @@
       <h1>Duet</h1>
       <p id="device" class="muted">Connecting…</p>
     </div>
-    <span id="state" class="pill">…</span>
+    <span id="state" class="pill" role="status">…</span>
   </header>
 
   <main>
     <button id="estop" class="estop" type="button">Emergency stop</button>
-    <p id="message" class="message" role="status" hidden></p>
+    <p id="message" class="message" role="alert" hidden></p>
 
     <section>
       <div class="section-head">
@@ -39,7 +39,7 @@
       </p>
     </section>
 
-    <section id="library">
+    <section>
       <h2>Library</h2>
       <ul id="server-list" class="servers"></ul>
       <p id="library-note" class="muted"></p>
@@ -57,13 +57,15 @@
         </select>
       </label>
       <label class="inline">Listen with <select id="practice-input"></select></label>
-      <p id="practice-note" class="hint" hidden></p>
+      <p id="practice-note" class="hint" hidden>
+        This server has no MIDI keyboard or microphone, so it can only play together with you.
+      </p>
       <div class="buttons">
         <button id="practice-start" type="button">Start</button>
-        <button id="practice-stop" class="secondary" type="button" hidden>Stop</button>
+        <button id="practice-stop" class="secondary" type="button" hidden>Stop practice</button>
       </div>
-      <p id="practice-status" role="status"></p>
-      <pre id="practice-result" hidden></pre>
+      <p id="practice-status" class="practice-status" role="status"></p>
+      <pre id="practice-result" class="practice-result" hidden></pre>
     </section>
 
     <section>
@@ -80,17 +82,19 @@
         <label>Wi-Fi network
           <input id="wifi-ssid" name="wifi_ssid" required maxlength="32" autocomplete="off">
         </label>
-        <label>Wi-Fi password
+        <div class="field">
+          <label for="wifi-password">Wi-Fi password</label>
           <input id="wifi-password" name="wifi_password" type="password" maxlength="63"
-                 autocomplete="new-password">
+                 autocomplete="new-password" aria-describedby="password-hint">
           <span id="password-hint" class="hint">Leave empty for an open network.</span>
-        </label>
-        <label>Servers
+        </div>
+        <div class="field">
+          <label for="servers">Servers</label>
           <textarea id="servers" name="servers" rows="2" spellcheck="false"
-                    placeholder="https://duet.example.com"></textarea>
-          <span class="hint">One address per line, up to 4. They add composing, lessons and
-            more when they can be reached.</span>
-        </label>
+                    placeholder="https://duet.example.com" aria-describedby="servers-hint"></textarea>
+          <span id="servers-hint" class="hint">One address per line, up to 4. They add the
+            library and practice when they can be reached.</span>
+        </div>
         <button type="submit">Save</button>
       </form>
     </section>

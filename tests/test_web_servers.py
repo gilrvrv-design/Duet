@@ -191,7 +191,7 @@ def test_stop_a_practice(page, device, listening):
     page.get_by_role("button", name="Practise Rain on the Bottles").click()
     page.get_by_role("button", name="Start").click()  # play together
     poll_until(page, page.locator("#practice-status"), "Playing: Play together")
-    page.get_by_role("button", name="Stop", exact=True).last.click()
+    page.get_by_role("button", name="Stop practice").click()
     poll_until(page, page.locator("#practice-status"), "Stopped")
 
 
