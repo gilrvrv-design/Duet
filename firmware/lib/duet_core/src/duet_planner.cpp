@@ -546,6 +546,22 @@ class Song {
 
 }  // namespace
 
+namespace {
+
+// The channels the song needs and the rig lacks, by name and sorted, as compile_song
+// reports them: carriage_striker before led_strip.
+std::string missing_channels(size_t bot_commands, int carriage_ch, int led_ch) {
+  std::string missing;
+  if (bot_commands && carriage_ch < 0) missing = kind_name(ChannelKind::CarriageStriker);
+  if (led_ch < 0) {
+    if (!missing.empty()) missing += ", ";
+    missing += kind_name(ChannelKind::LedStrip);
+  }
+  return missing;
+}
+
+}  // namespace
+
 bool plan_song(const MidiScore& score, const CarriageInstrument& instrument,
                const KeyboardInstrument& keyboard, const Channels& channels, SongSink& sink,
                std::string& why) {
@@ -570,15 +586,10 @@ bool plan_song(const MidiScore& score, const CarriageInstrument& instrument,
           std::to_string(kMaxSongLines);
     return false;
   }
-  int carriage_ch = channels.first(ChannelKind::CarriageStriker);
-  int led_ch = channels.first(ChannelKind::LedStrip);
-  std::string missing;  // by name, sorted: carriage_striker before led_strip
-  if (bot_commands && carriage_ch < 0) missing = kind_name(ChannelKind::CarriageStriker);
-  if (led_ch < 0) {
-    if (!missing.empty()) missing += ", ";
-    missing += kind_name(ChannelKind::LedStrip);
-  }
-  if (!missing.empty()) {
+  const int carriage_ch = channels.first(ChannelKind::CarriageStriker);
+  const int led_ch = channels.first(ChannelKind::LedStrip);
+  if (const std::string missing = missing_channels(bot_commands, carriage_ch, led_ch);
+      !missing.empty()) {
     why = "the rig has no channel for: " + missing;
     return false;
   }

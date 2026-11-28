@@ -98,20 +98,8 @@ class Parser {
     if (size > kMaxMidiBytes)
       return fail("the file is larger than " + std::to_string(kMaxMidiBytes) + " bytes");
     Bytes in(data, size);
-    const uint8_t* id = in.take(8);
-    if (!id || std::memcmp(id, "MThd", 4) != 0) return fail("not a MIDI file: no MThd header");
-    uint32_t length = be32(id + 4);
-    const uint8_t* header = length >= 6 ? in.take(length) : nullptr;
-    if (!header) return fail("the MIDI header is cut short");
-    uint32_t format = be16(header), tracks = be16(header + 2), division = be16(header + 4);
-    if (format > 1)
-      return fail("MIDI format " + std::to_string(format) + " is not supported: only 0 and 1");
-    if (division & 0x8000)
-      return fail("SMPTE time division is not supported: only ticks per quarter note");
-    if (division == 0) return fail("a time division of 0 ticks per quarter note");
-    if (tracks > kMaxMidiTracks)
-      return fail("more than " + std::to_string(kMaxMidiTracks) + " tracks");
-    smf_.ticks_per_quarter = static_cast<int>(division);
+    uint32_t tracks = 0;
+    if (!header(in, tracks)) return false;
     smf_.names.assign(tracks, Name::Other);
     smf_.notes.reserve(std::min(kMaxMidiNotes, size / kMinNoteBytes));
     for (track_ = 0; track_ < tracks; ++track_) {
@@ -127,6 +115,26 @@ class Parser {
   }
 
  private:
+  // MThd: the format, the number of tracks and the time division.
+  bool header(Bytes& in, uint32_t& tracks) {
+    const uint8_t* id = in.take(8);
+    if (!id || std::memcmp(id, "MThd", 4) != 0) return fail("not a MIDI file: no MThd header");
+    uint32_t length = be32(id + 4);
+    const uint8_t* h = length >= 6 ? in.take(length) : nullptr;
+    if (!h) return fail("the MIDI header is cut short");
+    uint32_t format = be16(h), division = be16(h + 4);
+    tracks = be16(h + 2);
+    if (format > 1)
+      return fail("MIDI format " + std::to_string(format) + " is not supported: only 0 and 1");
+    if (division & 0x8000)
+      return fail("SMPTE time division is not supported: only ticks per quarter note");
+    if (division == 0) return fail("a time division of 0 ticks per quarter note");
+    if (tracks > kMaxMidiTracks)
+      return fail("more than " + std::to_string(kMaxMidiTracks) + " tracks");
+    smf_.ticks_per_quarter = static_cast<int>(division);
+    return true;
+  }
+
   bool fail(const std::string& reason) {
     why_ = reason;
     return false;
@@ -171,30 +179,33 @@ class Parser {
         std::snprintf(text, sizeof text, "has status byte 0x%02X, which a MIDI file cannot hold",
                       status);
         return track_fail(text);
-      } else {
-        uint8_t data[2];
-        size_t have = 0;
-        if (status < 0x80) {
-          if (!running) return track_fail("uses running status with no status before it");
-          data[have++] = status;
-          status = running;
-        }
-        running = status;
-        uint8_t kind = status & 0xF0;
-        size_t count = kind == 0xC0 || kind == 0xD0 ? 1 : 2;
-        for (; have < count; ++have) {
-          if (!in.byte(data[have])) return cut();
-          if (data[have] > 0x7F) return track_fail("has a data byte above 127");
-        }
-        uint8_t channel = status & 0x0F;
-        if (kind == 0x90 && data[1] > 0) {
-          if (!start(channel, data[0], data[1], now)) return false;
-        } else if (kind == 0x80 || kind == 0x90) {
-          if (!release(channel, data[0], now)) return false;
-        }
+      } else if (!channel_message(in, status, running, now)) {
+        return false;
       }
     }
     smf_.unreleased += held_.size();
+    return true;
+  }
+
+  // A channel message, perhaps continuing the running status; only notes count.
+  bool channel_message(Bytes& in, uint8_t status, uint8_t& running, int64_t now) {
+    uint8_t data[2];
+    size_t have = 0;
+    if (status < 0x80) {
+      if (!running) return track_fail("uses running status with no status before it");
+      data[have++] = status;
+      status = running;
+    }
+    running = status;
+    uint8_t kind = status & 0xF0;
+    size_t count = kind == 0xC0 || kind == 0xD0 ? 1 : 2;
+    for (; have < count; ++have) {
+      if (!in.byte(data[have])) return cut();
+      if (data[have] > 0x7F) return track_fail("has a data byte above 127");
+    }
+    uint8_t channel = status & 0x0F;
+    if (kind == 0x90 && data[1] > 0) return start(channel, data[0], data[1], now);
+    if (kind == 0x80 || kind == 0x90) return release(channel, data[0], now);
     return true;
   }
 
@@ -205,34 +216,42 @@ class Parser {
     if (!varint(in, length)) return false;
     const uint8_t* d = in.take(length);
     if (!d) return cut();
-    if (type == 0x03) {
-      smf_.names[track_] = duo_name(d, length);  // the last name in a track counts
-    } else if (type == 0x51) {
-      if (length < 3) return track_fail("has a tempo shorter than 3 bytes");
-      uint32_t tempo = uint32_t{d[0]} << 16 | uint32_t{d[1]} << 8 | d[2];
-      if (!seen_tempo_) {
-        if (tempo == 0) return track_fail("sets a tempo of 0 microseconds per quarter note");
-        smf_.tempo_us = tempo;
-        seen_tempo_ = true;
-      } else if (tempo != smf_.tempo_us) {
-        ++smf_.tempo_changes;
-      }
-    } else if (type == 0x58) {
-      if (length < 4) return track_fail("has a time signature shorter than 4 bytes");
-      if (!seen_signature_) {
-        // What a score allows (duet.score.Meta): 1-16 beats of halves to sixteenths.
-        if (d[0] < 1 || d[0] > 16 || d[1] < 1 || d[1] > 4) {
-          std::string unit = d[1] < 64 ? std::to_string(uint64_t{1} << d[1])
-                                       : "2^" + std::to_string(d[1]);
-          return fail("unsupported time signature " + std::to_string(d[0]) + "/" + unit);
-        }
-        smf_.beats = d[0];
-        smf_.unit_exp = d[1];
-        seen_signature_ = true;
-      } else if (d[0] != smf_.beats || d[1] != smf_.unit_exp) {
-        ++smf_.signature_changes;
-      }
+    if (type == 0x03) smf_.names[track_] = duo_name(d, length);  // the last name counts
+    if (type == 0x51) return tempo(d, length);
+    if (type == 0x58) return signature(d, length);
+    return true;
+  }
+
+  // The first tempo counts; later different ones are counted, to warn of.
+  bool tempo(const uint8_t* d, uint32_t length) {
+    if (length < 3) return track_fail("has a tempo shorter than 3 bytes");
+    uint32_t tempo = uint32_t{d[0]} << 16 | uint32_t{d[1]} << 8 | d[2];
+    if (seen_tempo_) {
+      smf_.tempo_changes += tempo != smf_.tempo_us;
+      return true;
     }
+    if (tempo == 0) return track_fail("sets a tempo of 0 microseconds per quarter note");
+    smf_.tempo_us = tempo;
+    seen_tempo_ = true;
+    return true;
+  }
+
+  // As the tempo: the first time signature counts.
+  bool signature(const uint8_t* d, uint32_t length) {
+    if (length < 4) return track_fail("has a time signature shorter than 4 bytes");
+    if (seen_signature_) {
+      smf_.signature_changes += d[0] != smf_.beats || d[1] != smf_.unit_exp;
+      return true;
+    }
+    // What a score allows (duet.score.Meta): 1-16 beats of halves to sixteenths.
+    if (d[0] < 1 || d[0] > 16 || d[1] < 1 || d[1] > 4) {
+      std::string unit =
+          d[1] < 64 ? std::to_string(uint64_t{1} << d[1]) : "2^" + std::to_string(d[1]);
+      return fail("unsupported time signature " + std::to_string(d[0]) + "/" + unit);
+    }
+    smf_.beats = d[0];
+    smf_.unit_exp = d[1];
+    seen_signature_ = true;
     return true;
   }
 
@@ -307,6 +326,20 @@ void skyline(std::vector<Note>& notes) {
   }
 }
 
+// What the reader left out, as read_midi warns of it.
+std::vector<std::string> ignored(const Smf& smf) {
+  std::vector<std::string> out;
+  if (smf.tempo_changes)
+    out.push_back(std::to_string(smf.tempo_changes) +
+                  " later tempo change(s) ignored: one tempo per score");
+  if (smf.signature_changes)
+    out.push_back(std::to_string(smf.signature_changes) +
+                  " later time signature change(s) ignored");
+  if (smf.unreleased)
+    out.push_back(std::to_string(smf.unreleased) + " note(s) never released were left out");
+  return out;
+}
+
 }  // namespace
 
 const char* part_name(DuoPart part) { return part == DuoPart::Bot ? "robot" : "pianist"; }
@@ -323,15 +356,7 @@ bool read_midi(const uint8_t* data, size_t size, MidiScore& score, std::string& 
     return false;
   }
   score = MidiScore{};
-  if (smf.tempo_changes)
-    score.warnings.push_back(std::to_string(smf.tempo_changes) +
-                             " later tempo change(s) ignored: one tempo per score");
-  if (smf.signature_changes)
-    score.warnings.push_back(std::to_string(smf.signature_changes) +
-                             " later time signature change(s) ignored");
-  if (smf.unreleased)
-    score.warnings.push_back(std::to_string(smf.unreleased) +
-                             " note(s) never released were left out");
+  score.warnings = ignored(smf);
 
   // The same operations, in the same order, as read_midi, so the doubles are the same.
   const int beats = smf.beats, unit = 1 << smf.unit_exp;

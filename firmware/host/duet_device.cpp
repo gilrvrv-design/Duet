@@ -98,19 +98,90 @@ int listen_on(int port) {
   return fd;
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
+struct Options {
   int port = 0;
   int http_port = 0;
   int32_t start_steps = SIM_START_STEPS;
+};
+
+Options options(int argc, char** argv) {
+  Options o;
   for (int i = 1; i + 1 < argc; i += 2) {
     std::string flag = argv[i];
-    if (flag == "--port") port = std::atoi(argv[i + 1]);
-    else if (flag == "--http-port") http_port = std::atoi(argv[i + 1]);
+    if (flag == "--port") o.port = std::atoi(argv[i + 1]);
+    else if (flag == "--http-port") o.http_port = std::atoi(argv[i + 1]);
     else if (flag == "--clock-offset-us") clock_offset_us = std::atoll(argv[i + 1]);
-    else if (flag == "--start-steps") start_steps = std::atoi(argv[i + 1]);
+    else if (flag == "--start-steps") o.start_steps = std::atoi(argv[i + 1]);
   }
+  return o;
+}
+
+// The device API and the web app, as the ESP32 serves them.
+HttpReply serve(duet::Api& api, int64_t now, const std::string& method, const std::string& path,
+                const std::string& query, const std::string& body) {
+  if (method == "PUT" && path.rfind("/api/songs/", 0) == 0) {  // as the ESP32 streams it
+    duet::Response r = api.begin_upload(path.c_str(), query_param(query, "title"));
+    if (r.status == 200) {
+      api.upload_data(body.data(), body.size());
+      r = api.end_upload();
+    }
+    return HttpReply{r.status, "application/json", r.body};
+  }
+  if (path.rfind("/api/", 0) == 0) {
+    duet::Response r = api.handle(method.c_str(), path.c_str(), body.c_str(), now);
+    if (r.restart) api.set_network(duet::Network::Station);  // "restarted and joined"
+    return HttpReply{r.status, "application/json", r.body};
+  }
+  const duet::WebAsset* asset = duet::find_asset(duet::kWebAssets, path.c_str());
+  if (asset == nullptr) return HttpReply{404, "text/plain", "not found"};
+  return HttpReply{200, asset->type,
+                   std::string(reinterpret_cast<const char*>(asset->gzip), asset->size), true};
+}
+
+void accept_hub(int server) {
+  int fd = accept(server, nullptr, nullptr);
+  if (client >= 0) {
+    close(fd);  // one Hub at a time, like the rig
+    return;
+  }
+  client = fd;
+  int yes = 1;
+  setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof yes);  // greets when asked
+}
+
+void read_hub(duet::LineReader& reader, duet::Device& device, int64_t now) {
+  char buf[512];
+  ssize_t n = recv(client, buf, sizeof buf, 0);
+  if (n <= 0) {
+    close(client);
+    client = -1;
+    return;
+  }
+  for (ssize_t i = 0; i < n; ++i) reader.feed(buf[i], device, now);
+}
+
+// stdin: a line "press" presses the play button.
+struct Console {
+  bool open = true;
+  std::string line;
+
+  void read(duet::Device& device, int64_t now) {
+    char c;
+    if (::read(STDIN_FILENO, &c, 1) != 1) {
+      open = false;  // end of input: no more button presses
+    } else if (c != '\n') {
+      line += c;
+    } else {
+      if (line == "press") device.button(now);
+      line.clear();
+    }
+  }
+};
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  const Options opts = options(argc, argv);
   std::signal(SIGPIPE, SIG_IGN);
 
   duet::ReportingHal hal(report);
@@ -127,78 +198,31 @@ int main(int argc, char** argv) {
 #endif
   HttpServer http([&](const std::string& method, const std::string& path,
                       const std::string& query, const std::string& body) {
-    if (method == "PUT" && path.rfind("/api/songs/", 0) == 0) {  // as the ESP32 streams it
-      duet::Response r = api.begin_upload(path.c_str(), query_param(query, "title"));
-      if (r.status == 200) {
-        api.upload_data(body.data(), body.size());
-        r = api.end_upload();
-      }
-      return HttpReply{r.status, "application/json", r.body};
-    }
-    if (path.rfind("/api/", 0) == 0) {
-      duet::Response r = api.handle(method.c_str(), path.c_str(), body.c_str(), hal.now_us);
-      if (r.restart) api.set_network(duet::Network::Station);  // "restarted and joined"
-      return HttpReply{r.status, "application/json", r.body};
-    }
-    const duet::WebAsset* asset = duet::find_asset(duet::kWebAssets, path.c_str());
-    if (asset == nullptr) return HttpReply{404, "text/plain", "not found"};
-    return HttpReply{200, asset->type,
-                     std::string(reinterpret_cast<const char*>(asset->gzip), asset->size), true};
+    return serve(api, hal.now_us, method, path, query, body);
   });
   duet::LineReader reader;
-  std::string console;  // stdin: "press" presses the play button
-  bool stdin_open = true;
+  Console console;
   hal.now_us = now_us();
-  hal.place(start_steps);
-  int server = listen_on(port);
+  hal.place(opts.start_steps);
+  int server = listen_on(opts.port);
   api.set_link("tcp://127.0.0.1:" + std::to_string(bound_port(server)));
-  std::printf("http %d\n", http.listen_on(http_port));
+  std::printf("http %d\n", http.listen_on(opts.http_port));
   std::fflush(stdout);
 
   for (;;) {
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(server, &fds);
-    if (stdin_open) FD_SET(STDIN_FILENO, &fds);
+    if (console.open) FD_SET(STDIN_FILENO, &fds);
     if (client >= 0) FD_SET(client, &fds);
     int top = std::max({server, client, http.watch(fds)});
     timeval wait{0, 100};  // poll the executor at least every 0.1 ms
     select(top + 1, &fds, nullptr, nullptr, &wait);
     hal.now_us = now_us();
 
-    if (FD_ISSET(server, &fds)) {
-      int fd = accept(server, nullptr, nullptr);
-      if (client >= 0) {
-        close(fd);  // one Hub at a time, like the rig
-      } else {
-        client = fd;
-        int yes = 1;
-        setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof yes);  // greets when asked
-      }
-    }
-    if (client >= 0 && FD_ISSET(client, &fds)) {
-      char buf[512];
-      ssize_t n = recv(client, buf, sizeof buf, 0);
-      if (n <= 0) {
-        close(client);
-        client = -1;
-      } else {
-        for (ssize_t i = 0; i < n; ++i) reader.feed(buf[i], device, hal.now_us);
-      }
-    }
-    if (stdin_open && FD_ISSET(STDIN_FILENO, &fds)) {
-      char c;
-      if (read(STDIN_FILENO, &c, 1) != 1) {
-        stdin_open = false;  // end of input: no more button presses
-      } else {
-        if (c != '\n') {
-          console += c;
-        } else {
-          if (console == "press") device.button(hal.now_us);
-          console.clear();
-        }
-      }
-    }
+    if (FD_ISSET(server, &fds)) accept_hub(server);
+    if (client >= 0 && FD_ISSET(client, &fds)) read_hub(reader, device, hal.now_us);
+    if (console.open && FD_ISSET(STDIN_FILENO, &fds)) console.read(device, hal.now_us);
     http.serve(fds);
     device.poll(hal.now_us);
   }
