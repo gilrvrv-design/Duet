@@ -19,15 +19,12 @@ void Device::on_message(const char* json, int64_t now_us) {
         return;
       case Type::Play:
         ex_.keepalive(now_us);
-        if (playing()) {
-          ack(c.seq, "error: already playing");
-        } else if (!store_.has(c.slot)) {
-          ack(c.seq, "error: no song in that slot");
-        } else if (ex_.estopped()) {
-          ack(c.seq, "error: emergency stop");
+        if (const char* why = request_play(c.slot, now_us)) {
+          char status[64];
+          std::snprintf(status, sizeof status, "error: %s", why);
+          ack(c.seq, status);
         } else {
           ack(c.seq, "ok");
-          play(c.slot, now_us);
         }
         return;
       case Type::Stop:
@@ -107,14 +104,24 @@ void Device::end_upload(const char* status) {
   ack(upload_seq_, status == nullptr ? "ok" : status);
 }
 
-bool Device::play(int slot, int64_t now_us) {
-  if (!store_.has(slot) || ex_.estopped()) return false;
+const char* Device::request_play(int slot, int64_t now_us) {
+  if (playing()) return "already playing";
+  if (!store_.has(slot)) return "no song in that slot";
+  if (ex_.estopped()) return "emergency stop";
+  play(slot, now_us);
+  return nullptr;
+}
+
+const char* Device::state_name() const {
+  return state_ == State::Idle ? "idle" : state_ == State::Homing ? "homing" : "playing";
+}
+
+void Device::play(int slot, int64_t now_us) {
   slot_ = slot;
   // Always home: a song is compiled from the home position, and the carriage may be
   // wherever the last song left it.
   state_ = State::Homing;
   ex_.start_homing(now_us);
-  return true;
 }
 
 void Device::start_song(int64_t now_us) {
@@ -182,7 +189,7 @@ void Device::button(int64_t now_us) {
   for (int i = 1; i <= kSongSlots; ++i) {  // the next stored song after the last one
     int slot = (slot_ + i + kSongSlots) % kSongSlots;
     if (store_.has(slot)) {
-      play(slot, now_us);
+      request_play(slot, now_us);  // refused only under an emergency stop
       return;
     }
   }

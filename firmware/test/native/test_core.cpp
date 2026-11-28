@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "duet_api.hpp"
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "duet_features.hpp"
@@ -426,6 +427,53 @@ static void test_midi_notes_off_and_estop_and_boards_without_midi() {
   CHECK(midi_count(hal2, 0xB0 << 8 | 123) == 0);  // no MIDI port: nothing sent to it
 }
 
+// The device API ------------------------------------------------------------------
+
+static void test_the_api_reports_the_device_and_plays_its_songs() {
+  Rig r;
+  r.hal.place(4000);
+  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", kPlayButton, kRig});
+  Response info = api.handle("GET", "/api/info", r.hal.now_us);
+  CHECK(info.status == 200);
+  CHECK(info.body.find(R"({"hello":{"type":"hello")") == 0);  // as the Hub hears it
+  CHECK(info.body.find(R"("features":["play_button"])") != std::string::npos);
+  CHECK(info.body.find(R"("kind":"midi_out")") != std::string::npos);
+  CHECK(info.body.find(R"("state":"idle","slot":-1,"estopped":false})") != std::string::npos);
+
+  CHECK(api.handle("GET", "/api/songs", 0).body == R"({"slots":8,"songs":[]})");
+  upload(r, 2);
+  upload(r, 5, 9);
+  CHECK(api.handle("GET", "/api/songs", 0).body ==
+        R"({"slots":8,"songs":[{"slot":2},{"slot":5}]})");
+
+  Response none = api.handle("POST", "/api/songs/0/play", r.hal.now_us);
+  CHECK(none.status == 409 && none.body == R"({"error":"no song in that slot"})");
+  CHECK(api.handle("POST", "/api/songs/2/play", r.hal.now_us).status == 200);
+  CHECK(r.dev.playing() && r.dev.slot() == 2);
+  CHECK(api.handle("POST", "/api/songs/5/play", r.hal.now_us).body ==
+        R"({"error":"already playing"})");
+  CHECK(api.handle("GET", "/api/info", 0).body.find(R"("state":"homing","slot":2)") !=
+        std::string::npos);
+  CHECK(api.handle("POST", "/api/stop", r.hal.now_us).status == 200 && !r.dev.playing());
+
+  CHECK(api.handle("POST", "/api/estop", r.hal.now_us).status == 200 && r.dev.estopped());
+  CHECK(api.handle("POST", "/api/songs/2/play", r.hal.now_us).body ==
+        R"({"error":"emergency stop"})");
+}
+
+static void test_the_api_refuses_unknown_paths_and_wrong_methods() {
+  Rig r;
+  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", 0, kRig});
+  CHECK(api.handle("GET", "/api/nothing", 0).status == 404);
+  CHECK(api.handle("POST", "/api/songs/8/play", 0).status == 404);  // slots are 0-7
+  CHECK(api.handle("POST", "/api/songs/x/play", 0).status == 404);
+  CHECK(api.handle("POST", "/api/songs/1/playx", 0).status == 404);
+  CHECK(api.handle("POST", "/api/info", 0).status == 405);
+  CHECK(api.handle("GET", "/api/stop", 0).status == 405);
+  CHECK(api.handle("GET", "/api/songs/1/play", 0).status == 405);
+  CHECK(!r.dev.estopped());
+}
+
 int main() {
   test_parse();
   test_queue_orders_by_time();
@@ -445,6 +493,8 @@ int main() {
   test_the_button_plays_the_next_song_and_stops();
   test_no_watchdog_stop_while_playing_from_memory();
   test_playing_from_memory_keeps_the_rig_safe();
+  test_the_api_reports_the_device_and_plays_its_songs();
+  test_the_api_refuses_unknown_paths_and_wrong_methods();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

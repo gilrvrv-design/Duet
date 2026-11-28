@@ -2,9 +2,10 @@
 // the QEMU build, on a real-time clock, with the serial link carried over TCP. The Hub
 // connects with tcp://127.0.0.1:<port>, exactly as to QEMU or a rig on a serial bridge.
 //
-//   duet_device [--port N] [--clock-offset-us N] [--start-steps N]
+//   duet_device [--port N] [--http-port N] [--clock-offset-us N] [--start-steps N]
 //
-// Port 0 picks a free port. The first stdout line is "listening <port>". Lines starting
+// Port 0 picks a free port. The first stdout line is "listening <port>" (the serial
+// link), the second "http <port>" (the device API and web app, as on the ESP32). Lines starting
 // with '#' report what the stubbed hardware did (duet_report_hal.hpp). One Hub at a time;
 // the device keeps its state (and its stored songs) between connections, like a powered
 // rig. A line "press" on stdin presses the play button.
@@ -15,6 +16,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -25,10 +27,12 @@
 
 #include "board.h"  // boards/native
 #include "rig.h"
+#include "duet_api.hpp"
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "duet_line_reader.hpp"
 #include "duet_report_hal.hpp"
+#include "http_server.hpp"
 
 namespace {
 
@@ -85,10 +89,12 @@ int listen_on(int port) {
 
 int main(int argc, char** argv) {
   int port = 0;
+  int http_port = 0;
   int32_t start_steps = 4000;
   for (int i = 1; i + 1 < argc; i += 2) {
     std::string flag = argv[i];
     if (flag == "--port") port = std::atoi(argv[i + 1]);
+    else if (flag == "--http-port") http_port = std::atoi(argv[i + 1]);
     else if (flag == "--clock-offset-us") clock_offset_us = std::atoll(argv[i + 1]);
     else if (flag == "--start-steps") start_steps = std::atoi(argv[i + 1]);
   }
@@ -99,12 +105,20 @@ int main(int argc, char** argv) {
   duet::Executor executor(hal, sink, BOARD_CHANNELS);
   duet::MemorySongStore songs;
   duet::Device device(executor, songs, sink);
+  constexpr duet::Identity identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS};
+  duet::Api api(device, identity);
+  HttpServer http([&](const std::string& method, const std::string& path) {
+    duet::Response r = api.handle(method.c_str(), path.c_str(), hal.now_us);
+    return HttpReply{r.status, "application/json", r.body};
+  });
   duet::LineReader reader;
   std::string console;  // stdin: "press" presses the play button
   bool stdin_open = true;
   hal.now_us = now_us();
   hal.place(start_steps);
   int server = listen_on(port);
+  std::printf("http %d\n", http.listen_on(http_port));
+  std::fflush(stdout);
 
   for (;;) {
     fd_set fds;
@@ -112,8 +126,9 @@ int main(int argc, char** argv) {
     FD_SET(server, &fds);
     if (stdin_open) FD_SET(STDIN_FILENO, &fds);
     if (client >= 0) FD_SET(client, &fds);
+    int top = std::max({server, client, http.watch(fds)});
     timeval wait{0, 100};  // poll the executor at least every 0.1 ms
-    select((client > server ? client : server) + 1, &fds, nullptr, nullptr, &wait);
+    select(top + 1, &fds, nullptr, nullptr, &wait);
     hal.now_us = now_us();
 
     if (FD_ISSET(server, &fds)) {
@@ -124,7 +139,7 @@ int main(int argc, char** argv) {
         client = fd;
         int yes = 1;
         setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof yes);
-        device.greet(duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS});
+        device.greet(identity);
       }
     }
     if (client >= 0 && FD_ISSET(client, &fds)) {
@@ -150,6 +165,7 @@ int main(int argc, char** argv) {
         }
       }
     }
+    http.serve(fds);
     device.poll(hal.now_us);
   }
 }

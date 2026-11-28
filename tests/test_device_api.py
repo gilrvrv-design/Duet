@@ -1,0 +1,75 @@
+"""The device API over HTTP, on the native device: what the web app asks the rig."""
+
+import time
+
+import pytest
+
+import native_device
+from duet.device.gateway import DeviceGateway
+from duet.profile import keyboard_profile, robot_profile
+from duet.score import load_score
+from duet.sim import RIG_CHANNELS
+from duet.songs import compile_song
+from helpers import ROOT
+
+
+@pytest.fixture
+def device():
+    running = native_device.start()
+    try:
+        yield running
+    finally:
+        running.stop()
+
+
+def upload(device, slot):
+    score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
+    song = compile_song(score, robot_profile(), keyboard_profile(), RIG_CHANNELS)
+    gateway = DeviceGateway(device.serial_url, profile=robot_profile()).connect()
+    try:
+        gateway.upload(slot, song.commands)
+    finally:
+        gateway.close()
+
+
+def wait_for_state(device, state, timeout_s=10):
+    deadline = time.monotonic() + timeout_s
+    while (info := device.api("GET", "/api/info")[1])["state"] != state:
+        assert time.monotonic() < deadline, f"still {info['state']}"
+        time.sleep(0.05)
+    return info
+
+
+def test_info_is_what_the_hub_hears(device):
+    status, info = device.api("GET", "/api/info")
+    assert status == 200
+    assert info["hello"]["board"] == "native" and info["hello"]["protocol"] == 3
+    assert [c["kind"] for c in info["channels"]] == ["carriage_striker", "led_strip", "midi_out"]
+    assert info["channels"][0]["travel_steps"] == 48000
+    assert (info["state"], info["slot"], info["estopped"]) == ("idle", -1, False)
+
+
+def test_the_app_plays_a_stored_song_and_stops_it(device):
+    assert device.api("GET", "/api/songs") == (200, {"slots": 8, "songs": []})
+    upload(device, 4)
+    assert device.api("GET", "/api/songs")[1]["songs"] == [{"slot": 4}]
+
+    assert device.api("POST", "/api/songs/4/play") == (200, {"ok": True})
+    info = wait_for_state(device, "playing")
+    assert info["slot"] == 4
+    assert device.api("POST", "/api/songs/4/play") == (409, {"error": "already playing"})
+    assert device.api("POST", "/api/stop") == (200, {"ok": True})
+    wait_for_state(device, "idle", timeout_s=1)
+
+
+def test_the_app_can_stop_the_rig(device):
+    upload(device, 0)
+    assert device.api("POST", "/api/estop") == (200, {"ok": True})
+    assert device.api("GET", "/api/info")[1]["estopped"] is True
+    assert device.api("POST", "/api/songs/0/play") == (409, {"error": "emergency stop"})
+
+
+def test_unknown_paths_and_wrong_methods(device):
+    assert device.api("GET", "/api/nope") == (404, {"error": "no such path"})
+    assert device.api("POST", "/api/info") == (405, {"error": "use GET"})
+    assert device.api("GET", "/api/stop") == (405, {"error": "use POST"})

@@ -34,8 +34,16 @@ class Device {
   void poll(int64_t now_us);  // call every loop iteration, instead of executor.poll
   void button(int64_t now_us);  // the play button: next stored song, or stop
 
+  // Play a stored song: nullptr if it starts, else why not ("already playing", ...).
+  const char* request_play(int slot, int64_t now_us);
+  void stop();  // stop playing; nothing if idle
+
   bool playing() const { return state_ != State::Idle; }
+  bool estopped() const { return ex_.estopped(); }
+  const char* state_name() const;  // "idle", "homing" or "playing"
   int slot() const { return slot_; }  // the song playing or last played; -1 before any
+  const SongStore& songs() const { return store_; }
+  const Config& config() const { return ex_.config(); }
 
  private:
   enum class State { Idle, Homing, Playing };
@@ -43,10 +51,9 @@ class Device {
   void begin_upload(const Command& c, int64_t now_us);
   void receive_line(const Command& c, const char* json, int64_t now_us);
   void end_upload(const char* status);
-  bool play(int slot, int64_t now_us);  // false if there is no such song or the rig is stopped
+  void play(int slot, int64_t now_us);
   void start_song(int64_t now_us);
   void feed(int64_t now_us);
-  void stop();
   void ack(int64_t seq, const char* status);
   void fault(const char* code, const char* detail);
 

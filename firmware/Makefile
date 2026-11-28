@@ -2,7 +2,7 @@
 CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Werror
 CORE := lib/duet_core/src
-SRCS := $(CORE)/duet_protocol.cpp $(CORE)/duet_executor.cpp $(CORE)/duet_device.cpp
+SRCS := $(CORE)/duet_protocol.cpp $(CORE)/duet_executor.cpp $(CORE)/duet_device.cpp $(CORE)/duet_api.cpp
 INC := -I$(CORE)
 
 .PHONY: test clean qemu-image device
@@ -33,7 +33,7 @@ qemu-image:
 # The firmware as a Linux process, its serial link over TCP (host/duet_device.cpp).
 device: build/duet_device
 
-build/duet_device: host/duet_device.cpp boards/native/board.h src/rig.h $(SRCS) $(wildcard $(CORE)/*.hpp)
+build/duet_device: host/duet_device.cpp host/http_server.hpp boards/native/board.h src/rig.h $(SRCS) $(wildcard $(CORE)/*.hpp)
 	@mkdir -p build
 	$(CXX) $(CXXFLAGS) $(INC) -Iboards/native -Isrc -o $@ host/duet_device.cpp $(SRCS)
 

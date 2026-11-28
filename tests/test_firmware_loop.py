@@ -23,6 +23,7 @@ import time
 
 import pytest
 
+import native_device
 from duet.conductor import VirtualClock, one_rig, perform
 from duet.device.clock import hub_now_us
 from duet.device.gateway import DeviceFault, DeviceGateway
@@ -36,7 +37,6 @@ from duet.songs import compile_song
 from helpers import ROOT
 
 FIRMWARE = ROOT / "firmware"
-NATIVE = FIRMWARE / "build" / "duet_device"
 QEMU_IMAGE = FIRMWARE / "build" / "qemu-flash.bin"
 QEMU = os.environ.get("DUET_QEMU") or shutil.which("qemu-system-xtensa")
 BOOT_TIMEOUT_S = 30  # QEMU boots in a second or two; slow machines need more
@@ -51,13 +51,8 @@ def free_port() -> int:
 
 
 def start_native():
-    built = subprocess.run(["make", "-s", "-C", str(FIRMWARE), "device"], capture_output=True)
-    assert built.returncode == 0, built.stderr.decode()
-    process = subprocess.Popen(
-        [str(NATIVE), "--port", "0"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
-    )
-    port = int(process.stdout.readline().split()[1])  # "listening <port>"
-    return process, f"tcp://127.0.0.1:{port}"
+    device = native_device.start()
+    return device.process, device.serial_url
 
 
 def start_qemu(tmp_path):
