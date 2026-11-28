@@ -17,11 +17,12 @@ from duet import __version__
 from duet.api.codecs import store_from_env
 from duet.api.context import AppContext
 from duet.api.errors import Problem, problem_response
-from duet.api.routes import compositions, duets, jobs, learning, system, transcriptions
+from duet.api.routes import compositions, duets, jobs, learning, live, system, transcriptions
 from duet.compose.service import Composer
 from duet.copyright import CopyrightGuard
 from duet.jobs import JobRunner
 from duet.library import seed_featured
+from duet.live import KeyInputs, Practices, machine_inputs
 from duet.score import LineUpError
 from duet.storage import NotFound, Store
 
@@ -49,10 +50,13 @@ def create_app(
     guard: CopyrightGuard | None = None,
     examples_dir: Path | str | None = None,
     device_origins: str | None = None,
+    live_inputs: KeyInputs | None = None,
 ) -> FastAPI:
     """Build the app. Everything it depends on can be passed in; the defaults read
     ``DUET_DB``, ``DUET_EXAMPLES``, ``DUET_PROTECTED_MELODIES`` and
-    ``DUET_DEVICE_ORIGINS`` (a regular expression for the origins of rigs' pages)."""
+    ``DUET_DEVICE_ORIGINS`` (a regular expression for the origins of rigs' pages).
+    ``live_inputs``: how practices hear the pianist (default: this machine's MIDI inputs
+    and microphone)."""
     store = store or store_from_env(os.environ.get("DUET_DB"))
     if examples_dir is None and os.environ.get("DUET_EXAMPLES"):
         examples_dir = os.environ["DUET_EXAMPLES"]
@@ -62,12 +66,14 @@ def create_app(
         jobs=JobRunner(store),
         guard=guard or CopyrightGuard.load(),
         composer_factory=composer_factory or _claude,
+        live=Practices(machine_inputs() if live_inputs is None else live_inputs),
     )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         yield
         ctx.jobs.shutdown()
+        ctx.live.shutdown()
 
     app = FastAPI(title="Duet", version=__version__, lifespan=lifespan)
     origins = device_origins or os.environ.get("DUET_DEVICE_ORIGINS") or DEVICE_ORIGINS
@@ -93,6 +99,6 @@ def create_app(
     async def _not_found(_: Request, exc: NotFound):
         return problem_response(Problem("NOT_FOUND", str(exc.args[0])))
 
-    for module in (system, duets, compositions, transcriptions, learning, jobs):
+    for module in (system, duets, compositions, transcriptions, learning, jobs, live):
         app.include_router(module.router)
     return app

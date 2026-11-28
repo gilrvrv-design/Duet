@@ -16,6 +16,7 @@ from duet.compose.service import Composer
 from duet.copyright import CopyrightGuard
 from duet.jobs import JobFailure, JobRunner, Work, job_view
 from duet.learning import USER_PATTERN
+from duet.live import Practices
 from duet.progress import no_progress
 from duet.storage import Store
 
@@ -28,6 +29,7 @@ class AppContext:
     jobs: JobRunner
     guard: CopyrightGuard
     composer_factory: Callable[[], Composer]
+    live: Practices
 
     def run_or_submit(self, kind: str, work: Work, background: bool):
         """Run ``work`` now (its failure becomes a problem response), or as a job."""

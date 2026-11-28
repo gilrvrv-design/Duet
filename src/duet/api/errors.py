@@ -21,6 +21,8 @@ STATUS = {
     "ROUTE_UNAVAILABLE": 422,
     "VARIATION_INVALID": 422,
     "SONG_INVALID": 422,  # the duet cannot be stored as a song for that rig
+    "LIVE_INVALID": 422,  # a practice asked for a mode or input this server cannot give
+    "PRACTICE_BUSY": 409,  # a practice is already playing
     "COMPOSITION_FAILED": 502,
     "LLM_ERROR": 502,
     "INTERNAL": 500,

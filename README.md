@@ -200,7 +200,9 @@ make serve HOST=0.0.0.0
 
 The server lets pages served from `.local` names and local-network addresses call it
 (CORS); `DUET_DEVICE_ORIGINS` (a regular expression) replaces that. The page fetches
-library duets as song files for its rig (`POST /v1/duets/{id}/song`).
+library duets as song files for its rig (`POST /v1/duets/{id}/song`), and starts practice
+on the rig (`/v1/live`): the server plays a duet on the rig, in time, or waiting for or
+following the pianist it hears through a MIDI keyboard or microphone on its own machine.
 
 ## Optional full-mix transcription
 
