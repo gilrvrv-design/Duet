@@ -177,6 +177,17 @@ make serve
 Set `DUET_DB=duet.db` to keep data in SQLite (default: in memory). Then open http://127.0.0.1:8000/docs. Main endpoints: `/v1/duets`, `/v1/duets/import`, `/v1/compositions`,
 `/v1/transcriptions` and `/v1/transcriptions/{id}/arrangements`.
 
+For the rig's page to use the server, the server must be reachable from the network.
+Add its address (say `http://192.168.1.20:8000`) to the rig's settings:
+
+```bash
+make serve HOST=0.0.0.0
+```
+
+The server lets pages served from `.local` names and local-network addresses call it
+(CORS); `DUET_DEVICE_ORIGINS` (a regular expression) replaces that. The page fetches
+library duets as song files for its rig (`POST /v1/duets/{id}/song`).
+
 ## Optional full-mix transcription
 
 Separating full songs into instruments uses Demucs and Basic Pitch, which bring large ML frameworks:

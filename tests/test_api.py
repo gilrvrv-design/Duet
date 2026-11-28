@@ -377,3 +377,39 @@ def test_a_line_up_nobody_can_play_is_refused_before_it_is_stored(client):
     score["parts"]["pianist"] = {"instrument": "kazoo", "performer": "human"}
     assert client.post("/v1/duets", json=score).json()["code"] == "LINE_UP_INVALID"
     assert len(client.get("/v1/duets").json()) == before
+
+
+RIG = {"profile": "bottles-v1", "channels": {"carriage_striker": 0, "led_strip": 1}}
+
+
+def test_a_duet_becomes_a_song_for_the_rig(client):
+    featured = client.get("/v1/duets", params={"q": "Rain on the Bottles"}).json()[0]
+    reply = client.post(f"/v1/duets/{featured['id']}/song", json=RIG)
+    assert reply.status_code == 200 and reply.headers["content-type"].startswith("text/plain")
+    lines = [json.loads(line) for line in reply.text.splitlines()]
+    assert lines[0] == {"title": "Rain on the Bottles"}  # a song file (docs/device-api.md)
+    assert {line["type"] for line in lines[1:]} <= {"move_at", "strike_at", "led_frame_at"}
+    assert {line["ch"] for line in lines[1:]} == {0, 1}  # the rig's channels
+
+    for rig, says in [
+        ({"profile": "kazoo", "channels": {}}, "no carriage instrument 'kazoo'"),
+        ({"profile": "bottles-v1", "channels": {}}, "led_strip"),  # no strip on that rig
+    ]:
+        problem = client.post(f"/v1/duets/{featured['id']}/song", json=rig)
+        assert problem.status_code == 422 and problem.json()["code"] == "SONG_INVALID"
+        assert says in problem.json()["detail"]
+
+
+def test_a_rigs_page_may_call_the_server_and_other_sites_may_not(client):
+    for origin, allowed in [
+        ("http://duet-rig-1.local", True),
+        ("http://192.168.4.1", True),  # the setup network
+        ("http://127.0.0.1:8080", True),
+        ("https://example.com", False),
+        ("http://192.168.1.2.example.com", False),
+    ]:
+        preflight = client.options(
+            "/v1/duets",
+            headers={"Origin": origin, "Access-Control-Request-Method": "POST"},
+        )
+        assert (preflight.headers.get("access-control-allow-origin") == origin) is allowed

@@ -18,16 +18,27 @@ from duet.api.views import duet_view, summary_view
 from duet.compose.service import ComposerError, CompositionError, revise
 from duet.jobs import JobFailure
 from duet.midi_io import read_midi, score_to_midi_bytes
-from duet.performers import performers, repair_bots
+from duet.performers import in_use, performers, repair_bots
+from duet.profile import keyboard_profile, robot_profile
 from duet.score import MAX_LEVEL, MIN_LEVEL, DuetScore
+from duet.songs import SongError, compile_song
 from duet.variations import VariationError, is_built_in, vary
 
 router = APIRouter()
 MIDI = "audio/midi"
+SONG_FILE = "text/plain; charset=utf-8"  # one JSON object per line
 
 
 class VariationIn(BaseModel):
     instruction: str = Field(min_length=1, max_length=500)
+
+
+class RigIn(BaseModel):
+    """The rig a song is for, as its /api/info says: the instrument its carriage plays,
+    and its channel of each kind."""
+
+    profile: str = Field(min_length=1, max_length=64)
+    channels: dict[str, Annotated[int, Field(ge=0, le=255)]]
 
 
 class PublishIn(BaseModel):
@@ -88,6 +99,25 @@ def delete_duet(ctx: Ctx, duet_id: str):
 @router.get("/v1/duets/{duet_id}/midi")
 def duet_midi(ctx: Ctx, duet_id: str):
     return Response(score_to_midi_bytes(ctx.store.get("duet", duet_id).data), media_type=MIDI)
+
+
+@router.post("/v1/duets/{duet_id}/song")
+def duet_song(ctx: Ctx, duet_id: str, rig: RigIn):
+    """The duet as a song file for that rig (docs/device-api.md): repaired so its bots can
+    play it, then compiled for the rig's channels. The rig's page stores it with
+    PUT /api/songs/<k> and plays it with no server."""
+    score = ctx.store.get("duet", duet_id).data
+    try:
+        robot = robot_profile(rig.profile)
+    except (KeyError, TypeError) as exc:
+        raise Problem("SONG_INVALID", f"no carriage instrument {rig.profile!r}") from exc
+    keyboard = keyboard_profile()
+    try:
+        playable = repair_bots(score, in_use(robot, keyboard)).score
+        song = compile_song(playable, robot, keyboard, rig.channels)
+    except SongError as exc:
+        raise Problem("SONG_INVALID", str(exc)) from exc
+    return Response(song.song_file(), media_type=SONG_FILE)
 
 
 @router.post("/v1/duets/{duet_id}/repair", status_code=201)

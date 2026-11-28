@@ -20,6 +20,7 @@ STATUS = {
     "AUDIO_INVALID": 422,
     "ROUTE_UNAVAILABLE": 422,
     "VARIATION_INVALID": 422,
+    "SONG_INVALID": 422,  # the duet cannot be stored as a song for that rig
     "COMPOSITION_FAILED": 502,
     "LLM_ERROR": 502,
     "INTERNAL": 500,

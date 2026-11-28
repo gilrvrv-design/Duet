@@ -71,6 +71,9 @@ def compile_song(
         raise SongError("the score has nothing to play")
     if len(messages) > MAX_LINES:
         raise SongError(f"{len(messages)} commands; a stored song holds at most {MAX_LINES}")
+    missing = sorted({CHANNEL_KIND[type(m)] for m in messages} - set(channels))
+    if missing:
+        raise SongError(f"the rig has no channel for: {', '.join(missing)}")
     first = message_time_us(messages[0])
     commands = [
         replace(m, t_us=message_time_us(m) - first, seq=i, ch=channels[CHANNEL_KIND[type(m)]])

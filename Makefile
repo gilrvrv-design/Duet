@@ -19,8 +19,10 @@ check: lint test firmware
 firmware:
 	$(MAKE) -s -C firmware test
 
+# HOST=0.0.0.0 lets rigs and phones on the network reach the server.
+HOST ?= 127.0.0.1
 serve:
-	DUET_EXAMPLES=examples uvicorn --factory duet.api:create_app --reload
+	DUET_EXAMPLES=examples uvicorn --factory duet.api:create_app --reload --host $(HOST)
 
 # The full loop on the compiled ESP32 image in QEMU too (firmware/QEMU.md).
 qemu-test:

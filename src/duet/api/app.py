@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from duet import __version__
 from duet.api.codecs import store_from_env
@@ -31,14 +32,27 @@ def _claude() -> Composer:
     return ClaudeComposer()
 
 
+# The rig's web page calls the server from its own origin (docs/device-api.md): a .local
+# name, or an address on the local network, on any port. DUET_DEVICE_ORIGINS replaces it.
+DEVICE_ORIGINS = (
+    r"https?://("
+    r"[a-z0-9-]+\.local"
+    r"|localhost|127(\.\d{1,3}){3}"
+    r"|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}"
+    r")(:\d{1,5})?"
+)
+
+
 def create_app(
     composer_factory: Callable[[], Composer] | None = None,
     store: Store | None = None,
     guard: CopyrightGuard | None = None,
     examples_dir: Path | str | None = None,
+    device_origins: str | None = None,
 ) -> FastAPI:
     """Build the app. Everything it depends on can be passed in; the defaults read
-    ``DUET_DB``, ``DUET_EXAMPLES`` and ``DUET_PROTECTED_MELODIES``."""
+    ``DUET_DB``, ``DUET_EXAMPLES``, ``DUET_PROTECTED_MELODIES`` and
+    ``DUET_DEVICE_ORIGINS`` (a regular expression for the origins of rigs' pages)."""
     store = store or store_from_env(os.environ.get("DUET_DB"))
     if examples_dir is None and os.environ.get("DUET_EXAMPLES"):
         examples_dir = os.environ["DUET_EXAMPLES"]
@@ -56,6 +70,13 @@ def create_app(
         ctx.jobs.shutdown()
 
     app = FastAPI(title="Duet", version=__version__, lifespan=lifespan)
+    origins = device_origins or os.environ.get("DUET_DEVICE_ORIGINS") or DEVICE_ORIGINS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+    )
     app.state.ctx = ctx
     app.state.store = store  # kept for tools and tests that inspect the store
     app.state.jobs = ctx.jobs
