@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from duet.api.errors import Problem
 from duet.compose.service import Composer
 from duet.copyright import CopyrightGuard
-from duet.jobs import JobFailure, JobRunner, Work, job_view
+from duet.jobs import JobRunner, Work, job_view
 from duet.learning import USER_PATTERN
 from duet.live import Practices
 from duet.progress import no_progress
@@ -32,16 +32,13 @@ class AppContext:
     live: Practices
 
     def run_or_submit(self, kind: str, work: Work, background: bool):
-        """Run ``work`` now (its failure becomes a problem response), or as a job."""
+        """Run ``work`` now (a Problem it raises is the answer), or as a job."""
         if background:
             job = self.jobs.submit(kind, work)
             view = job_view(job)
             view["links"] = {"self": f"/v1/jobs/{job.id}", "stream": f"/v1/jobs/{job.id}/stream"}
             return JSONResponse(view, status_code=202)
-        try:
-            return work(no_progress)
-        except JobFailure as exc:
-            raise Problem(exc.code, exc.detail) from exc
+        return work(no_progress)
 
 
 def get_context(request: Request) -> AppContext:

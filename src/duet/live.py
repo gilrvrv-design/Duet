@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from duet.conductor import Performance, RealClock, one_rig, perform
 from duet.device.gateway import DeviceFault, DeviceGateway, DeviceMismatch
+from duet.errors import Problem
 from duet.listening import KeyInput, grade
 from duet.performers import Instruments
 from duet.profile import RobotProfile
@@ -136,14 +137,6 @@ def _mic_keys(robot: RobotProfile) -> KeyInput:
     return MicKeys(MicListener(22050, robot=robot), SoundDeviceSource())
 
 
-class LiveError(Exception):
-    """A practice that cannot start: the server is busy with one, or the request is wrong."""
-
-    def __init__(self, code: str, detail: str) -> None:
-        super().__init__(detail)
-        self.code = code
-
-
 @dataclass
 class Practice:
     """One practice on a rig, as the page sees it."""
@@ -184,14 +177,14 @@ class Practices:
         input_name: str | None,
     ) -> Practice:
         if mode not in MODES:
-            raise LiveError("LIVE_INVALID", f"mode {mode!r}: choose one of {', '.join(MODES)}")
+            raise Problem("LIVE_INVALID", f"mode {mode!r}: choose one of {', '.join(MODES)}")
         if mode != "play" and input_name not in self.inputs:
             offered = ", ".join(self.inputs) or "none on this server"
-            raise LiveError("LIVE_INVALID", f"{mode} mode needs an input (offered: {offered})")
+            raise Problem("LIVE_INVALID", f"{mode} mode needs an input (offered: {offered})")
         with self._lock:
             busy = next((p for p in self._all.values() if not p.over), None)
             if busy is not None:
-                raise LiveError("PRACTICE_BUSY", f"{busy.title!r} is playing on {busy.rig}")
+                raise Problem("PRACTICE_BUSY", f"{busy.title!r} is playing on {busy.rig}")
             practice = Practice(uuid.uuid4().hex[:12], score.meta.title, mode, rig)
             self._all[practice.id] = practice
         keys = None if mode == "play" else self.inputs[input_name](robot)

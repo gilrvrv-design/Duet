@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from duet.compose.draft import DraftError, draft_to_score, score_to_draft
 from duet.compose.prompts import feedback_message, request_message, system_prompt
 from duet.copyright import CopyrightGuard
-from duet.difficulty import check_pianist
+from duet.difficulty import level_problems
 from duet.performers import human_difficulty, in_use, repair_bots, score_problems
 from duet.pitch import midi_to_name
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
@@ -201,5 +201,6 @@ def _finish(best, robot, keyboard, rounds, history) -> CompositionResult:
     if len(keep) < len(score.events):
         warnings.append(f"dropped {len(score.events) - len(keep)} {human} note(s) out of range")
         score = score.with_events(keep)
-    warnings += [p for p in check_pianist(score, keyboard, part=human) if p.startswith("too hard")]
+    if level := score.meta.difficulty_target:
+        warnings += level_problems(score, part=human, level=level)
     return CompositionResult(score, explanation, rounds, history, repaired.changes, warnings)

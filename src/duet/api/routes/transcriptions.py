@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 from duet.api.context import AppContext, Ctx, read_upload
 from duet.api.errors import Problem
 from duet.api.views import duet_view, transcription_view
-from duet.jobs import JobFailure
 from duet.library import add_duet
 from duet.progress import Progress
 from duet.score import Level
@@ -38,11 +37,11 @@ def run_transcription(
     try:
         result = transcribe_file(path, route=route, progress=progress)
     except AudioError as exc:
-        raise JobFailure("AUDIO_INVALID", str(exc)) from exc
+        raise Problem("AUDIO_INVALID", str(exc)) from exc
     except RouteUnavailable as exc:
-        raise JobFailure("ROUTE_UNAVAILABLE", str(exc)) from exc
+        raise Problem("ROUTE_UNAVAILABLE", str(exc)) from exc
     except SeparationFailed as exc:
-        raise JobFailure("SEPARATION_FAILED", str(exc)) from exc
+        raise Problem("SEPARATION_FAILED", str(exc)) from exc
     finally:
         Path(path).unlink(missing_ok=True)  # audio is not kept (FR-A10)
     return transcription_view(ctx.store.add("transcription", result, filename=filename))

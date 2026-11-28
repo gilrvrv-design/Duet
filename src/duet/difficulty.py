@@ -119,10 +119,10 @@ def check_pianist(
             low, high = (midi_to_name(p) for p in part_range)
             problems.append(f"{where}: {midi_to_name(e.pitch)} is outside {low}-{high}")
     level = target_level or score.meta.difficulty_target
-    if level:
-        rules = rules_for(level)
-        problems += [
-            f"too hard for level {level}: {p}"
-            for p in broken_rules(pianist_stats(score, part=part), rules)
-        ]
-    return problems
+    return problems + (level_problems(score, part=part, level=level) if level else [])
+
+
+def level_problems(score: DuetScore, *, part: str, level: int) -> list[str]:
+    """What makes a human's ``part`` harder than ``level``."""
+    broken = broken_rules(pianist_stats(score, part=part), rules_for(level))
+    return [f"too hard for level {level}: {p}" for p in broken]

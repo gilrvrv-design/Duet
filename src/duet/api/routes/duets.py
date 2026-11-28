@@ -13,10 +13,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from duet import library
 from duet.api.context import Ctx, read_upload
-from duet.api.errors import Problem
+from duet.api.errors import Problem, composer_problems
 from duet.api.views import duet_view, summary_view
-from duet.compose.service import ComposerError, CompositionError, revise
-from duet.jobs import JobFailure
+from duet.compose.service import revise
 from duet.midi_io import read_midi, score_to_midi_bytes
 from duet.performers import in_use, performers, repair_bots
 from duet.profile import keyboard_profile, robot_profile
@@ -139,13 +138,10 @@ def create_variation(ctx: Ctx, duet_id: str, body: VariationIn, background: bool
                 revise, composer=ctx.composer_factory(), guard=ctx.guard, progress=progress
             )
         try:
-            score, note = vary(parent.data, body.instruction, edit=edit)
+            with composer_problems():
+                score, note = vary(parent.data, body.instruction, edit=edit)
         except VariationError as exc:
-            raise JobFailure("VARIATION_INVALID", str(exc)) from exc
-        except CompositionError as exc:
-            raise JobFailure("COMPOSITION_FAILED", str(exc)) from exc
-        except ComposerError as exc:
-            raise JobFailure("LLM_ERROR", str(exc)) from exc
+            raise Problem("VARIATION_INVALID", str(exc)) from exc
         record = library.add_version(
             ctx.store, duet_id, score, source="variation", instruction=body.instruction, change=note
         )

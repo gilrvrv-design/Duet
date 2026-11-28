@@ -54,3 +54,10 @@ def test_a_midi_import_says_what_it_ignored(tmp_path, capsys):
     midi.save(path)
     assert main(["check", str(path)]) == 0
     assert "warning: 1 note(s) never released were left out" in capsys.readouterr().err
+
+
+def test_an_expected_failure_is_one_line_not_a_traceback(tmp_path, capsys):
+    assert main(["transcribe", str(tmp_path / "nothing.wav"), str(tmp_path / "out.mid")]) == 2
+    assert (
+        capsys.readouterr().err.strip() == f"duet transcribe: no such file: {tmp_path}/nothing.wav"
+    )

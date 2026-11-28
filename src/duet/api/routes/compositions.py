@@ -5,10 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from duet.api.context import AppContext, Ctx
+from duet.api.errors import composer_problems
 from duet.api.views import duet_view
 from duet.compose import CompositionRequest, compose
-from duet.compose.service import ComposerError, CompositionError
-from duet.jobs import JobFailure
 from duet.library import add_duet
 from duet.progress import Progress
 
@@ -16,12 +15,8 @@ router = APIRouter()
 
 
 def run_composition(ctx: AppContext, request: CompositionRequest, progress: Progress) -> dict:
-    try:
+    with composer_problems():
         result = compose(request, ctx.composer_factory(), progress=progress, guard=ctx.guard)
-    except CompositionError as exc:
-        raise JobFailure("COMPOSITION_FAILED", str(exc)) from exc
-    except ComposerError as exc:
-        raise JobFailure("LLM_ERROR", str(exc)) from exc
     record = add_duet(
         ctx.store,
         result.score,

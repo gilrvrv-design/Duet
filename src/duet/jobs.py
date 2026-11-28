@@ -15,6 +15,7 @@ from dataclasses import replace
 from enum import StrEnum
 from typing import Any
 
+from duet.errors import Problem
 from duet.progress import Progress
 from duet.storage import Record, Store
 
@@ -27,14 +28,6 @@ class JobState(StrEnum):
 
 
 TERMINAL = frozenset({JobState.SUCCEEDED, JobState.FAILED})
-
-
-class JobFailure(Exception):
-    """Raise inside a job to fail it with a stable error code."""
-
-    def __init__(self, code: str, detail: str):
-        super().__init__(detail)
-        self.code, self.detail = code, detail
 
 
 Work = Callable[[Progress], dict]
@@ -66,7 +59,7 @@ class JobRunner:
         self._add_event(job_id, "started", 0.0, state=JobState.RUNNING)
         try:
             result = work(lambda stage, fraction=None: self._add_event(job_id, stage, fraction))
-        except JobFailure as exc:
+        except Problem as exc:
             self._fail(job_id, exc.code, exc.detail)
         except Exception as exc:  # report every failure on the job, never lose it
             self._fail(job_id, "INTERNAL", f"{type(exc).__name__}: {exc}")
@@ -112,4 +105,4 @@ def job_view(job: Record) -> dict:
     return view
 
 
-__all__ = ["JobFailure", "JobRunner", "JobState", "job_view"]
+__all__ = ["JobRunner", "JobState", "job_view"]

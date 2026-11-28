@@ -1,6 +1,7 @@
 import pytest
 
-from duet.jobs import JobFailure, JobRunner, job_view
+from duet.errors import Problem
+from duet.jobs import JobRunner, job_view
 from duet.storage import MemoryStore
 
 
@@ -32,13 +33,13 @@ def test_job_reports_progress_and_result(runner):
 
 def test_job_failures_are_recorded(runner, capsys):
     def coded(progress):
-        raise JobFailure("BAD_INPUT", "no good")
+        raise Problem("AUDIO_INVALID", "no good")
 
     def crash(progress):
         raise ValueError("boom")
 
     assert job_view(runner.wait(runner.submit("t", coded).id))["error"] == {
-        "code": "BAD_INPUT",
+        "code": "AUDIO_INVALID",
         "detail": "no good",
     }
     error = job_view(runner.wait(runner.submit("t", crash).id))["error"]

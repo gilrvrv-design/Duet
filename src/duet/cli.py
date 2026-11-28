@@ -7,9 +7,13 @@ import contextlib
 import sys
 from pathlib import Path
 
+from duet.audio.fullmix import RouteUnavailable, SeparationFailed
+from duet.audio.io import AudioError
 from duet.calibration import SWEEP_INTERVAL_S
+from duet.compose.service import ComposerError, CompositionError
 from duet.conductor import RealClock, VirtualClock, one_rig, perform
 from duet.copyright import CopyrightGuard
+from duet.device.gateway import DeviceFault, DeviceMismatch
 from duet.instruments import Instrument
 from duet.midi_io import read_midi, save_midi
 from duet.performers import (
@@ -20,6 +24,7 @@ from duet.performers import (
     repair_bots,
     score_problems,
 )
+from duet.pitch import PitchError
 from duet.profile import (
     KeyboardProfile,
     RobotProfile,
@@ -30,6 +35,8 @@ from duet.profile import (
 )
 from duet.score import DuetScore, Duo, LineUpError, load_score
 from duet.sim import SimulatedRig
+from duet.songs import SongError
+from duet.variations import VariationError
 
 
 def _robot(args) -> RobotProfile:
@@ -328,18 +335,14 @@ def cmd_song(args) -> int:
     """Write a song file: the score made playable and compiled for the rig, for its web
     page to load with no server (docs/device-api.md, "Song files")."""
     from duet.sim import RIG_CHANNELS
-    from duet.songs import SongError, compile_song
+    from duet.songs import compile_song
 
     robot = _robot(args)
     score = read_score(args.score)
     if args.only:
         score = score.only(args.only)
     score = _playable(score, args)
-    try:
-        song = compile_song(score, robot, keyboard_profile(args.piano), RIG_CHANNELS)
-    except SongError as exc:
-        print(f"cannot make a song of it: {exc}", file=sys.stderr)
-        return 2
+    song = compile_song(score, robot, keyboard_profile(args.piano), RIG_CHANNELS)
     Path(args.out).write_text(song.song_file(), encoding="utf-8")
     print(
         f"wrote {song.title!r} to {args.out}: {len(song.commands)} commands, "
@@ -350,39 +353,31 @@ def cmd_song(args) -> int:
 
 def cmd_upload(args) -> int:
     """Store a song on the device, to play without the Hub (press its play button)."""
-    from duet.device.gateway import DeviceFault, DeviceGateway
-    from duet.songs import SongError, check_slot, compile_song
+    from duet.device.gateway import DeviceGateway
+    from duet.songs import check_slot, compile_song
 
     robot = _robot(args)
     score = read_score(args.score)
     if args.only:
         score = score.only(args.only)
     score = _playable(score, args)
-    try:
-        slot = check_slot(args.slot)
-        with DeviceGateway(args.device, profile=robot) as gateway:
-            print(f"connected to {describe(gateway.hello)}")
-            song = compile_song(score, robot, keyboard_profile(args.piano), gateway.channels)
-            gateway.upload(slot, song)
-            print(
-                f"stored {song.title!r} in slot {slot}: {len(song.commands)} commands, "
-                f"{song.duration_s:.1f} s"
-            )
-            if args.play:
-                gateway.play(slot)
-                print("playing from memory")
-    except SongError as exc:
-        print(f"cannot store it: {exc}", file=sys.stderr)
-        return 2
-    except DeviceFault as exc:
-        print(f"the device refused it: {exc}", file=sys.stderr)
-        return 1
+    slot = check_slot(args.slot)
+    with DeviceGateway(args.device, profile=robot) as gateway:
+        print(f"connected to {describe(gateway.hello)}")
+        song = compile_song(score, robot, keyboard_profile(args.piano), gateway.channels)
+        gateway.upload(slot, song)
+        print(
+            f"stored {song.title!r} in slot {slot}: {len(song.commands)} commands, "
+            f"{song.duration_s:.1f} s"
+        )
+        if args.play:
+            gateway.play(slot)
+            print("playing from memory")
     return 0
 
 
 def _play_on_device(score, robot, instruments, url: str, mode: str, keys) -> int:
     """A live performance on a rig (duet.live), in play, wait or follow mode."""
-    from duet.device.gateway import DeviceFault
     from duet.live import StoppableClock, Stopped, play_live, summary
 
     def connected(gateway) -> None:
@@ -397,9 +392,6 @@ def _play_on_device(score, robot, instruments, url: str, mode: str, keys) -> int
         )  # fmt: skip
     except (Stopped, KeyboardInterrupt):
         print("stopped; the rig is quiet")
-        return 1
-    except DeviceFault as exc:
-        print(f"the rig refused it: {exc}", file=sys.stderr)
         return 1
     print(summary(perf, mode))
     return 0
@@ -687,13 +679,32 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# What a command can fail with that is not a bug: said in one line, not a traceback, with
+# an exit status. 2: what was asked cannot be done as asked (the score, the file, the
+# request); 1: it was tried and failed (the rig, the composer, a tool).
+FAILURES: tuple[tuple[type[Exception], int], ...] = (
+    (LineUpError, 2),
+    (SongError, 2),
+    (VariationError, 2),
+    (AudioError, 2),
+    (PitchError, 2),
+    (RouteUnavailable, 2),
+    (DeviceMismatch, 2),
+    (DeviceFault, 1),
+    (CompositionError, 1),
+    (ComposerError, 1),
+    (SeparationFailed, 1),
+    (OSError, 1),  # a rig or a file that is not there
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except LineUpError as exc:  # asked for a part the score does not have, or the like
+    except tuple(kind for kind, _ in FAILURES) as exc:
         print(f"duet {args.command}: {exc}", file=sys.stderr)
-        return 2
+        return next(status for kind, status in FAILURES if isinstance(exc, kind))
 
 
 if __name__ == "__main__":

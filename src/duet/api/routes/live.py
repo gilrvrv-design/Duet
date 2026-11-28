@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from duet.api.context import Ctx
 from duet.api.errors import Problem
-from duet.live import LiveError
 from duet.performers import in_use, repair_bots
 from duet.profile import keyboard_profile, robot_profile
 
@@ -38,17 +37,14 @@ def start_practice(ctx: Ctx, practice: PracticeIn):
     except (KeyError, TypeError) as exc:
         raise Problem("LIVE_INVALID", f"no carriage instrument {practice.profile!r}") from exc
     playing = in_use(robot, keyboard_profile())
-    try:
-        started = ctx.live.start(
-            repair_bots(score, playing).score,
-            practice.rig,
-            robot,
-            playing,
-            practice.mode,
-            practice.input,
-        )
-    except LiveError as exc:
-        raise Problem(exc.code, str(exc)) from exc
+    started = ctx.live.start(
+        repair_bots(score, playing).score,
+        practice.rig,
+        robot,
+        playing,
+        practice.mode,
+        practice.input,
+    )
     return started.view()
 
 
