@@ -33,9 +33,13 @@ qemu-image:
 # The firmware as a Linux process, its serial link over TCP (host/duet_device.cpp).
 device: build/duet_device
 
-build/duet_device: host/duet_device.cpp host/http_server.hpp boards/native/board.h src/rig.h $(SRCS) $(wildcard $(CORE)/*.hpp)
+build/duet_device: host/duet_device.cpp host/http_server.hpp build/gen/web_assets.h boards/native/board.h src/rig.h $(SRCS) $(wildcard $(CORE)/*.hpp)
 	@mkdir -p build
-	$(CXX) $(CXXFLAGS) $(INC) -Iboards/native -Isrc -o $@ host/duet_device.cpp $(SRCS)
+	$(CXX) $(CXXFLAGS) $(INC) -Iboards/native -Isrc -Ibuild/gen -o $@ host/duet_device.cpp $(SRCS)
+
+# The web app, compiled into the firmware (tools/embed_web.py).
+build/gen/web_assets.h: tools/embed_web.py $(wildcard web/*)
+	python3 tools/embed_web.py web $@
 
 clean:
 	rm -rf build

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Duet</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Duet</h1>
+      <p id="device" class="muted">Connecting…</p>
+    </div>
+    <span id="state" class="pill">…</span>
+  </header>
+
+  <main>
+    <button id="estop" class="estop" type="button">Emergency stop</button>
+    <p id="message" class="message" role="status" hidden></p>
+
+    <section>
+      <div class="section-head">
+        <h2>Songs on the rig</h2>
+        <button id="stop" type="button" hidden>Stop</button>
+      </div>
+      <ul id="songs" class="songs"></ul>
+      <p id="no-songs" class="muted" hidden>
+        No songs are stored yet. Upload one from the Hub:
+        <code>duet upload song.json --device ws://duet-rig-1.local:8765 --slot 0</code>
+      </p>
+    </section>
+
+    <section>
+      <h2>This board</h2>
+      <ul id="abilities" class="abilities"></ul>
+    </section>
+  </main>
+</body>
+</html>

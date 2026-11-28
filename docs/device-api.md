@@ -5,6 +5,12 @@ on the network. Every board answers alike: the answers are decided in the firmwa
 core (`firmware/lib/duet_core/src/duet_api.cpp`). Only the transport differs, which is
 the ESP32's web server or the native device's socket (`firmware/host/http_server.hpp`).
 
+Every path outside `/api/` is the web app (`firmware/web/`: plain HTML, CSS and
+JavaScript, with no build step). `firmware/tools/embed_web.py` compiles it into the
+firmware gzipped, so a board serves it from program flash. It shows what the board
+can do and what it cannot, and plays and stops the stored songs.
+`tests/test_web_app.py` drives it in Chromium against the native device.
+
 The Hub's real-time link is the device protocol (docs/device-protocol.md). The API is
 for people: it shows what the device is, and it plays the songs stored on it.
 

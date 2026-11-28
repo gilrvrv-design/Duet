@@ -33,6 +33,7 @@
 #include "duet_line_reader.hpp"
 #include "duet_report_hal.hpp"
 #include "http_server.hpp"
+#include "web_assets.h"  // generated from firmware/web/ (tools/embed_web.py)
 
 namespace {
 
@@ -108,8 +109,14 @@ int main(int argc, char** argv) {
   constexpr duet::Identity identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS};
   duet::Api api(device, identity);
   HttpServer http([&](const std::string& method, const std::string& path) {
-    duet::Response r = api.handle(method.c_str(), path.c_str(), hal.now_us);
-    return HttpReply{r.status, "application/json", r.body};
+    if (path.rfind("/api/", 0) == 0) {
+      duet::Response r = api.handle(method.c_str(), path.c_str(), hal.now_us);
+      return HttpReply{r.status, "application/json", r.body};
+    }
+    const duet::WebAsset* asset = duet::find_asset(duet::kWebAssets, path.c_str());
+    if (asset == nullptr) return HttpReply{404, "text/plain", "not found"};
+    return HttpReply{200, asset->type,
+                     std::string(reinterpret_cast<const char*>(asset->gzip), asset->size), true};
   });
   duet::LineReader reader;
   std::string console;  // stdin: "press" presses the play button

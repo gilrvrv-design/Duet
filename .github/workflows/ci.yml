@@ -13,6 +13,8 @@ jobs:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: make install
+      # The web app's browser tests (tests/test_web_app.py).
+      - run: .venv/bin/playwright install --with-deps chromium
       - run: . .venv/bin/activate && make check
 
   # Every board must build, within its flash layout (PlatformIO fails a build that does

@@ -426,4 +426,5 @@ flowchart TB
     native --> contract
 ```
 
-`make check` runs lint, every Python test and the native firmware tests. CI runs the same.
+`make check` runs lint, every Python test (including the web app's browser tests against
+the native device) and the native firmware tests. CI runs the same.

@@ -4,12 +4,12 @@ install:  # exactly the versions in uv.lock; run `uv lock` after changing depend
 	uv sync -q --frozen --extra dev --extra llm --extra audio --extra api
 
 lint:
-	ruff check src tests tools
-	ruff format --check src tests tools
+	ruff check src tests tools firmware/tools
+	ruff format --check src tests tools firmware/tools
 
 format:
-	ruff check --fix src tests tools
-	ruff format src tests tools
+	ruff check --fix src tests tools firmware/tools
+	ruff format src tests tools firmware/tools
 
 test:
 	pytest

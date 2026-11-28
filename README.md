@@ -29,9 +29,17 @@ This installs exactly the versions pinned in `uv.lock`. After changing dependenc
 source .venv/bin/activate
 ```
 
+The browser tests of the rig's web app need Chromium once:
+
+```bash
+playwright install chromium
+```
+
 ```bash
 make check
 ```
+
+To use a Chromium that is already installed, set `DUET_CHROMIUM` to its path.
 
 ## Command line
 
