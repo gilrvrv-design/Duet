@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
-from duet.difficulty import LEVELS
 from duet.listening import Report
 from duet.pitch import is_black_key
 from duet.profile import KeyboardProfile, RobotProfile
@@ -190,6 +189,3 @@ def teach_song(
                 Step(f"Level {level} {label}", level, factor, score.with_tempo(tempo))
             )
     return path
-
-
-__all__ = ["LEVELS", "LessonPath", "SkillModel", "Step", "note_features", "teach_song"]

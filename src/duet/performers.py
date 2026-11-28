@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import cached_property
 from types import MappingProxyType
 
 from duet import midi_bot
@@ -41,7 +42,7 @@ class Bot:
         """Has a carriage: one per device, and it must be homed before playing."""
         return isinstance(self.mechanism, CarriageStriker)
 
-    @property
+    @cached_property
     def profile(self) -> RobotProfile:  # how the planner sees a carriage-striker bot
         return RobotProfile(self.instrument)
 
@@ -62,7 +63,7 @@ class Human:
     instrument: Instrument
     level: int | None  # the target skill level; None: any
 
-    @property
+    @cached_property
     def profile(self) -> KeyboardProfile:  # how the light guide sees a keyboard
         return KeyboardProfile(self.instrument)
 
@@ -86,7 +87,7 @@ def in_use(*profiles: RobotProfile | KeyboardProfile) -> dict[str, Instrument]:
 
 def performer(score: DuetScore, part: str, instruments: Instruments = NO_OVERRIDES) -> Performer:
     """The part's performer, on the instrument in use: ``instruments`` (say, a rig's
-    calibrated bottles) before the built-in one with the same id."""
+    a calibrated instrument) before the built-in one with the same id."""
     info = score.parts[part]
     try:
         inst = instruments.get(info.instrument) or instrument(info.instrument)

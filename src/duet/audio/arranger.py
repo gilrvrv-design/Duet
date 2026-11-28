@@ -256,6 +256,3 @@ def _pianist_part(part: str, chords, difficulty: int, low: int, high: int) -> li
                 for p in pitches
             ]
     return events
-
-
-__all__ = ["Arrangement", "Retuning", "arrange"]

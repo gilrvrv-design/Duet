@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 from duet.pitch import midi_to_name
 from duet.profile import Kinematics, RobotProfile
@@ -63,6 +64,7 @@ def strike_interval_s(profile: RobotProfile, i: int, j: int) -> float:
     return max(recovery, pulse + move)
 
 
+@lru_cache(maxsize=32)  # profiles are immutable; planning asks for the same one often
 def reachability(profile: RobotProfile) -> Reachability:
     n = len(profile.notes)
     rows = tuple(tuple(strike_interval_s(profile, i, j) for j in range(n)) for i in range(n))

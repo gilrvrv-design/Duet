@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from duet.copyright import CopyrightGuard
-from duet.jobs import job_view
 from duet.pedagogy import SkillModel, current_step
 from duet.performers import human_difficulty, score_problems
 from duet.score import DuetScore
 from duet.storage import Record
 
-__all__ = ["duet_view", "job_view", "lesson_view", "skills_view", "summary_view"]
+# What a duet record's meta may say, by who wrote it: the library, then each source.
+LINE_META = ("source", "featured", "version", "root", "parent", "forked_from", "visibility",
+             "own_work", "instruction", "change")  # fmt: skip
+DUET_META = LINE_META + (
+    "explanation", "rounds", "repairs", "warnings",  # composition, MIDI
+    "transcription", "transpose", "coverage_before", "coverage_after", "chords", "retuning",
+)  # fmt: skip
 
 
 def duet_view(record: Record, guard: CopyrightGuard) -> dict:
@@ -33,21 +38,24 @@ def duet_view(record: Record, guard: CopyrightGuard) -> dict:
             for name, info in score.parts.items()
         },
         "copyright": guard.check(score).status,
-        **record.meta,
+        **_meta(record, DUET_META),
     }
 
 
 def summary_view(record: Record) -> dict:
     score: DuetScore = record.data
-    keep = ("source", "featured", "version", "root", "parent", "instruction", "change")
     return {
         "id": record.id,
         "title": score.meta.title,
         "bars": score.bar_count,
         "tempo_bpm": score.meta.tempo_bpm,
         "difficulty": human_difficulty(score),
-        **{k: record.meta[k] for k in keep if k in record.meta},
+        **_meta(record, LINE_META),
     }
+
+
+def _meta(record: Record, keys: tuple[str, ...]) -> dict:
+    return {k: record.meta[k] for k in keys if k in record.meta}
 
 
 def skills_view(model: SkillModel) -> dict:

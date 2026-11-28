@@ -9,17 +9,18 @@ from duet.profile import RobotProfile
 
 
 def system_prompt(robot: RobotProfile) -> str:
-    bottles = ", ".join(midi_to_name(p) for p in robot.pitches)
+    pitches = ", ".join(midi_to_name(p) for p in robot.pitches)
+    instrument = robot.instrument.name.lower()
     return f"""You compose short duets for a robot and a human pianist who perform together live.
 
-The robot plays one part on {len(robot.notes)} tuned glass bottles: {bottles}.
+The robot plays one part on {instrument}, {len(robot.notes)} notes: {pitches}.
 - It has one striker on a carriage, so it plays one note at a time. Never write two robot notes
   that start together.
-- The striker must travel between bottles. The table gives the minimum time in milliseconds
+- The striker must travel between notes. The table gives the minimum time in milliseconds
   from one robot note to the next (rows: from, columns: to). Leave at least that much time,
   plus a little margin, between consecutive robot notes:
 {reachability(robot).as_table()}
-- Use only those bottle pitches for the robot. A bottle rings for about
+- Use only those pitches for the robot. A note rings for about
   {robot.sound.decay_ms / 1000:g} s, so long robot notes are fine.
 
 The pianist is usually a beginner who follows lights above the keys and does not read music.

@@ -201,6 +201,3 @@ def vary(
     if unplayable:
         raise VariationError(f"the edited duet is not playable by the bot: {unplayable}")
     return result.score, result.explanation or instruction
-
-
-__all__ = ["BUILT_IN", "pianist_stats", "vary"]

@@ -34,5 +34,5 @@ jobs:
         with:
           path: ~/.platformio
           key: platformio-${{ matrix.board }}-${{ hashFiles('firmware/platformio.ini') }}
-      - run: pip install platformio
+      - run: pip install platformio==6.2.0
       - run: pio run -d firmware -e ${{ matrix.board }}

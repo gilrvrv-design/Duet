@@ -9,15 +9,15 @@ from pathlib import Path
 
 from duet.performers import human_difficulty
 from duet.score import DuetScore
-from duet.storage import Record, Store
+from duet.storage import Record, Store, new_id
 
 KIND = "duet"
 
 
 def add_duet(store: Store, score: DuetScore, **meta) -> Record:
     """A new duet starts its own line (root) at version 1."""
-    record = store.add(KIND, score, **meta)
-    return store.update_meta(KIND, record.id, root=record.id, version=1)
+    duet_id = new_id(KIND)
+    return store.put(KIND, duet_id, score, root=duet_id, version=1, **meta)
 
 
 def add_version(store: Store, parent_id: str, score: DuetScore, **meta) -> Record:

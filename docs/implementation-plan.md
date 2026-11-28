@@ -16,28 +16,11 @@ Each delivery is one commit (or a few), ships with tests, and leaves `make check
 
 ## Language and layout
 
-Python 3.12+ (the audio and ML libraries in the spec are Python). One package, `duet`, under `src/`.
-
-```
-src/duet/
-  pitch.py          note names <-> MIDI numbers <-> Hz
-  score.py          DuetScore model (spec §4.1)
-  timing.py         bar/beat -> seconds
-  profile.py        instrument profiles (spec §7.2)
-  kinematics.py     carriage motion, reachability matrix (spec §5.3)
-  feasibility.py    robot checks -> violations (spec §5.2 FR-S3)
-  repair.py         deterministic repair (FR-S4)
-  difficulty.py     pianist difficulty score (FR-S5)
-  midi_io.py        DuetScore <-> MIDI (FR-S6, FR-S7)
-  plans.py          robot plan + LED plan (FR-S6)
-  conductor.py      fixed-tempo conductor + simulated devices (spec §5.5)
-  compose/          LLM composition with validate-repair loop (spec §5.1)
-  audio/            audio -> MIDI transcription and arranger (spec §5.14)
-  api/              REST API (spec §6)
-  cli.py            command line entry point
-  profiles/         instrument profile YAML files (shipped with the package)
-tests/
-```
+The Hub is Python 3.12+ (the audio and ML libraries in the spec are Python): one package,
+`duet`, under `src/`, with its tests in `tests/`. The firmware is C++17 under `firmware/`:
+a core library shared by every board, the native device and the tests, and a thin layer
+per board. The [architecture](architecture.md#module-map) has the module map; it is the
+one place that lists the modules.
 
 ## Deliveries
 
@@ -69,7 +52,7 @@ tests/
 | 18 | Async jobs for composition and transcription, with progress streams | §6.2, FR-A5 | Job states and stream events in order | Done |
 | 19 | WebSocket device gateway and clock sync with the simulated rig over a real socket | §5.10 | Sync error under 2 ms on localhost | Done |
 | 19b | Periodic clock resync during long sessions (every 2 s) and drift estimate | FR-D2 | Simulated drifting clock stays within 2 ms over 10 minutes | Done (tested at 2000 ppm) |
-| 20 | ESP32 firmware executor for `move_at` / `strike_at` / `led_frame_at` | §5.10 | Hardware-in-the-loop timing test | Core done and contract-tested; ESP32 glue written, not yet compiled or run on hardware |
+| 20 | ESP32 firmware executor for `move_at` / `strike_at` / `led_frame_at` | §5.10 | Hardware-in-the-loop timing test | Done: every board builds in CI, and the firmware runs the full loop in QEMU and as a native process; not yet run on hardware |
 | 20b | Conductor waits for "homed" telemetry before the count-in; device reports position and homing state | FR-R5, FR-D3 | Slow homing on the simulated device delays the start instead of faulting | Done |
 | 21 | Calibration: bottle positions, measured pitch, strike latency | §5.11 | Recorded strikes update the profile | Done (tested on synthesized recordings) |
 | 22 | Listening engine: MIDI input, hit grading, wait mode | §5.6 | Recorded performance graded correctly | Done (MIDI path; real keyboard not tested here) |
@@ -81,3 +64,9 @@ tests/
 | 26 | Variations as edits and a library with versions, forks and search | FR-C8, FR-B1–B5 | "Easier" lowers difficulty; versions and forks are kept | Done (search is keyword-based; embeddings later) |
 | 27 | Copyright guard: public-domain list and melody similarity | FR-C5 | A copied melody is flagged; public-domain tunes pass | Done (protected list supplied by the operator) |
 | 28 | Ensembles: a second robot (glockenspiel), part assignment from multi-track MIDI, one conductor for several rigs | Phase 4 | Each line goes to the instrument that fits it; all rigs play from one clock | Done (simulated rigs) |
+
+## After the back end
+
+The rig became the main interface: its own web page, songs stored on the board, servers
+optional. That work, steps 0 to 6, is planned and tracked in the
+[ESP-first design](design/esp-first.md#plan).

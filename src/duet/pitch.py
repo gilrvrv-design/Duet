@@ -82,7 +82,8 @@ def coverage(pitches: list[int], available: list[int]) -> float:
 
 
 def best_transpose(pitches: list[int], available: list[int], max_shift: int = 24) -> int:
-    """Shift (semitones) that puts the most melody notes on the bottles; smaller shifts win ties."""
+    """Shift (semitones) that puts the most melody notes on the instrument; smaller shifts
+    win ties."""
     return max(
         range(-max_shift, max_shift + 1),
         key=lambda k: (coverage([p + k for p in pitches], available), -abs(k), k < 0),

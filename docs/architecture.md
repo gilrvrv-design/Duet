@@ -194,10 +194,10 @@ flowchart TB
 
 | Layer | Modules | One-line purpose |
 |---|---|---|
-| Foundation | `pitch`, `score`, `timing`, `profile`, `kinematics` | The vocabulary: notes, scores, time, instruments, motion physics |
+| Foundation | `pitch`, `score`, `timing`, `instruments`, `performers`, `profile`, `kinematics`, `errors`, `progress` | The vocabulary: notes, scores, time, instruments and who plays them, motion physics, the problems a request can have, progress reports |
 | Checks and fixes | `feasibility`, `difficulty`, `repair`, `variations`, `copyright` | Can it be played? How hard is it? Make it playable, easier, original |
 | Making scores | `compose/`, `audio/`, `respond`, `ensemble`, `midi_io` | Every way of getting a DuetScore |
-| Playing | `plans`, `conductor`, `follow`, `listening`, `mic`, `session`, `protocol`, `sim`, `device/` | Turn a score into timed commands and listen to the pianist |
+| Playing | `plans`, `midi_bot`, `conductor`, `songs`, `follow`, `listening`, `mic`, `session`, `live`, `protocol`, `sim`, `device/` | Turn a score into timed commands (live, or as a song stored on the rig) and listen to the pianist; practices run from the server |
 | Learning and service | `pedagogy`, `calibration`, `evaluation`, `library`, `learning`, `storage`, `api/`, `jobs`, `cli` | Skills, lessons, measuring the rig and the composer; the library and learning rules as plain functions over a store; the outside interfaces (`api/app.py` only wires; routes live in `api/routes/`, one module per area) |
 | Firmware | `firmware/lib/duet_core/` (C++) | Runs timed commands on the rig and keeps the hardware safe |
 

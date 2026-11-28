@@ -111,3 +111,9 @@ def test_prompts_mention_rules():
     assert "1265" in system_prompt(robot_profile())  # reachability table is included
     assert "white keys only" in difficulty_rules(1)
     assert "any speed" in difficulty_rules(5)
+
+
+def test_the_prompt_names_the_robots_instrument():
+    assert "glass bottles, 8 notes: C5" in system_prompt(robot_profile())
+    glock = system_prompt(robot_profile("glock-v1"))
+    assert "glockenspiel" in glock and "bottle" not in glock

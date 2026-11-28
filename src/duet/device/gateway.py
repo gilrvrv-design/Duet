@@ -72,17 +72,13 @@ class DeviceGateway:
     def __init__(
         self,
         url: str,
-        sync_samples: int = SYNC_SAMPLES,
         timeout_s: float = 5.0,
         resync_every_s: float | None = RESYNC_EVERY_S,
-        heartbeat_every_s: float = HEARTBEAT_EVERY_S,
         profile: RobotProfile | None = None,
         now_us: Callable[[], int] = hub_now_us,
     ) -> None:
         self.url = url
-        self.sync_samples = sync_samples
         self.resync_every_s = resync_every_s
-        self.heartbeat_every_s = heartbeat_every_s
         self.timeout_s = timeout_s
         self.profile = profile
         self.now_us = now_us
@@ -279,7 +275,7 @@ class DeviceGateway:
     async def _sync(self) -> ClockSync:
         async with self._sync_lock:  # one exchange at a time, so pongs match pings
             samples = []
-            for _ in range(self.sync_samples):
+            for _ in range(SYNC_SAMPLES):
                 ping = TimePing(self.now_us(), seq=self._next_wire_seq())
                 await self._ws.send(ping.to_json())
                 pong, t4 = await asyncio.wait_for(self._pongs.get(), self.timeout_s)
@@ -297,7 +293,7 @@ class DeviceGateway:
         beat = Heartbeat().to_json()
         while True:
             await self._ws.send(beat)
-            await asyncio.sleep(self.heartbeat_every_s)
+            await asyncio.sleep(HEARTBEAT_EVERY_S)
 
     # sending -----------------------------------------------------------------
     def send(self, msg: Message) -> None:
