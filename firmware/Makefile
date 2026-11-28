@@ -5,8 +5,8 @@ CORE := lib/duet_core/src
 SRCS := $(CORE)/duet_protocol.cpp $(CORE)/duet_executor.cpp
 INC := -I$(CORE)
 
-.PHONY: test clean qemu-image
-test: build/test_core build/duet_core_cli
+.PHONY: test clean qemu-image device
+test: build/test_core build/duet_core_cli build/duet_device
 	./build/test_core
 
 build/test_core: test/native/test_core.cpp $(SRCS) $(wildcard $(CORE)/*.hpp)
@@ -29,6 +29,13 @@ qemu-image:
 	$(ESPTOOL) --chip esp32 merge-bin --pad-to-size 4MB -o build/qemu-flash.bin \
 		0x1000 $(QEMU_BUILD)/bootloader.bin 0x8000 $(QEMU_BUILD)/partitions.bin \
 		0xe000 $(BOOT_APP0) 0x10000 $(QEMU_BUILD)/firmware.bin
+
+# The firmware as a Linux process, its serial link over TCP (host/duet_device.cpp).
+device: build/duet_device
+
+build/duet_device: host/duet_device.cpp src/board.h $(SRCS) $(wildcard $(CORE)/*.hpp)
+	@mkdir -p build
+	$(CXX) $(CXXFLAGS) $(INC) -o $@ host/duet_device.cpp $(SRCS)
 
 clean:
 	rm -rf build

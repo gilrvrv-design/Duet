@@ -22,7 +22,7 @@ firmware:
 serve:
 	DUET_EXAMPLES=examples uvicorn --factory duet.api:create_app --reload
 
-# The compiled ESP32 firmware on an emulated chip (firmware/QEMU.md).
+# The full loop on the compiled ESP32 image in QEMU too (firmware/QEMU.md).
 qemu-test:
 	$(MAKE) -s -C firmware qemu-image
-	pytest -q tests/test_qemu.py -rs
+	pytest -q tests/test_firmware_loop.py -rs

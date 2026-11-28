@@ -1,5 +1,6 @@
 // Pin map and rig constants. Change these to match the wiring.
 #pragma once
+#include <cstdint>
 
 constexpr int PIN_STEP = 25;
 constexpr int PIN_DIR = 26;
