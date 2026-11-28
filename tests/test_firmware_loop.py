@@ -26,9 +26,11 @@ import pytest
 from duet.conductor import VirtualClock, perform
 from duet.device.clock import hub_now_us
 from duet.device.gateway import DeviceFault, DeviceGateway
+from duet.plans import HOME_STEPS
 from duet.profile import keyboard_profile, robot_profile
-from duet.protocol import Estop, Heartbeat, Home, MoveAt, parse_message
+from duet.protocol import Estop, Heartbeat, Home, MoveAt, StrikeAt, parse_message
 from duet.score import load_score
+from duet.songs import compile_song
 from helpers import ROOT
 
 FIRMWARE = ROOT / "firmware"
@@ -49,7 +51,9 @@ def free_port() -> int:
 def start_native():
     built = subprocess.run(["make", "-s", "-C", str(FIRMWARE), "device"], capture_output=True)
     assert built.returncode == 0, built.stderr.decode()
-    process = subprocess.Popen([str(NATIVE), "--port", "0"], stdout=subprocess.PIPE, text=True)
+    process = subprocess.Popen(
+        [str(NATIVE), "--port", "0"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
     port = int(process.stdout.readline().split()[1])  # "listening <port>"
     return process, f"tcp://127.0.0.1:{port}"
 
@@ -220,3 +224,105 @@ def test_the_firmware_stops_when_the_hub_goes_silent(device_url):
         assert hello.device_id == "duet-rig-1"
     finally:
         link.close()
+
+
+# Play from memory ----------------------------------------------------------------
+
+
+def wait_for_strikes(gateway: DeviceGateway, count: int, timeout_s: float) -> list:
+    deadline = time.monotonic() + timeout_s
+    while len(strikes(gateway)) < count and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return strikes(gateway)
+
+
+def check_song_timing(heard: list[tuple[int, int]], song) -> None:
+    """Strikes on the right bottles, spaced exactly as the compiled song says."""
+    planned = [m for m in song.commands if isinstance(m, StrikeAt)]
+    assert len(heard) == len(planned)
+    moves = {}  # strike time -> the target of the move before it
+    target = None
+    for m in song.commands:
+        if isinstance(m, MoveAt):
+            target = m.target_steps
+        elif isinstance(m, StrikeAt):
+            moves[m.t_us] = target
+    t0_device, t0_song = heard[0][0], planned[0].t_us
+    for (t_device, position), strike in zip(heard, planned, strict=True):
+        target = moves[strike.t_us]
+        assert position == (HOME_STEPS if target is None else target)  # the right bottle
+        error = abs((t_device - t0_device) - (strike.t_us - t0_song))
+        assert error < ONSET_TOLERANCE_US, f"strike {strike.seq} off by {error} us"
+
+
+def example_song():
+    score = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
+    return compile_song(score, robot_profile(), keyboard_profile())
+
+
+def test_a_stored_song_plays_from_memory(device_url):
+    song = example_song()
+    gateway = connect(device_url)
+    try:
+        gateway.upload(3, song.commands)
+        assert strikes(gateway) == []  # stored, not played
+        gateway.play(3)
+        heard = wait_for_strikes(gateway, 9, timeout_s=song.duration_s + 10)
+        assert gateway.errors == [] and gateway.faults == []
+    finally:
+        gateway.close()
+    check_song_timing(heard, song)
+
+
+def test_bad_songs_and_plays_are_refused(device_url):
+    gateway = connect(device_url)
+    try:
+        with pytest.raises(DeviceFault, match="no song in that slot"):
+            gateway.play(5)
+    finally:
+        gateway.close()
+    gateway = connect(device_url)
+    try:
+        bad = [StrikeAt(-1, 20000)]  # before the song starts
+        with pytest.raises(DeviceFault, match="bad song line"):
+            gateway.upload(0, bad)
+    finally:
+        gateway.close()
+
+
+def test_the_play_button_plays_without_the_hub():
+    """Upload, disconnect the Hub, press the button: the song plays on its own."""
+    process, url = start_native()
+    song = example_song()
+    try:
+        gateway = connect(url)
+        gateway.upload(0, song.commands)
+        gateway.close()  # no Hub from here on
+        process.stdin.write("press\n")
+        process.stdin.flush()
+        heard = []
+        deadline = time.monotonic() + song.duration_s + 10  # homing, the lead, the song
+        while len(heard) < 9 and time.monotonic() < deadline:
+            match = STRIKE.match(process.stdout.readline())
+            if match:
+                heard.append((int(match[1]), int(match[2])))
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+    check_song_timing(heard, song)
+
+
+def test_cli_upload_and_play(capsys):
+    from duet.cli import main
+
+    process, url = start_native()
+    example = str(ROOT / "examples" / "rain-on-the-bottles.json")
+    try:
+        assert main(["upload", example, "--device", url, "--slot", "2", "--play"]) == 0
+        out = capsys.readouterr().out
+        assert "stored 'Rain on the Bottles' in slot 2" in out and "playing from memory" in out
+        assert main(["upload", example, "--device", url, "--slot", "9"]) == 2
+        assert "slot 9 is outside 0..7" in capsys.readouterr().err
+    finally:
+        process.terminate()
+        process.wait(timeout=10)

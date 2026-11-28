@@ -117,6 +117,31 @@ class Telemetry(Message):
 
 
 @dataclass(frozen=True)
+class Song(Message):
+    """Store a song on the device: the next ``lines`` timed commands, with t_us counted
+    from the song's start, go into ``slot`` (0-7). Acked once, after the last line."""
+
+    type: ClassVar[str] = "song"
+    slot: int = 0
+    lines: int = 0
+
+
+@dataclass(frozen=True)
+class Play(Message):
+    """Home, then play the song stored in ``slot``, without the Hub."""
+
+    type: ClassVar[str] = "play"
+    slot: int = 0
+
+
+@dataclass(frozen=True)
+class Stop(Message):
+    """Stop playing a stored song."""
+
+    type: ClassVar[str] = "stop"
+
+
+@dataclass(frozen=True)
 class Fault(Message):
     type: ClassVar[str] = "fault"
     code: str = ""

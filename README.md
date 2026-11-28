@@ -73,6 +73,13 @@ your part with the light guide (and grading, in wait or follow mode):
 duet play examples/rain-on-the-bottles.json --sim --only piano --wait
 ```
 
+Play without a PC: store a song on the rig once, then press its play button. The Hub
+compiles the song at upload time; the ESP32 homes and plays it on its own:
+
+```bash
+duet upload examples/rain-on-the-bottles.json --device ws://duet-rig-1.local:8765 --slot 0
+```
+
 Make a variation: `slower`, `faster`, `easier` and `swap` are instant; anything else ("in a minor key") asks Claude to edit the duet:
 
 ```bash

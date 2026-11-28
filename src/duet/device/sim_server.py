@@ -26,6 +26,9 @@ from duet.protocol import (
     Hello,
     Home,
     Message,
+    Play,
+    Song,
+    Stop,
     Telemetry,
     TimePing,
     TimePong,
@@ -70,6 +73,10 @@ class SimulatedDevice:
         if isinstance(msg, Heartbeat):
             self.heartbeats += 1
             return []
+        if isinstance(msg, Song | Play | Stop):
+            # Play from memory lives in the firmware; the full-loop tests cover it
+            # (tests/test_firmware_loop.py). This simulator only streams live.
+            return [(0.0, Ack(seq=msg.seq, status="error: not supported by the simulator"))]
         if isinstance(msg, Estop):
             self.estopped = True
         elif self.estopped:

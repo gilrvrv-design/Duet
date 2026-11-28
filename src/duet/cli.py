@@ -268,6 +268,41 @@ def cmd_grade(args) -> int:
     return 0
 
 
+def cmd_upload(args) -> int:
+    """Store a song on the device, to play without the Hub (press its play button)."""
+    from duet.device.gateway import DeviceFault, DeviceGateway
+    from duet.songs import SongError, check_slot, compile_song
+
+    robot = _robot(args)
+    score = read_score(args.score)
+    if args.only:
+        score = score.only(ONLY[args.only])
+    if not check_robot(score, robot).ok:
+        result = repair_robot(score, robot)
+        print(f"repaired {len(result.changes)} problem(s) so the robot can play it")
+        score = result.score
+    try:
+        slot = check_slot(args.slot)
+        song = compile_song(score, robot, keyboard_profile(args.piano))
+    except SongError as exc:
+        print(f"cannot store it: {exc}", file=sys.stderr)
+        return 2
+    try:
+        with DeviceGateway(args.device, profile=robot) as gateway:
+            gateway.upload(slot, song.commands)
+            print(
+                f"stored {song.title!r} in slot {slot}: {len(song.commands)} commands, "
+                f"{song.duration_s:.1f} s"
+            )
+            if args.play:
+                gateway.play(slot)
+                print("playing from memory")
+    except DeviceFault as exc:
+        print(f"the device refused it: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _play_on_device(score, robot, keyboard, url: str) -> int:
     from duet.device.gateway import DeviceGateway
 
@@ -526,6 +561,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--first", type=float, help="seconds into the recording of the first strike")
     p.add_argument("--interval", type=float, default=SWEEP_INTERVAL_S)
     p.set_defaults(func=cmd_calibrate)
+
+    p = sub.add_parser("upload", help="store a song on the device, to play without the Hub")
+    p.add_argument("score")
+    p.add_argument("--device", required=True, help="ws://host:port or tcp://host:port")
+    p.add_argument("--slot", type=int, default=0, help="song slot 0-7 (default 0)")
+    p.add_argument("--only", choices=sorted(ONLY), help="store one part alone")
+    p.add_argument("--play", action="store_true", help="play it right away")
+    p.set_defaults(func=cmd_upload)
 
     p = sub.add_parser("device-sim", help="run a simulated rig device on a WebSocket")
     p.add_argument("--host", default="127.0.0.1")

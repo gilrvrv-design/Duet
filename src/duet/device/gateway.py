@@ -35,6 +35,9 @@ from duet.protocol import (
     Hello,
     Home,
     Message,
+    Play,
+    Song,
+    Stop,
     Telemetry,
     TimePing,
     TimePong,
@@ -265,6 +268,32 @@ class DeviceGateway:
                 self._homed = False
             self._unacked[wire] = msg.seq
         self._call(self._ws.send(dataclasses.replace(msg, seq=wire).to_json()))
+
+    # songs stored on the device ---------------------------------------------
+    def upload(self, slot: int, commands: list[Message]) -> None:
+        """Store a compiled song (duet.songs) in a slot on the device. Its times are
+        song times, not Hub times, so it bypasses send(): no clock conversion."""
+        wire = self._next_wire_seq()
+        with self._state:
+            self._check()
+            self._unacked[wire] = wire
+        lines = [Song(slot=slot, lines=len(commands), seq=wire).to_json()]
+        lines += [m.to_json() for m in commands]
+        self._call(self._send_lines(lines))
+        self.wait_acked()
+
+    async def _send_lines(self, lines: list[str]) -> None:
+        for line in lines:
+            await self._ws.send(line)
+
+    def play(self, slot: int) -> None:
+        """Play a stored song: the device homes, then plays it on its own."""
+        self.send(Play(slot=slot))
+        self.wait_acked()
+
+    def stop(self) -> None:
+        self.send(Stop())
+        self.wait_acked()
 
     def _wait(self, done: Callable[[], bool], timeout_s: float, what: str) -> None:
         deadline = time.monotonic() + timeout_s

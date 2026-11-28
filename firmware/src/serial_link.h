@@ -5,8 +5,9 @@
 
 #include "duet_line_reader.hpp"
 
-// Read whatever has arrived and hand each complete line to the executor.
-inline void read_serial(duet::Executor& executor, int64_t now_us) {
+// Read whatever has arrived and hand each complete line on (an Executor or a Device).
+template <class Target>
+void read_serial(Target& target, int64_t now_us) {
   static duet::LineReader reader;
-  while (Serial.available()) reader.feed(static_cast<char>(Serial.read()), executor, now_us);
+  while (Serial.available()) reader.feed(static_cast<char>(Serial.read()), target, now_us);
 }

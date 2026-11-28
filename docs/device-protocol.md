@@ -84,6 +84,9 @@ reported with the plan's number.
 | `estop` | — | no | `ack` | Stops motion, solenoid off, clears the queue, latches |
 | `time_ping` | `t1` (Hub clock) | no | `time_pong` | Answers immediately |
 | `heartbeat` | — | no | none | Only resets the watchdog |
+| `song` | `slot` (0–7), `lines` | no | one `ack`, after the last line | The next `lines` timed commands are stored as a song (below) |
+| `play` | `slot` | no | `ack` | Homes, then plays the stored song on its own (below) |
+| `stop` | — | no | `ack` | Stops playing a stored song; LEDs off |
 
 ### Device → Hub
 
@@ -247,6 +250,12 @@ stateDiagram-v2
 | `error: cannot parse` | Not valid JSON, unknown type, or missing fields | log it; it is a Hub bug |
 | `error: queue full` | 512 commands already waiting | send less far ahead |
 | `error: emergency stop` | The rig is latched in emergency stop | stop the performance; a person must power-cycle |
+| `error: playing from memory` | A live timed command or an upload while a stored song plays | send `stop` first |
+| `error: already playing` | `play` while a stored song plays | send `stop` first |
+| `error: no song in that slot` | `play` of an empty slot | upload the song |
+| `error: bad song line` / `bad song length` / `bad song slot` | A `song` upload broke a rule below; nothing was stored | fix the upload |
+| `error: upload stalled` | No song line for 2 s during an upload; nothing was stored | upload again |
+| `error: storage full` | The device's flash is full | upload to a slot already in use |
 
 ### What the gateway does with answers
 
@@ -269,6 +278,45 @@ stateDiagram-v2
 | `DUTY_CYCLE` | Solenoid over 20% on-time in 10 s | skips the strike | the score is too dense; repair should have caught it |
 | `WATCHDOG` | 1 s with no message while moving | stops, clears the queue, un-homes | check Wi-Fi; re-home and restart |
 | `HOMING_TIMEOUT` | The sensor never triggered within 20 s | stops | check the sensor wiring and its distance to the carriage |
+| `SONG_CORRUPT` | A stored song line cannot be read back | stops playing | upload the song again |
+| `PLAY_FAILED` | A stored command was refused (queue full or e-stop) | stops playing | check the e-stop; upload a less dense song |
+
+## Play from memory
+
+The rig can play a stored song with no Hub: upload once, then press the play button.
+The Hub does all the thinking at upload time (`duet upload song.json --device …`,
+`duet.songs.compile_song`): the song is the same timed commands a live performance
+would send, count-in included, starting from the home position, with `t_us` counted
+from the song's start.
+
+```mermaid
+sequenceDiagram
+    participant H as Hub
+    participant D as Device
+    H->>D: song {seq 41, slot 2, lines 40}
+    H->>D: move_at {t_us 0, ...} ... 40 timed lines (heartbeats may come between)
+    D-->>H: ack {seq 41, ok}
+    Note over H,D: later, with or without the Hub
+    H->>D: play {slot 2}  (or: the play button)
+    D->>D: home, wait 0.5 s, then run the song on its own clock
+```
+
+Rules the device keeps:
+
+- **Uploading.** Only timed commands count as song lines; heartbeats and clock pings
+  in between are handled as usual. Every line must have `0 ≤ t_us ≤ 1 h`. If any line
+  is bad, nothing is stored and the slot keeps its old song. At most 4000 lines.
+- **Playing.** Always homes first: a song is compiled from the home position. Stored
+  commands are queued half a second ahead, exactly as the Hub's conductor sends them,
+  so every safety rule (homing, travel, duty cycle, e-stop) still applies. The device
+  is its own conductor, so the watchdog does not stop it. The song ends when its last
+  move and strike have finished.
+- **While playing**, live timed commands and uploads are refused; `home`, `estop` and
+  `stop` stop the song first.
+- **The play button** plays the next stored song (cycling through the slots); pressed
+  during a song, it stops it.
+- **Storage.** The rig keeps songs in flash (LittleFS), so they survive power-off. The
+  QEMU build and the native device keep them in RAM.
 
 ## Safety rules the device keeps on its own
 

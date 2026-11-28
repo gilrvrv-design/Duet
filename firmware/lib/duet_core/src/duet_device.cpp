@@ -98,12 +98,10 @@ void Device::end_upload(const char* status) {
 bool Device::play(int slot, int64_t now_us) {
   if (!store_.has(slot) || ex_.estopped()) return false;
   slot_ = slot;
-  if (ex_.homed()) {
-    start_song(now_us);
-  } else {
-    state_ = State::Homing;
-    ex_.start_homing(now_us);
-  }
+  // Always home: a song is compiled from the home position, and the carriage may be
+  // wherever the last song left it.
+  state_ = State::Homing;
+  ex_.start_homing(now_us);
   return true;
 }
 

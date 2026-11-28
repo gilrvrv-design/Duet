@@ -8,6 +8,7 @@
 #include <esp_timer.h>
 
 #include "board.h"
+#include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "duet_report_hal.hpp"
 #include "serial_link.h"
@@ -26,6 +27,8 @@ class SerialSink : public duet::Sink {
 duet::ReportingHal hal([](const char* line) { Serial.println(line); });
 SerialSink link;
 duet::Executor executor(hal, link);
+duet::MemorySongStore songs;  // QEMU: songs in RAM; the rig keeps them in flash
+duet::Device device(executor, songs, link);
 
 }  // namespace
 
@@ -41,6 +44,6 @@ void setup() {
 void loop() {
   int64_t t = now_us();
   hal.now_us = t;
-  read_serial(executor, t);
-  executor.poll(t);
+  read_serial(device, t);
+  device.poll(t);
 }

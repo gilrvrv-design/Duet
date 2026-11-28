@@ -6,7 +6,8 @@
 //
 // Port 0 picks a free port. The first stdout line is "listening <port>". Lines starting
 // with '#' report what the stubbed hardware did (duet_report_hal.hpp). One Hub at a time;
-// the device keeps its state between connections, like a powered rig.
+// the device keeps its state (and its stored songs) between connections, like a powered
+// rig. A line "press" on stdin presses the play button.
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -23,6 +24,7 @@
 #include <string>
 
 #include "../src/board.h"
+#include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "duet_line_reader.hpp"
 #include "duet_report_hal.hpp"
@@ -45,6 +47,14 @@ void send_line(const char* line) {
     close(client);
     client = -1;
   }
+}
+
+// What the stubbed hardware did: to the Hub's console, and to stdout, so it can be seen
+// when no Hub is connected (playing from memory).
+void report(const char* line) {
+  std::printf("%s\n", line);
+  std::fflush(stdout);
+  send_line(line);
 }
 
 struct SocketSink : duet::Sink {
@@ -83,10 +93,14 @@ int main(int argc, char** argv) {
   }
   std::signal(SIGPIPE, SIG_IGN);
 
-  duet::ReportingHal hal(send_line);
+  duet::ReportingHal hal(report);
   SocketSink sink;
   duet::Executor executor(hal, sink);
+  duet::MemorySongStore songs;
+  duet::Device device(executor, songs, sink);
   duet::LineReader reader;
+  std::string console;  // stdin: "press" presses the play button
+  bool stdin_open = true;
   hal.now_us = now_us();
   hal.place(start_steps);
   int server = listen_on(port);
@@ -95,6 +109,7 @@ int main(int argc, char** argv) {
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(server, &fds);
+    if (stdin_open) FD_SET(STDIN_FILENO, &fds);
     if (client >= 0) FD_SET(client, &fds);
     timeval wait{0, 100};  // poll the executor at least every 0.1 ms
     select((client > server ? client : server) + 1, &fds, nullptr, nullptr, &wait);
@@ -120,9 +135,22 @@ int main(int argc, char** argv) {
         close(client);
         client = -1;
       } else {
-        for (ssize_t i = 0; i < n; ++i) reader.feed(buf[i], executor, hal.now_us);
+        for (ssize_t i = 0; i < n; ++i) reader.feed(buf[i], device, hal.now_us);
       }
     }
-    executor.poll(hal.now_us);
+    if (stdin_open && FD_ISSET(STDIN_FILENO, &fds)) {
+      char c;
+      if (read(STDIN_FILENO, &c, 1) != 1) {
+        stdin_open = false;  // end of input: no more button presses
+      } else {
+        if (c != '\n') {
+          console += c;
+        } else {
+          if (console == "press") device.button(hal.now_us);
+          console.clear();
+        }
+      }
+    }
+    device.poll(hal.now_us);
   }
 }

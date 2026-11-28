@@ -4,7 +4,7 @@
 //
 //   {"type":"song","seq":S,"slot":k,"lines":N}  then N timed commands, t_us from 0.
 //       Acked once, with seq S, after the last line (ok, or why it was refused).
-//   {"type":"play","seq":S,"slot":k}   home if needed, then play slot k
+//   {"type":"play","seq":S,"slot":k}   home, then play slot k
 //   {"type":"stop","seq":S}            stop playing
 //
 // A stored song plays through the executor's queue, half a second ahead, as the Hub's
