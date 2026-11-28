@@ -129,6 +129,8 @@ def test_the_firmware_plays_a_score_on_time(device_url):
     gateway = connect(device_url)
     try:
         assert gateway.hello.device_id == "duet-rig-1"  # the firmware's own hello
+        assert gateway.hello.board in ("native", "qemu")
+        assert gateway.limits.travel_steps == 48000
         perf = perform(score, robot, keyboard_profile(), [gateway], VirtualClock(hub_now_us()))
         gateway.wait_acked()
         planned = [p for p in perf.planned if p.part == "robot"]

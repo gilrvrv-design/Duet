@@ -72,7 +72,7 @@ ribbon cable (motor wires) and a 6-pin JST PH cable pair.
 > trip at random or never. The firmware sets them as plain inputs and relies on those
 > resistors.
 
-Change pins in `firmware/src/board.h` if your wiring differs.
+Change pins in `firmware/boards/esp32-classic/board.h` (or your board's folder) if your wiring differs.
 
 ### Why each connection is the way it is
 
@@ -216,13 +216,35 @@ flowchart LR
   striker should hit the bottom of each bottle squarely when the carriage is at its
   position.
 
+### Building on an ESP32-S3 instead
+
+The same rig runs on an **ESP32-S3-DevKitC-1 N16R8** (16 MB flash, 8 MB PSRAM), which
+has room for everything planned (docs/design/esp-first.md). Only the pins change; they
+are in `firmware/boards/esp32-s3/board.h`:
+
+| Signal | ESP32 classic | ESP32-S3 | Notes on the S3 |
+|---|---|---|---|
+| STEP | GPIO 25 | GPIO 4 | |
+| DIR | GPIO 26 | GPIO 5 | |
+| EN | GPIO 27 | GPIO 6 | |
+| Solenoid (MOSFET Driver In) | GPIO 32 | GPIO 7 | |
+| Home sensor (through the divider) | GPIO 34 | GPIO 15 | |
+| Emergency stop | GPIO 35 | GPIO 16 | internal pull-up: the external 10 kΩ is not needed |
+| Play button | GPIO 33 | GPIO 17 | |
+| LED strip (through the 74AHCT125) | GPIO 13 | GPIO 18 | |
+
+Not usable on the N16R8 (Espressif's DevKitC-1 user guide): GPIO 35–37 (taken by the
+octal PSRAM), GPIO 38 (the on-board RGB LED), GPIO 19–20 (USB, kept free for a MIDI
+keyboard). Strapping pins 0, 3, 45 and 46 are avoided. Logic levels are 3.3 V, as on the
+classic board, so the divider, the 74AHCT125 and the MOSFET Driver are unchanged.
+
 ## Flashing the firmware
 
 ```mermaid
 flowchart TD
     t["make -C firmware test<br/>(native core tests, no board)"] --> s["cp firmware/src/secrets.example.h<br/>firmware/src/secrets.h<br/>and add your Wi-Fi"]
     s --> p["Install PlatformIO"]
-    p --> f["cd firmware && pio run -t upload"]
+    p --> f["cd firmware &&<br/>pio run -e esp32-classic -t upload"]
     f --> m["pio device monitor"]
     m --> ok{"Prints<br/>duet: duet-rig-1 on ws://IP:8765 ?"}
     ok -->|"yes"| next["Bench test over serial"]
@@ -240,10 +262,10 @@ cp firmware/src/secrets.example.h firmware/src/secrets.h
 ```
 
 ```bash
-cd firmware && pio run -t upload && pio device monitor
+cd firmware && pio run -e esp32-classic -t upload && pio device monitor
 ```
 
-`secrets.h` is ignored by git; never commit it.
+`secrets.h` is ignored by git; never commit it. On an ESP32-S3, use `-e esp32-s3`.
 
 ## Bench test over serial
 

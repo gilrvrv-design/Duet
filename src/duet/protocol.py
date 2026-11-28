@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 from typing import ClassVar
 
 MAX_MESSAGE_BYTES = 255  # same as kMaxMessage in firmware/lib/duet_core/src/duet_protocol.hpp
+PROTOCOL = 2  # same as kProtocol; 2: the greeting is hello (identity), then limits
 
 
 @dataclass(frozen=True)
@@ -74,11 +75,21 @@ class Heartbeat(Message):
 
 @dataclass(frozen=True)
 class Hello(Message):
+    """Who the device is: its first message on every connection; limits follows."""
+
     type: ClassVar[str] = "hello"
-    protocol: int = 1
+    protocol: int = PROTOCOL
     device_id: str = ""
+    board: str = ""
     profile: str = ""
-    # Safety limits the firmware enforces (0 = not reported by an older device).
+    features: tuple[str, ...] = ()  # duet.device.features
+
+
+@dataclass(frozen=True)
+class Limits(Message):
+    """The safety limits the firmware enforces; sent right after hello."""
+
+    type: ClassVar[str] = "limits"
     steps_per_mm: float = 0.0
     travel_steps: int = 0
     duty_limit: float = 0.0
@@ -160,8 +171,9 @@ def parse_message(data: dict | str) -> Message:
     cls = MESSAGE_TYPES.get(fields.pop("type", None))
     if cls is None:
         raise ValueError(f"unknown message type: {data.get('type')!r}")
-    if "rgb" in fields:
-        fields["rgb"] = tuple(fields["rgb"])
+    for name in ("rgb", "features"):  # JSON arrays are tuples in frozen messages
+        if name in fields:
+            fields[name] = tuple(fields[name])
     return cls(**fields)
 
 

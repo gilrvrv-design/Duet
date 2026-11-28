@@ -17,6 +17,7 @@ from duet.protocol import (
     Hello,
     Home,
     LedFrameAt,
+    Limits,
     MoveAt,
     StrikeAt,
     Telemetry,
@@ -48,7 +49,8 @@ def test_offset_and_delay_maths():
         StrikeAt(20, 15000, seq=3),
         LedFrameAt(30, 4, 2, (255, 0, 0), seq=4),
         Estop(),
-        Hello(device_id="d", profile="bottles-v1", steps_per_mm=80.0, travel_steps=48000),
+        Hello(device_id="d", board="esp32-s3", profile="bottles-v1", features=("wifi", "flash")),
+        Limits(steps_per_mm=80.0, travel_steps=48000, duty_limit=0.2),
         TimePing(5),
         TimePong(5, 6, 7),
         Ack(seq=9, status="ok"),
@@ -237,8 +239,9 @@ def test_a_device_with_other_limits_is_refused_at_connect(device):
 def test_the_simulated_device_reports_the_firmware_limits():
     from duet.device.limits import DeviceLimits, mismatches
 
-    hello = SimulatedDevice().hello()
-    assert mismatches(DeviceLimits.from_hello(hello), robot_profile()) == []
+    hello, limits = SimulatedDevice().greeting()
+    assert hello.board == "sim"
+    assert mismatches(DeviceLimits.from_message(limits), robot_profile()) == []
 
 
 @pytest.mark.parametrize("device", [{"_lines": True}], indirect=True)
@@ -264,3 +267,10 @@ def test_line_links_need_a_host_and_port():
 
     with pytest.raises(ValueError, match="tcp://host:port"):
         asyncio.run(LineLink.open("tcp://nohost"))
+
+
+@pytest.mark.parametrize("device", [{"protocol": 1}], indirect=True)
+def test_a_device_on_another_protocol_is_refused_at_connect(device):
+    _, url = device
+    with pytest.raises(ConnectionError, match="protocol 1; this Hub speaks 2"):
+        DeviceGateway(url).connect()

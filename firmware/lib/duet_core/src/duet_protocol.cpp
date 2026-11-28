@@ -1,6 +1,7 @@
 #include "duet_protocol.hpp"
 
 #include "duet_config.hpp"
+#include "duet_features.hpp"
 
 #include <cinttypes>
 #include <cstdio>
@@ -112,14 +113,27 @@ bool parse(const char* json, Command& out) {
   return true;
 }
 
-int write_hello(char* buf, size_t n, const char* device_id, const char* profile,
-                const Config& cfg) {
+int write_hello(char* buf, size_t n, const Identity& id) {
+  char features[kFeaturesJsonMax] = "";  // every name fits: see duet_features.hpp
+  size_t used = 0;
+  for (const FeatureName& f : kFeatureNames) {
+    if (!(id.features & f.feature)) continue;
+    used += std::snprintf(features + used, sizeof features - used, "%s\"%s\"",
+                          used ? "," : "", f.name);
+  }
   return std::snprintf(buf, n,
-                       "{\"type\":\"hello\",\"seq\":0,\"protocol\":1,\"device_id\":\"%s\","
-                       "\"profile\":\"%s\",\"steps_per_mm\":%.3f,\"travel_steps\":%d,"
-                       "\"duty_limit\":%.3f,\"duty_window_us\":%lld,\"max_pulse_us\":%d}",
-                       device_id, profile, static_cast<double>(cfg.steps_per_mm),
-                       static_cast<int>(cfg.travel_steps), static_cast<double>(cfg.duty_limit),
+                       "{\"type\":\"hello\",\"seq\":0,\"protocol\":%d,\"device_id\":\"%s\","
+                       "\"board\":\"%s\",\"profile\":\"%s\",\"features\":[%s]}",
+                       kProtocol, id.device_id, id.board, id.profile, features);
+}
+
+int write_limits(char* buf, size_t n, const Config& cfg) {
+  return std::snprintf(buf, n,
+                       "{\"type\":\"limits\",\"seq\":0,\"steps_per_mm\":%.3f,"
+                       "\"travel_steps\":%d,\"duty_limit\":%.3f,\"duty_window_us\":%lld,"
+                       "\"max_pulse_us\":%d}",
+                       static_cast<double>(cfg.steps_per_mm), static_cast<int>(cfg.travel_steps),
+                       static_cast<double>(cfg.duty_limit),
                        static_cast<long long>(cfg.duty_window_us),
                        static_cast<int>(cfg.max_pulse_us));
 }

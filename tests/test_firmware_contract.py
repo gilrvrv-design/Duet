@@ -108,16 +108,26 @@ def test_firmware_limits_match_the_profile(firmware_cli):
     from duet.device.limits import FIRMWARE_MAX_PULSE_US, DeviceLimits, mismatches
     from duet.protocol import parse_message
 
-    hello = parse_message(
-        subprocess.run(
-            [str(firmware_cli), "--hello"], capture_output=True, text=True, check=True
-        ).stdout
+    limits = DeviceLimits.from_message(
+        parse_message(
+            subprocess.run(
+                [str(firmware_cli), "--limits"], capture_output=True, text=True, check=True
+            ).stdout
+        )
     )
-    limits = DeviceLimits.from_hello(hello)
     assert mismatches(limits, robot_profile()) == []
     assert limits.max_pulse_us == FIRMWARE_MAX_PULSE_US
     # A glockenspiel profile allows a higher duty limit than this firmware enforces.
     assert any("duty_limit" in m for m in mismatches(limits, robot_profile("glock-v1")))
+
+
+def test_firmware_and_hub_know_the_same_features(firmware_cli):
+    from duet.device.features import KNOWN
+
+    out = subprocess.run(
+        [str(firmware_cli), "--features"], capture_output=True, text=True, check=True
+    ).stdout
+    assert tuple(out.split()) == KNOWN
 
 
 def fault_codes(output: str) -> list[str]:

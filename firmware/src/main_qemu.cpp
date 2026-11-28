@@ -7,7 +7,8 @@
 #include <Arduino.h>
 #include <esp_timer.h>
 
-#include "board.h"
+#include "board.h"  // boards/qemu
+#include "rig.h"
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "duet_report_hal.hpp"
@@ -36,9 +37,8 @@ void setup() {
   Serial.begin(115200);
   hal.now_us = now_us();
   hal.place(START_STEPS);
-  char hello[duet::kMaxMessage + 1];
-  duet::write_hello(hello, sizeof hello, DEVICE_ID, PROFILE_ID, executor.config());
-  Serial.println(hello);  // on the serial link, hello opens the conversation at boot
+  // On the serial link the greeting opens the conversation at boot.
+  device.greet(duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES});
 }
 
 void loop() {

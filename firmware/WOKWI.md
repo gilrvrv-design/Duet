@@ -22,7 +22,7 @@ flowchart LR
 
 | On the rig | In the simulator | Notes |
 |---|---|---|
-| ESP32 DevKit | `board-esp32-devkit-c-v4` | Same pins as `src/board.h` |
+| ESP32 DevKit | `board-esp32-devkit-c-v4` | Same pins as `boards/esp32-classic/board.h` |
 | TMC2209 driver | `wokwi-a4988` | Wokwi has no TMC2209. Both take STEP/DIR/ENABLE, and the firmware only uses those. Set to 1/16 microstepping, like the rig |
 | NEMA 17 + belt carriage | `wokwi-stepper-motor` | Shows the step count. There is no belt: 80 steps = 1 mm |
 | Solenoid + MOSFET driver | red LED on pin 32 | Lights for each strike pulse (15 to 30 ms) |

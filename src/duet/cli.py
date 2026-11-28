@@ -268,6 +268,12 @@ def cmd_grade(args) -> int:
     return 0
 
 
+def describe(hello) -> str:
+    """One line about a device: who it is, its board and what the board can do."""
+    features = ", ".join(hello.features) or "no extras"
+    return f"{hello.device_id} ({hello.board}: {features})"
+
+
 def cmd_upload(args) -> int:
     """Store a song on the device, to play without the Hub (press its play button)."""
     from duet.device.gateway import DeviceFault, DeviceGateway
@@ -289,6 +295,7 @@ def cmd_upload(args) -> int:
         return 2
     try:
         with DeviceGateway(args.device, profile=robot) as gateway:
+            print(f"connected to {describe(gateway.hello)}")
             gateway.upload(slot, song.commands)
             print(
                 f"stored {song.title!r} in slot {slot}: {len(song.commands)} commands, "
@@ -308,10 +315,8 @@ def _play_on_device(score, robot, keyboard, url: str) -> int:
 
     with DeviceGateway(url, profile=robot) as gateway:
         sync = gateway.sync
-        print(
-            f"connected to {gateway.hello.device_id}: clock offset {sync.offset_us} us "
-            f"(+/- {sync.error_bound_us:.0f} us)"
-        )
+        print(f"connected to {describe(gateway.hello)}")
+        print(f"clock offset {sync.offset_us} us (+/- {sync.error_bound_us:.0f} us)")
         perf = perform(score, robot, keyboard, [gateway], RealClock())
         gateway.wait_acked()
         print(f"sent {perf.messages_sent} commands, errors: {len(gateway.errors)}")

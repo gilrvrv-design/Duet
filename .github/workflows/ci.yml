@@ -14,3 +14,25 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: make install
       - run: . .venv/bin/activate && make check
+
+  # Every board must build, within its flash layout (PlatformIO fails a build that does
+  # not fit). A board's features are whatever its board.h compiles in.
+  firmware:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [esp32-classic, esp32-s3, wokwi, qemu]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ matrix.board }}-${{ hashFiles('firmware/platformio.ini') }}
+      - run: pip install platformio
+      # The Wi-Fi password is never committed; CI builds with the example.
+      - run: cp firmware/src/secrets.example.h firmware/src/secrets.h
+      - run: pio run -d firmware -e ${{ matrix.board }}

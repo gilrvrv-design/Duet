@@ -6,7 +6,8 @@ The contract between the **Hub** (Python, `src/duet/protocol.py`,
 (`tests/test_firmware_contract.py`) runs the Hub's real command stream through the C++
 core and checks that it agrees with the Python simulator.
 
-**Protocol version: 1** (sent by the device in `hello`).
+**Protocol version: 2** (sent by the device in `hello`). Version 2 split the greeting
+into `hello` (who the device is) and `limits` (what it enforces).
 
 ## At a glance
 
@@ -63,7 +64,7 @@ Every message is a flat JSON object with a `type` and a `seq`:
 | Who sends it | `seq` values |
 |---|---|
 | Gateway (every command and clock ping) | 1, 2, 3 ... counting up for the whole connection |
-| Device (`hello`, `telemetry`, `fault`) | 0 |
+| Device (`hello`, `limits`, `telemetry`, `fault`) | 0 |
 | Device (`ack`, `time_pong`) | the `seq` of the message being answered |
 
 The conductor numbers each performance's plan from 0. The gateway puts its **own**
@@ -92,7 +93,8 @@ reported with the plan's number.
 
 | Type | Fields | When |
 |---|---|---|
-| `hello` | `protocol`, `device_id`, `profile`, and the limits it enforces: `steps_per_mm`, `travel_steps`, `duty_limit`, `duty_window_us`, `max_pulse_us` | First message on every connection |
+| `hello` | `protocol`, `device_id`, `board`, `profile`, `features` (list) | First message on every connection |
+| `limits` | the limits it enforces: `steps_per_mm`, `travel_steps`, `duty_limit`, `duty_window_us`, `max_pulse_us` | Right after `hello` |
 | `ack` | `status`: `ok` or `error: …` | For every command except `heartbeat` and `time_ping` |
 | `time_pong` | `t1`, `t2` (arrived), `t3` (left), device clock | Answer to `time_ping` |
 | `telemetry` | `homed`, `position` (steps), `queued` | When homing ends; when position stops being trusted |
@@ -101,7 +103,8 @@ reported with the plan's number.
 ### Examples
 
 ```json
-{"type":"hello","seq":0,"protocol":1,"device_id":"duet-rig-1","profile":"bottles-v1","steps_per_mm":80,"travel_steps":48000,"duty_limit":0.2,"duty_window_us":10000000,"max_pulse_us":50000}
+{"type":"hello","seq":0,"protocol":2,"device_id":"duet-rig-1","board":"esp32-classic","profile":"bottles-v1","features":["wifi","flash","play_button","estop_button"]}
+{"type":"limits","seq":0,"steps_per_mm":80.000,"travel_steps":48000,"duty_limit":0.200,"duty_window_us":10000000,"max_pulse_us":50000}
 {"type":"home","seq":0}
 {"type":"ack","seq":0,"status":"ok"}
 {"type":"telemetry","seq":0,"homed":true,"position":0,"queued":0}
@@ -134,7 +137,8 @@ sequenceDiagram
     participant D as Device
 
     H->>D: open WebSocket
-    D-->>H: hello {protocol 1, device_id, profile}
+    D-->>H: hello {protocol 2, device_id, board, profile, features}
+    D-->>H: limits {steps_per_mm, travel_steps, duty_limit, ...}
 
     rect rgb(235, 245, 255)
     Note over H,D: Clock sync: 16 pings, the fastest round trip wins
@@ -259,10 +263,13 @@ stateDiagram-v2
 
 ### What the gateway does with answers
 
-- The gateway compares the limits in `hello` with the profile the Hub plans with and
+- The gateway refuses a device on another protocol version, then compares `limits`
+  with the profile the Hub plans with and
   refuses to connect if they differ (`DeviceMismatch`): a score the Hub thinks playable
-  would otherwise be refused mid-song. A device that reports no limits (`travel_steps`
-  0) is accepted.
+  would otherwise be refused mid-song.
+- `board` and `features` say what this device can do beyond the core (feature names:
+  `firmware/lib/duet_core/src/duet_features.hpp`). The Hub and the app decide from the
+  features, never from the board's name.
 - Any `error: …` ack, a `WATCHDOG` or `HOMING_TIMEOUT` fault, or a lost connection stops
   the performance: every waiting call wakes at once and the next `send` or wait raises
   `DeviceFault`. Other faults are recorded in `gateway.faults` and the music plays on.

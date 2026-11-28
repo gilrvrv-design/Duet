@@ -9,6 +9,15 @@ namespace duet {
 // Longest message either side may send, in bytes (the Hub checks this too:
 // duet.protocol.MAX_MESSAGE_BYTES).
 constexpr size_t kMaxMessage = 255;
+constexpr int kProtocol = 2;  // 2: hello split into hello (identity) and limits
+
+// Who the device is, for hello. `features` is a set of duet::Feature bits.
+struct Identity {
+  const char* device_id;
+  const char* board;
+  const char* profile;
+  uint32_t features;
+};
 
 struct Config;
 
@@ -50,10 +59,10 @@ struct Command {
 bool parse(const char* json, Command& out);
 
 // Writers return the number of characters written (snprintf semantics).
-// hello carries the safety limits the firmware enforces, so the Hub can check them
-// against the instrument profile it plans with.
-int write_hello(char* buf, size_t n, const char* device_id, const char* profile,
-                const Config& cfg);
+// On connect the device sends hello (who it is), then limits (the safety limits it
+// enforces, which the Hub checks against the instrument profile it plans with).
+int write_hello(char* buf, size_t n, const Identity& id);
+int write_limits(char* buf, size_t n, const Config& cfg);
 int write_ack(char* buf, size_t n, int64_t seq, const char* status);
 int write_pong(char* buf, size_t n, int64_t seq, int64_t t1, int64_t t2, int64_t t3);
 int write_fault(char* buf, size_t n, const char* code, const char* detail);

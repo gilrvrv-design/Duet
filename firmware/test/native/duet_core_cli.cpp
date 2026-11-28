@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "duet_executor.hpp"
+#include "duet_features.hpp"
 #include "duet_sim_hal.hpp"
 
 using namespace duet;
@@ -28,10 +29,14 @@ struct Print : Sink {
 };
 
 int main(int argc, char** argv) {
-  if (argc > 1 && std::string(argv[1]) == "--hello") {  // the limits this firmware enforces
+  if (argc > 1 && std::string(argv[1]) == "--limits") {  // the limits this firmware enforces
     char buf[kMaxMessage + 1];
-    write_hello(buf, sizeof buf, "cli", "bottles-v1", Config{});
+    write_limits(buf, sizeof buf, Config{});
     std::printf("%s\n", buf);
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--features") {  // every feature it knows
+    for (const FeatureName& f : kFeatureNames) std::printf("%s\n", f.name);
     return 0;
   }
   int64_t lookahead = argc > 1 ? std::atoll(argv[1]) : 500000;

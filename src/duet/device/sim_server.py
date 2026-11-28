@@ -18,6 +18,7 @@ from duet.device.limits import DeviceLimits
 from duet.device.lines import LineLink
 from duet.profile import RobotProfile, robot_profile
 from duet.protocol import (
+    PROTOCOL,
     TIMED,
     Ack,
     Estop,
@@ -45,6 +46,7 @@ class SimulatedDevice:
     clock_offset_us: int = 987_654_321
     drift_ppm: float = 0.0  # a real crystal is off by tens of ppm
     device_id: str = "sim-1"
+    protocol: int = PROTOCOL  # another value plays a device on an older firmware
     rig: SimulatedRig = field(init=False)
     commands: int = 0
     heartbeats: int = 0
@@ -96,18 +98,12 @@ class SimulatedDevice:
             replies.append((self.homing_s, Telemetry(homed=True, position=0)))
         return replies
 
-    def hello(self) -> Hello:
-        """What the firmware says on connect, limits included (``write_hello``)."""
-        limits = DeviceLimits.from_profile(self.profile)
-        return Hello(
-            device_id=self.device_id,
-            profile=self.profile.id,
-            steps_per_mm=limits.steps_per_mm,
-            travel_steps=limits.travel_steps,
-            duty_limit=limits.duty_limit,
-            duty_window_us=limits.duty_window_us,
-            max_pulse_us=limits.max_pulse_us,
+    def greeting(self) -> list[Message]:
+        """What the firmware sends on connect (Device::greet): hello, then limits."""
+        hello = Hello(
+            protocol=self.protocol, device_id=self.device_id, board="sim", profile=self.profile.id
         )
+        return [hello, DeviceLimits.from_profile(self.profile).to_message()]
 
     async def serve_lines(self, host: str = "127.0.0.1", port: int = 5555, ready=None) -> None:
         """The same device on a serial-style line link (``tcp://``), like the QEMU build.
@@ -125,7 +121,8 @@ class SimulatedDevice:
             await asyncio.Future()
 
     async def _session(self, ws: ServerConnection | LineLink) -> None:
-        await ws.send(self.hello().to_json())
+        for msg in self.greeting():
+            await ws.send(msg.to_json())
         async for text in ws:
             try:
                 replies = self.handle(parse_message(text))

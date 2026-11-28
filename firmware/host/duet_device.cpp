@@ -23,7 +23,8 @@
 #include <ctime>
 #include <string>
 
-#include "../src/board.h"
+#include "board.h"  // boards/native
+#include "rig.h"
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "duet_line_reader.hpp"
@@ -123,9 +124,7 @@ int main(int argc, char** argv) {
         client = fd;
         int yes = 1;
         setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof yes);
-        char hello[duet::kMaxMessage + 1];
-        duet::write_hello(hello, sizeof hello, DEVICE_ID, PROFILE_ID, executor.config());
-        send_line(hello);
+        device.greet(duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES});
       }
     }
     if (client >= 0 && FD_ISSET(client, &fds)) {

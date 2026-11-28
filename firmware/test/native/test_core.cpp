@@ -6,6 +6,7 @@
 
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
+#include "duet_features.hpp"
 #include "duet_protocol.hpp"
 #include "duet_queue.hpp"
 #include "duet_sim_hal.hpp"
@@ -174,13 +175,32 @@ static void test_duty_cannot_be_bypassed_with_short_pulses() {
   CHECK(out.has("DUTY_CYCLE"));
 }
 
-static void test_hello_reports_limits_and_oversize_is_rejected() {
-  Config cfg;
+static void test_greeting_hello_then_limits_and_oversize_is_rejected() {
+  {
+    SimHal hal;
+    Capture out;
+    Executor ex(hal, out);
+    MemorySongStore store;
+    Device dev(ex, store, out);
+    dev.greet(Identity{"duet-rig-1", "esp32-classic", "bottles-v1", kWifi | kPlayButton});
+    CHECK(out.sent.size() == 2);
+    CHECK(out.sent[0] ==
+          R"({"type":"hello","seq":0,"protocol":2,"device_id":"duet-rig-1","board":"esp32-classic",)"
+          R"("profile":"bottles-v1","features":["wifi","play_button"]})");
+    CHECK(out.sent[1].find(R"({"type":"limits")") == 0);
+    CHECK(out.sent[1].find(R"("travel_steps":48000)") != std::string::npos);
+    CHECK(out.sent[1].find(R"("duty_limit":0.200)") != std::string::npos);
+  }
+  // The longest hello possible (every feature, long names) still fits one message.
   char buf[kMaxMessage + 1];
-  int n = write_hello(buf, sizeof buf, "rig", "bottles-v1", cfg);
+  uint32_t all = 0;
+  for (const FeatureName& f : kFeatureNames) all |= f.feature;
+  int n = write_hello(buf, sizeof buf,
+                      Identity{"a-device-id-of-32-characters-xxx", "a-board-name-24-chars-xx",
+                               "a-profile-id-24-chars-xx", all});
   CHECK(n > 0 && n <= static_cast<int>(kMaxMessage));
-  CHECK(std::string(buf).find(R"("travel_steps":48000)") != std::string::npos);
-  CHECK(std::string(buf).find(R"("duty_limit":0.200)") != std::string::npos);
+  write_limits(buf, sizeof buf, Config{});
+  CHECK(std::strlen(buf) <= kMaxMessage);
   SimHal hal;
   Capture out;
   Executor ex(hal, out);
@@ -344,7 +364,7 @@ int main() {
   test_safety_rules();
   test_duty_cycle_limit();
   test_duty_cannot_be_bypassed_with_short_pulses();
-  test_hello_reports_limits_and_oversize_is_rejected();
+  test_greeting_hello_then_limits_and_oversize_is_rejected();
   test_time_ping();
   test_upload_then_play_from_memory();
   test_a_bad_song_is_refused_whole();

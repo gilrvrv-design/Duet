@@ -28,12 +28,14 @@ from duet.device.limits import DeviceLimits, mismatches
 from duet.device.lines import LineLink
 from duet.profile import RobotProfile
 from duet.protocol import (
+    PROTOCOL,
     TIMED,
     Ack,
     Fault,
     Heartbeat,
     Hello,
     Home,
+    Limits,
     Message,
     Play,
     Song,
@@ -80,6 +82,7 @@ class DeviceGateway:
         self.profile = profile
         self.now_us = now_us
         self.hello: Hello | None = None
+        self.limits: DeviceLimits | None = None
         self.sync: ClockSync | None = None
         self.errors: list[str] = []
         self.faults: list[Fault] = []
@@ -166,23 +169,32 @@ class DeviceGateway:
             self._ws = await connect(self.url)
         self._pongs = asyncio.Queue()
         self._sync_lock = asyncio.Lock()
-        first = parse_message(await self._ws.recv())
-        if not isinstance(first, Hello):
-            raise ConnectionError(f"device did not say hello: {first}")
-        self.hello = first
-        self._check_hello(first)
+        self.hello = await self._expect(Hello)
+        if self.hello.protocol != PROTOCOL:
+            raise ConnectionError(
+                f"device {self.hello.device_id} speaks protocol {self.hello.protocol}; "
+                f"this Hub speaks {PROTOCOL}: update one of them"
+            )
+        self.limits = DeviceLimits.from_message(await self._expect(Limits))
+        self._check_profile()
         task = self._loop.create_task(self._reader(), name="reader")
         task.add_done_callback(self._task_done)
         self._tasks.append(task)
 
-    def _check_hello(self, hello: Hello) -> None:
+    async def _expect(self, kind: type[Message]) -> Message:
+        """The next message of the greeting, which must be ``kind``."""
+        msg = parse_message(await self._ws.recv())
+        if not isinstance(msg, kind):
+            raise ConnectionError(f"device greeting: expected {kind.type}, got {msg}")
+        return msg
+
+    def _check_profile(self) -> None:
         if self.profile is None:
             return
         problems = []
-        if hello.profile and hello.profile != self.profile.id:
-            problems.append(f"profile: device {hello.profile}, Hub {self.profile.id}")
-        if hello.travel_steps:  # 0: an older device that does not report its limits
-            problems += mismatches(DeviceLimits.from_hello(hello), self.profile)
+        if self.hello.profile != self.profile.id:
+            problems.append(f"profile: device {self.hello.profile}, Hub {self.profile.id}")
+        problems += mismatches(self.limits, self.profile)
         if problems:
             raise DeviceMismatch("device and profile disagree: " + "; ".join(problems))
 

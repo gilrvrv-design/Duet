@@ -33,9 +33,9 @@ qemu-image:
 # The firmware as a Linux process, its serial link over TCP (host/duet_device.cpp).
 device: build/duet_device
 
-build/duet_device: host/duet_device.cpp src/board.h $(SRCS) $(wildcard $(CORE)/*.hpp)
+build/duet_device: host/duet_device.cpp boards/native/board.h src/rig.h $(SRCS) $(wildcard $(CORE)/*.hpp)
 	@mkdir -p build
-	$(CXX) $(CXXFLAGS) $(INC) -o $@ host/duet_device.cpp $(SRCS)
+	$(CXX) $(CXXFLAGS) $(INC) -Iboards/native -Isrc -o $@ host/duet_device.cpp $(SRCS)
 
 clean:
 	rm -rf build

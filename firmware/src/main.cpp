@@ -9,7 +9,8 @@
 #include <WiFi.h>
 #include <esp_timer.h>
 
-#include "board.h"
+#include "board.h"  // from boards/<name>/, chosen by the PlatformIO environment
+#include "rig.h"
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "flash_songs.h"
@@ -95,6 +96,8 @@ class Link : public duet::Sink {
   }
 };
 
+constexpr duet::Identity IDENTITY{DEVICE_ID, BOARD, PROFILE_ID, FEATURES};
+
 Esp32Hal hal;
 Link link;
 duet::Executor executor(hal, link);
@@ -120,9 +123,7 @@ void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED: {
       client = static_cast<int8_t>(num);
-      char hello[duet::kMaxMessage + 1];
-      duet::write_hello(hello, sizeof hello, DEVICE_ID, PROFILE_ID, executor.config());
-      server.sendTXT(num, hello);
+      device.greet(IDENTITY);
       break;
     }
     case WStype_DISCONNECTED:
@@ -149,7 +150,7 @@ void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
 void setup() {
   Serial.begin(115200);
   hal.begin();
-  pinMode(PIN_ESTOP, INPUT);  // GPIO 34-39 have no internal pull-up: fit 10 kOhm to 3.3 V
+  pinMode(PIN_ESTOP, ESTOP_NEEDS_EXTERNAL_PULLUP ? INPUT : INPUT_PULLUP);
   pinMode(PIN_PLAY, INPUT_PULLUP);
   if (!songs.begin_fs()) Serial.println("duet: flash storage failed; songs cannot be stored");
   WiFi.mode(WIFI_STA);

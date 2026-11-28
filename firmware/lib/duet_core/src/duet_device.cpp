@@ -51,6 +51,14 @@ void Device::on_message(const char* json, int64_t now_us) {
   ex_.on_message(json, now_us);
 }
 
+void Device::greet(const Identity& id) {
+  char buf[kMaxMessage + 1];
+  write_hello(buf, sizeof buf, id);
+  sink_.send(buf);
+  write_limits(buf, sizeof buf, ex_.config());
+  sink_.send(buf);
+}
+
 void Device::on_oversize(int64_t now_us) {
   if (receiving_) {
     upload_bad_ = true;  // the line is lost: the song would have a hole in it
