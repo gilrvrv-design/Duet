@@ -14,8 +14,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from duet.instruments import CalibrationInfo, Note
 from duet.pitch import cents_between, hz_to_midi, midi_to_hz, midi_to_name
-from duet.profile import CalibrationInfo, RobotProfile
+from duet.profile import RobotProfile
 
 DRIFT_WARNING_CENTS = 15.0
 SWEEP_INTERVAL_S = 1.0  # time between strikes in a sweep: long enough for a bottle to ring
@@ -147,11 +148,12 @@ def measure_sweep(
 def apply_measurements(
     profile: RobotProfile, bottles: list[BottleMeasurement], source: str = "sweep"
 ) -> CalibrationResult:
-    """New profile from measurements, plus warnings a person should act on."""
+    """A new instrument from measurements, plus warnings a person should act on."""
     warnings = []
-    notes = list(profile.notes)
+    inst = profile.instrument
+    notes = list(inst.notes)
     for m in bottles:
-        bottle = notes[m.index]
+        bottle = profile.notes[m.index]
         if not m.heard:
             warnings.append(f"bottle {m.index + 1} ({m.name}) was not heard; check the striker")
             continue
@@ -170,7 +172,7 @@ def apply_measurements(
             warnings.append(
                 f"bottle {m.index + 1} ({m.name}) is {off_target:+.0f} cents off: {fix}"
             )
-        notes[m.index] = bottle.revised({"hz": m.hz, "name": name})
+        notes[m.index] = Note(name=name, hz=m.hz)
 
     heard = [m for m in bottles if m.heard]
     striker, sound = profile.striker, profile.sound
@@ -188,11 +190,16 @@ def apply_measurements(
     names = [n.name for n in notes]
     if len(set(names)) != len(names):
         warnings.append("two bottles now sound the same note; retune before playing")
-        notes = list(profile.notes)  # keep the old pitches rather than an invalid profile
-    new = profile.revised(
-        {"notes": tuple(notes), "striker": striker, "sound": sound, "calibration": info}
+        notes = list(inst.notes)  # keep the old pitches rather than an invalid instrument
+    new = inst.revised(
+        {
+            "notes": tuple(notes),
+            "bot": inst.bot.revised({"striker": striker}),
+            "sound": sound,
+            "calibration": info,
+        }
     )
-    return CalibrationResult(new, bottles, warnings)
+    return CalibrationResult(RobotProfile(new), bottles, warnings)
 
 
 def calibrate_from_sweep(
@@ -213,14 +220,16 @@ def best_strike_positions(
     For each bottle, the loudest strike within ``window_steps`` of its current position
     becomes its new position.
     """
-    notes, report = [], []
+    positions, report = [], []
     for i, bottle in enumerate(profile.notes):
         near = [(s, loud) for s, loud in samples if abs(s - bottle.steps) <= window_steps]
         if not near:
-            notes.append(bottle)
+            positions.append(bottle.steps)
             report.append(f"bottle {i + 1}: no samples near {bottle.steps} steps; kept")
             continue
         steps = max(near, key=lambda sl: sl[1])[0]
-        notes.append(bottle.revised({"steps": steps}))
+        positions.append(steps)
         report.append(f"bottle {i + 1}: {bottle.steps} -> {steps} steps")
-    return profile.revised({"notes": tuple(notes)}), report
+    inst = profile.instrument
+    new = inst.revised({"bot": inst.bot.revised({"positions": tuple(positions)})})
+    return RobotProfile(new), report

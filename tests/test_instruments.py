@@ -61,15 +61,16 @@ def test_files_round_trip(tmp_path):
         assert load_instrument_file(path) == instrument(name)
 
 
-def test_todays_profiles_are_views_of_instruments():
-    """Until code moves to instruments (step 1e), profiles are built from them and saved
-    as them, losslessly."""
-    assert RobotProfile.from_instrument(BOTTLES).to_instrument() == BOTTLES
-    assert robot_profile().notes[2].steps == BOTTLES.bot.positions[2]
+def test_profiles_are_read_only_views_of_an_instrument():
+    """Every fact and rule is the instrument's; a profile only presents it."""
+    view = robot_profile()
+    assert view.instrument == BOTTLES
+    assert view.notes[2].steps == BOTTLES.bot.positions[2]
+    assert view.notes[2].hz == BOTTLES.notes[2].hz and view.striker == BOTTLES.bot.striker
     piano = instrument("piano-88")
-    assert KeyboardProfile.from_instrument(piano).to_instrument() == piano
+    assert KeyboardProfile(piano).instrument == piano
     assert keyboard_profile().led.leds_per_m == 144
     with pytest.raises(TypeError, match="not played by a carriage-striker bot"):
-        RobotProfile.from_instrument(piano)
+        RobotProfile(piano)
     with pytest.raises(TypeError, match="not a keyboard"):
-        KeyboardProfile.from_instrument(BOTTLES)
+        KeyboardProfile(BOTTLES)

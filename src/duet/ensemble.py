@@ -116,7 +116,7 @@ def build_score(
         track, octave = assignment.parts[member.name]
         notes = skyline(tracks[track]) if member.is_robot else tracks[track]
         if member.is_robot:
-            instrument = member.robot.to_instrument()
+            instrument = member.robot.instrument
             if playing.setdefault(instrument.id, instrument) != instrument:
                 raise ValueError(f"two different robots both call themselves {instrument.id!r}")
             parts[member.name] = PartInfo(instrument=instrument.id, performer="bot")

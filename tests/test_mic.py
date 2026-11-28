@@ -5,12 +5,11 @@ from duet.listening import Expected, grade
 from duet.mic import MicKeys, MicListener, RobotSound
 from duet.performers import in_use
 from duet.pitch import midi_to_hz
-from duet.profile import robot_profile
+from duet.profile import RobotProfile, robot_profile
 
 SR = 22050
-GLASS = robot_profile().model_copy(
-    update={"sound": robot_profile().sound.model_copy(update={"partials": (1.0, 2.7)})}
-)
+_BOTTLES = robot_profile().instrument
+GLASS = RobotProfile(_BOTTLES.revised({"sound": _BOTTLES.sound.revised({"partials": (1.0, 2.7)})}))
 
 
 def piano(out, midi, t, dur=0.6):

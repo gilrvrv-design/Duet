@@ -28,8 +28,8 @@ class Bot:
     instrument: Instrument
 
     @property
-    def profile(self) -> RobotProfile:  # the carriage-striker view, until step 1e
-        return RobotProfile.from_instrument(self.instrument)
+    def profile(self) -> RobotProfile:  # how the planner sees a carriage-striker bot
+        return RobotProfile(self.instrument)
 
     def report(self, score: DuetScore, margin_s: float = DEFAULT_MARGIN_S) -> Report:
         """What the mechanism cannot play, by note, for repair."""
@@ -49,8 +49,8 @@ class Human:
     level: int | None  # the target skill level; None: any
 
     @property
-    def profile(self) -> KeyboardProfile:  # the keyboard view, until step 1e
-        return KeyboardProfile.from_instrument(self.instrument)
+    def profile(self) -> KeyboardProfile:  # how the light guide sees a keyboard
+        return KeyboardProfile(self.instrument)
 
     def problems(self, score: DuetScore) -> list[str]:
         return check_pianist(score, self.profile, part=self.part, target_level=self.level)
@@ -66,9 +66,8 @@ Instruments = Mapping[str, Instrument]  # by id: the ones in use, e.g. a calibra
 
 
 def in_use(*profiles: RobotProfile | KeyboardProfile) -> dict[str, Instrument]:
-    """The instruments a command plays, by id, from today's profile views (step 1f
-    replaces them with instruments themselves)."""
-    return {p.id: p.to_instrument() for p in profiles}
+    """The instruments a command plays, by id (say, a calibrated rig from a file)."""
+    return {p.id: p.instrument for p in profiles}
 
 
 def performer(score: DuetScore, part: str, instruments: Instruments = NO_OVERRIDES) -> Performer:

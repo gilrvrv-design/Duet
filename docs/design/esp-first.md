@@ -66,9 +66,9 @@ flowchart LR
   what sounds (notes, measured pitch, sound) and how it can be played: a `bot:` section
   (a mechanism and its limits) and/or a `human:` section (how notes are shown). An
   instrument offers only the performers it has a section for.
-- **Temporary, until step 1e:** `RobotProfile` and `KeyboardProfile` remain as views
-  built from instruments (and saved as instruments), so code moves over slice by slice.
-  Step 1e removes them.
+- `RobotProfile` and `KeyboardProfile` are thin, read-only views of an instrument (how
+  the planner sees a carriage-striker bot, how the light guide sees a keyboard). They
+  hold no facts and no rules of their own: every rule is the instrument's.
 - **The device exposes channels** (carriage-striker, LED strip, MIDI out, ...) in its
   greeting; commands name a channel. Today's commands are channel 0.
 
@@ -94,7 +94,7 @@ not fit a board is switched off for that board, explicitly. CI builds every boar
 | Step | What | Tested by |
 |---|---|---|
 | 0 | Board layer; boards report board and features; `esp32-s3`; CI builds every board | native tests, gateway tests, CI build matrix |
-| 1 | Instrument / performer / mechanism model; N-part score with v1 migration | Python tests; every existing test still passes |
+| 1 | Instrument / performer / mechanism model; N-part score with v1 migration; the conductor plays every part on its own devices; the ensemble is a score (done, in slices 1a–1f) | Python tests; every existing test still passes |
 | 2 | Protocol channels; multi-channel executor; MIDI-out mechanism | native tests, full loop |
 | 3 | Device web server, web app, device API, Wi-Fi setup | the native device serves the same API; browser tests |
 | 4 | The app finds and uses servers, and falls back | browser tests with servers up, down, failing |

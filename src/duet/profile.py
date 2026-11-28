@@ -1,125 +1,112 @@
-"""Instrument profiles: the views of an instrument that the planner, conductor and
-checks use today.
+"""How the planner, the conductor and the checks see an instrument: thin, read-only views
+of a ``duet.instruments.Instrument``. The instrument holds every fact and every rule;
+a view only presents them the way its users need.
 
-Being replaced: instruments are now ``duet.instruments.Instrument`` (one file per
-instrument, with ``bot`` and ``human`` sections). ``RobotProfile`` is an instrument
-played by a carriage-striker bot; ``KeyboardProfile`` is a keyboard played by a human
-following an LED strip. Both are built from instruments and saved as instruments; code
-moves to the new model slice by slice and these views go (docs/design/esp-first.md).
+``RobotProfile``: an instrument played by a carriage-striker bot (notes with their
+carriage positions, kinematics, striker). ``KeyboardProfile``: a keyboard played by a
+human who follows an LED strip.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
-
-from pydantic import Field, model_validator
 
 from duet.instruments import (
     CalibrationInfo,
     CarriageStriker,
-    HumanPlay,
     Instrument,
     Kinematics,
     LedStrip,
-    Note,
     Sound,
     Striker,
     instrument,
     load_instrument_file,
     save_instrument_file,
 )
-from duet.pitch import cents_between, midi_to_hz, midi_to_name
-from duet.score import FrozenModel, Pitch
+from duet.pitch import cents_between, midi_to_hz
 
-_Model = FrozenModel
-__all__ = ["CalibrationInfo", "Kinematics", "Sound", "Striker"]
+__all__ = [
+    "Bottle",
+    "CalibrationInfo",
+    "KeyboardProfile",
+    "Kinematics",
+    "RobotProfile",
+    "Sound",
+    "Striker",
+    "keyboard_profile",
+    "load_profile",
+    "load_profile_file",
+    "robot_profile",
+    "save_profile_file",
+]
 
 
-class Bottle(_Model):
-    name: Pitch
-    hz: float = Field(gt=0)
-    steps: int = Field(ge=0)
+@dataclass(frozen=True)
+class Bottle:
+    """One note of a carriage-striker bot: what it sounds, and where the carriage stops."""
+
+    name: int  # MIDI number
+    hz: float
+    steps: int
 
     @property
     def midi(self) -> int:
         return self.name
 
 
-class RobotProfile(_Model):
-    id: str
-    name: str
-    notes: tuple[Bottle, ...] = Field(min_length=1)
-    kinematics: Kinematics
-    striker: Striker
-    sound: Sound
-    calibration: CalibrationInfo | None = None
-    midi_program: int = 0
-    # How far a bottle may sound from its name and still play that note. Calibration
-    # renames a bottle that drifts further (calibration.RENAME_CENTS).
-    tolerance_cents: float = Field(50.0, gt=0, le=100)
+@dataclass(frozen=True)
+class RobotProfile:
+    instrument: Instrument
 
-    @model_validator(mode="after")
-    def _check_notes(self) -> RobotProfile:
-        steps = [b.steps for b in self.notes]
-        if steps != sorted(steps) or len(set(steps)) != len(steps):
-            raise ValueError("bottle positions must be strictly increasing")
-        if steps[-1] > self.kinematics.travel_steps:
-            raise ValueError("a bottle lies beyond the carriage travel")
-        if len({b.midi for b in self.notes}) != len(self.notes):
-            raise ValueError("two bottles share a pitch")
-        for b in self.notes:
-            off = cents_between(midi_to_hz(b.midi), b.hz)
-            if abs(off) > self.tolerance_cents:
-                raise ValueError(
-                    f"bottle {midi_to_name(b.midi)} sounds {b.hz:g} Hz, {off:+.0f} cents off "
-                    f"its name (tolerance {self.tolerance_cents:g}); rename or retune it"
-                )
-        return self
+    def __post_init__(self) -> None:
+        if not isinstance(self.instrument.bot, CarriageStriker):
+            raise TypeError(f"{self.instrument.id} is not played by a carriage-striker bot")
+        if self.instrument.sound is None:
+            raise ValueError(f"{self.instrument.id}: a bot's instrument needs its sound")
 
-    @classmethod
-    def from_instrument(cls, inst: Instrument) -> RobotProfile:
-        if not isinstance(inst.bot, CarriageStriker):
-            raise TypeError(f"{inst.id} is not played by a carriage-striker bot")
-        if inst.sound is None:
-            raise ValueError(f"{inst.id}: a bot's instrument needs its sound (for listening)")
-        return cls(
-            id=inst.id,
-            name=inst.name,
-            notes=tuple(
-                Bottle(name=n.midi, hz=n.sounding_hz, steps=steps)
-                for n, steps in zip(inst.notes, inst.bot.positions, strict=True)
-            ),
-            kinematics=inst.bot.kinematics,
-            striker=inst.bot.striker,
-            sound=inst.sound,
-            calibration=inst.calibration,
-            midi_program=inst.midi_program,
-            tolerance_cents=inst.tolerance_cents,
-        )
+    @property
+    def id(self) -> str:
+        return self.instrument.id
 
-    def to_instrument(self) -> Instrument:
-        return Instrument(
-            id=self.id,
-            name=self.name,
-            notes=tuple(Note(name=b.midi, hz=b.hz) for b in self.notes),
-            sound=self.sound,
-            midi_program=self.midi_program,
-            tolerance_cents=self.tolerance_cents,
-            calibration=self.calibration,
-            bot=CarriageStriker(
-                mechanism="carriage_striker",
-                positions=tuple(b.steps for b in self.notes),
-                kinematics=self.kinematics,
-                striker=self.striker,
-            ),
+    @property
+    def name(self) -> str:
+        return self.instrument.name
+
+    @property
+    def kinematics(self) -> Kinematics:
+        return self.instrument.bot.kinematics
+
+    @property
+    def striker(self) -> Striker:
+        return self.instrument.bot.striker
+
+    @property
+    def sound(self) -> Sound:
+        return self.instrument.sound
+
+    @property
+    def calibration(self) -> CalibrationInfo | None:
+        return self.instrument.calibration
+
+    @property
+    def tolerance_cents(self) -> float:
+        return self.instrument.tolerance_cents
+
+    @cached_property
+    def notes(self) -> tuple[Bottle, ...]:
+        return tuple(
+            Bottle(n.midi, n.sounding_hz, steps)
+            for n, steps in zip(self.instrument.notes, self.instrument.bot.positions, strict=True)
         )
 
     @property
     def pitches(self) -> list[int]:
-        return [b.midi for b in self.notes]
+        return self.instrument.pitches
 
     def bottle_index(self, midi: int, tolerance_cents: float | None = None) -> int | None:
-        """Index of the bottle that sounds ``midi`` within the tolerance (the profile's
+        """Index of the note that sounds ``midi`` within the tolerance (the instrument's
         unless given), using measured pitch."""
         if tolerance_cents is None:
             tolerance_cents = self.tolerance_cents
@@ -132,45 +119,30 @@ class RobotProfile(_Model):
         return None
 
 
-class Led(_Model):
-    leds_per_m: float = Field(gt=0)
-    white_key_mm: float = Field(gt=0)
-    first_led_mm: float = 0.0
+@dataclass(frozen=True)
+class KeyboardProfile:
+    instrument: Instrument
 
-
-class KeyboardProfile(_Model):
-    id: str
-    name: str
-    low: Pitch
-    high: Pitch
-    led: Led
-    midi_program: int = 0
-
-    @classmethod
-    def from_instrument(cls, inst: Instrument) -> KeyboardProfile:
+    def __post_init__(self) -> None:
+        inst = self.instrument
         if inst.range is None or inst.human is None or not isinstance(inst.human.guide, LedStrip):
             raise TypeError(f"{inst.id} is not a keyboard played by a human with an LED strip")
-        g = inst.human.guide
-        return cls(
-            id=inst.id,
-            name=inst.name,
-            low=inst.range[0],
-            high=inst.range[1],
-            midi_program=inst.midi_program,
-            led=Led(
-                leds_per_m=g.leds_per_m, white_key_mm=g.white_key_mm, first_led_mm=g.first_led_mm
-            ),
-        )
 
-    def to_instrument(self) -> Instrument:
-        guide = LedStrip(guide="led_strip", **self.led.model_dump())
-        return Instrument(
-            id=self.id,
-            name=self.name,
-            range=(self.low, self.high),
-            midi_program=self.midi_program,
-            human=HumanPlay(guide=guide),
-        )
+    @property
+    def id(self) -> str:
+        return self.instrument.id
+
+    @property
+    def low(self) -> int:
+        return self.instrument.range[0]
+
+    @property
+    def high(self) -> int:
+        return self.instrument.range[1]
+
+    @property
+    def led(self) -> LedStrip:
+        return self.instrument.human.guide
 
     def contains(self, midi: int) -> bool:
         return self.low <= midi <= self.high
@@ -180,10 +152,10 @@ Profile = RobotProfile | KeyboardProfile
 
 
 def _view(inst: Instrument) -> Profile:
-    """The view today's code uses: a bot's instrument as a RobotProfile, else a keyboard."""
+    """A bot's instrument as a RobotProfile, else a keyboard."""
     if inst.bot is not None:
-        return RobotProfile.from_instrument(inst)
-    return KeyboardProfile.from_instrument(inst)
+        return RobotProfile(inst)
+    return KeyboardProfile(inst)
 
 
 def load_profile_file(path: str | Path) -> Profile:
@@ -191,17 +163,17 @@ def load_profile_file(path: str | Path) -> Profile:
 
 
 def save_profile_file(profile: Profile, path: str | Path) -> None:
-    save_instrument_file(profile.to_instrument(), path)
+    save_instrument_file(profile.instrument, path)
 
 
 def load_profile(profile_id: str) -> Profile:
-    """Load a built-in profile by id, such as ``"bottles-v1"``."""
+    """Load a built-in instrument's view by id, such as ``"bottles-v1"``."""
     return _view(instrument(profile_id))
 
 
 def robot_profile(profile_id: str = "bottles-v1") -> RobotProfile:
-    return RobotProfile.from_instrument(instrument(profile_id))
+    return RobotProfile(instrument(profile_id))
 
 
 def keyboard_profile(profile_id: str = "piano-88") -> KeyboardProfile:
-    return KeyboardProfile.from_instrument(instrument(profile_id))
+    return KeyboardProfile(instrument(profile_id))
