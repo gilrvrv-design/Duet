@@ -9,9 +9,9 @@ INC := -I$(CORE)
 test: build/test_core build/duet_core_cli build/duet_device build/duet_device_basic
 	./build/test_core
 
-build/test_core: test/native/test_core.cpp $(SRCS) $(wildcard $(CORE)/*.hpp)
+build/test_core: test/native/test_core.cpp src/rig.h $(SRCS) $(wildcard $(CORE)/*.hpp)
 	@mkdir -p build
-	$(CXX) $(CXXFLAGS) $(INC) -o $@ test/native/test_core.cpp $(SRCS)
+	$(CXX) $(CXXFLAGS) $(INC) -Isrc -o $@ test/native/test_core.cpp $(SRCS)
 
 build/duet_core_cli: test/native/duet_core_cli.cpp src/rig.h $(SRCS) $(wildcard $(CORE)/*.hpp)
 	@mkdir -p build

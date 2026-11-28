@@ -165,3 +165,20 @@ def test_a_broken_midi_file_says_why(page, device, tmp_path):
     expect(page.locator("#message")).to_have_text(
         "The rig could not plan “broken”: the MIDI header is cut short."
     )
+
+
+def test_storing_the_same_song_again_never_falls_back_to_slot_0(page, device, tmp_path):
+    """Storing a song the rig already has, in the same slot, leaves the song list as it
+    was; the next song must still go to a free slot, not to slot 0."""
+    song = tmp_path / "rain.song"
+    assert main(["song", str(EXAMPLE), "-o", str(song)]) == 0
+    device.store_example(0)
+    device.store_example(3)
+    page.goto(device.http_url)
+    page.locator("#slot").select_option("3")
+    page.locator("#song-file").set_input_files(song)  # the same title into slot 3
+    expect(page.locator("#message")).to_have_text("“Rain on the Bottles” is on the rig, in slot 3.")
+    expect(page.locator("#slot")).to_have_value("1")  # the first free slot
+    page.locator("#song-file").set_input_files(song)
+    expect(page.locator("#message")).to_have_text("“Rain on the Bottles” is on the rig, in slot 1.")
+    assert [s["slot"] for s in device.api("GET", "/api/songs")[1]["songs"]] == [0, 1, 3]

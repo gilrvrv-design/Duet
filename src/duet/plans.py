@@ -29,6 +29,7 @@ class InfeasibleScoreError(ValueError):
 @dataclass(frozen=True)
 class RobotCommand:
     sound_s: float  # when the bottle should be heard
+    bar: int  # the score's bar of the note
     fire_s: float  # when to pulse the solenoid (sound time minus latency)
     bottle: int
     target_steps: int
@@ -62,6 +63,7 @@ def robot_plan(
         commands.append(
             RobotCommand(
                 sound_s=strike.time_s,
+                bar=strike.bar,
                 fire_s=fire,
                 bottle=strike.bottle,
                 target_steps=target,

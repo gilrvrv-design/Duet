@@ -31,7 +31,7 @@ class ArrangementOptions(BaseModel):
 def run_transcription(
     ctx: AppContext, path: str, filename: str | None, route: Route, progress: Progress
 ) -> dict:
-    from duet.audio.fullmix import RouteUnavailable
+    from duet.audio.fullmix import RouteUnavailable, SeparationFailed
     from duet.audio.io import AudioError
     from duet.audio.pipeline import transcribe_file
 
@@ -41,6 +41,8 @@ def run_transcription(
         raise JobFailure("AUDIO_INVALID", str(exc)) from exc
     except RouteUnavailable as exc:
         raise JobFailure("ROUTE_UNAVAILABLE", str(exc)) from exc
+    except SeparationFailed as exc:
+        raise JobFailure("SEPARATION_FAILED", str(exc)) from exc
     finally:
         Path(path).unlink(missing_ok=True)  # audio is not kept (FR-A10)
     return transcription_view(ctx.store.add("transcription", result, filename=filename))

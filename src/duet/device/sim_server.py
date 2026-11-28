@@ -27,6 +27,7 @@ from duet.protocol import (
     Channel,
     Estop,
     Fault,
+    Greet,
     Heartbeat,
     Hello,
     Home,
@@ -79,7 +80,12 @@ class SimulatedDevice:
         if isinstance(msg, Heartbeat):
             self.heartbeats += 1
             return []
-        if isinstance(msg, Song | Play | Stop):
+        if isinstance(msg, Greet):  # as the firmware: the greeting again, no ack
+            return [(0.0, m) for m in self.greeting()]
+        if isinstance(msg, Stop):  # as the firmware (protocol 5): what is queued is dropped
+            self.rig.received.clear()
+            return [(0.0, Ack(seq=msg.seq))]
+        if isinstance(msg, Song | Play):
             # Play from memory lives in the firmware; the full-loop tests cover it
             # (tests/test_firmware_loop.py). This simulator only streams live.
             return [(0.0, Ack(seq=msg.seq, status="error: not supported by the simulator"))]

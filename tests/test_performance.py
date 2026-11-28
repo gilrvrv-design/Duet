@@ -96,3 +96,11 @@ def test_a_part_needs_a_device_with_its_kind_of_channel():
             VirtualClock(),
             instruments=in_use(BOTTLES, PIANO),
         )
+
+
+def test_bot_notes_keep_their_bars():
+    """On a downbeat, seconds / beats can land a hair short of the bar: the bar is the
+    score's, not recomputed (at 90 bpm bars 8, 15, 26, ... came out one early)."""
+    score = make_score(robot=[(bar, 1, 1, "C5") for bar in range(1, 33)], tempo=90)
+    bars = [n.bar for n in build_messages(score, 0).planned if n.performer == "bot"]
+    assert bars == list(range(1, 33))

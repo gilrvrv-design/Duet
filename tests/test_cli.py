@@ -1,5 +1,6 @@
 import json
 
+import mido
 import pytest
 
 from duet.cli import main
@@ -38,3 +39,18 @@ def test_play_with_a_bot_on_the_piano(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "robot (bot): 9/9 notes, max timing error 0 us" in out
     assert "pianist (bot): 4/4 notes, max timing error 0 us" in out
+
+
+def test_a_midi_import_says_what_it_ignored(tmp_path, capsys):
+    midi = mido.MidiFile()
+    track = mido.MidiTrack()
+    track += [
+        mido.Message("note_on", note=72, velocity=80, time=0),
+        mido.Message("note_off", note=72, time=480),
+        mido.Message("note_on", note=74, velocity=80, time=0),  # never released
+    ]
+    midi.tracks.append(track)
+    path = tmp_path / "tune.mid"
+    midi.save(path)
+    assert main(["check", str(path)]) == 0
+    assert "warning: 1 note(s) never released were left out" in capsys.readouterr().err

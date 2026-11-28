@@ -123,6 +123,8 @@ duet::MidiPlanner planner = rig_planner(device, BOARD_CHANNELS);
 WebServer web(HTTP_PORT);
 DNSServer dns;  // on the setup network, every name leads to the setup page
 bool setup_network = false;
+uint32_t restart_at_ms = 0;  // 0: none due
+constexpr uint32_t RESTART_AFTER_MS = 500;
 
 // Every request: the device API under /api/, else a file of the web app. Requests are
 // small and quick (the page asks once a second), so the main loop is not held up.
@@ -136,9 +138,9 @@ void serve_web() {
     duet::Response r = api.handle(method, path.c_str(), web.arg("plain").c_str(), now_us());
     web.sendHeader("Cache-Control", "no-store");
     web.send(r.status, "application/json", r.body.c_str());
-    if (r.restart) {  // new Wi-Fi settings: restart to join that network
-      delay(500);     // let the answer reach the phone first
-      ESP.restart();
+    if (r.restart) {  // new Wi-Fi settings: the rig goes quiet, then restarts to join
+      device.stop();
+      restart_at_ms = millis() + RESTART_AFTER_MS;  // after the answer reaches the phone
     }
     return;
   }
@@ -294,6 +296,7 @@ void setup() {
 }
 
 void loop() {
+  if (restart_at_ms && static_cast<int32_t>(millis() - restart_at_ms) >= 0) ESP.restart();
   server.loop();
   web.handleClient();
   if (setup_network) dns.processNextRequest();

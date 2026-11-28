@@ -8,6 +8,7 @@ from duet.conductor import VirtualClock, one_rig, perform
 from duet.device.clock import SyncSample, best_sync, hub_now_us
 from duet.device.gateway import DeviceFault, DeviceGateway, DeviceMismatch
 from duet.device.sim_server import SimulatedDevice
+from duet.live import StoppableClock, Stopped, play_live
 from duet.performers import in_use
 from duet.profile import keyboard_profile, robot_profile
 from duet.protocol import (
@@ -15,11 +16,13 @@ from duet.protocol import (
     Channel,
     Estop,
     Fault,
+    Greet,
     Heartbeat,
     Hello,
     Home,
     LedFrameAt,
     MoveAt,
+    Stop,
     StrikeAt,
     Telemetry,
     TimePing,
@@ -296,3 +299,23 @@ def test_a_device_on_another_protocol_is_refused_at_connect(device):
     _, url = device
     with pytest.raises(ConnectionError, match="protocol 2; this Hub speaks 5"):
         DeviceGateway(url).connect()
+
+
+def test_the_simulator_answers_greet_and_stop_as_the_firmware_does(device):
+    sim, url = device
+    assert [m for _, m in sim.handle(Greet())] == sim.greeting()  # no ack: the greeting
+    sim.rig.send(StrikeAt(10**12, 20_000, ch=0))
+    assert [m for _, m in sim.handle(Stop(seq=4))] == [Ack(seq=4)]
+    assert sim.rig.received == []  # what was queued is dropped (protocol 5)
+
+
+def test_a_practice_stops_on_the_simulator_too(device):
+    _, url = device
+    clock = StoppableClock()
+    rain = load_score(ROOT / "examples" / "rain-on-the-bottles.json")
+    with pytest.raises(Stopped):  # stopped, not failed: the simulator takes the stop
+        play_live(
+            rain, url, robot_profile(), in_use(robot_profile(), keyboard_profile()),
+            mode="play", keys=None, clock=clock,
+            on_connect=lambda _gateway: threading.Timer(0.5, clock.stop).start(),
+        )  # fmt: skip

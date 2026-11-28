@@ -413,3 +413,20 @@ def test_a_rigs_page_may_call_the_server_and_other_sites_may_not(client):
             headers={"Origin": origin, "Access-Control-Request-Method": "POST"},
         )
         assert (preflight.headers.get("access-control-allow-origin") == origin) is allowed
+
+
+def test_an_unexpected_error_is_still_a_problem(monkeypatch):
+    """A bug answers as a problem (INTERNAL), like every other error."""
+    from duet.api.routes import system
+
+    def broken():
+        raise RuntimeError("a bug")
+
+    app = create_app(store=MemoryStore())
+    monkeypatch.setattr(system, "reachability", lambda _profile: broken())
+    reply = TestClient(app, raise_server_exceptions=False).get(
+        "/v1/profiles/bottles-v1/reachability"
+    )
+    assert reply.status_code == 500
+    assert reply.headers["content-type"] == "application/problem+json"
+    assert reply.json()["code"] == "INTERNAL"

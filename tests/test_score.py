@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from duet.score import DuetScore, LineUpError, load_score
+from duet.score import DuetScore, LineUpError, Section, load_score
 from helpers import make_score
 
 EXAMPLE = {
@@ -165,3 +165,10 @@ def test_any_line_up_with_named_parts():
 def test_bad_line_ups_are_refused(parts, message):
     with pytest.raises(ValidationError, match=message):
         load_score({"schema": "duetscore/2", "parts": parts})
+
+
+def test_a_repeat_is_refused_not_ignored():
+    """Repeats are not played: a score that asks for one is refused, not played once."""
+    assert Section(name="A", bars=(1, 4)).repeat == 1
+    with pytest.raises(ValidationError):
+        Section(name="A", bars=(1, 4), repeat=2)

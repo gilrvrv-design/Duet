@@ -9,8 +9,9 @@ from pathlib import Path
 
 from duet.calibration import SWEEP_INTERVAL_S
 from duet.conductor import RealClock, VirtualClock, one_rig, perform
+from duet.copyright import CopyrightGuard
 from duet.instruments import Instrument
-from duet.midi_io import midi_to_score, save_midi
+from duet.midi_io import read_midi, save_midi
 from duet.performers import (
     Bot,
     human_difficulty,
@@ -20,6 +21,7 @@ from duet.performers import (
     score_problems,
 )
 from duet.profile import (
+    KeyboardProfile,
     RobotProfile,
     keyboard_profile,
     load_profile_file,
@@ -42,7 +44,10 @@ def _robot(args) -> RobotProfile:
 
 def read_score(path: str) -> DuetScore:
     if Path(path).suffix.lower() in (".mid", ".midi"):
-        return midi_to_score(path, title=Path(path).stem)
+        score, warnings = read_midi(path, title=Path(path).stem)
+        for warning in warnings:  # what the import had to ignore or change
+            print(f"warning: {warning}", file=sys.stderr)
+        return score
     return load_score(Path(path))
 
 
@@ -51,6 +56,10 @@ def write_score(score: DuetScore, path: str) -> None:
         save_midi(score, path)
     else:
         Path(path).write_text(score.to_json(), encoding="utf-8")
+
+
+def _keyboard(args) -> KeyboardProfile:
+    return keyboard_profile(args.piano)
 
 
 def _in_use(args) -> dict[str, Instrument]:
@@ -189,9 +198,13 @@ def cmd_vary(args) -> int:
     if not is_built_in(args.instruction):
         from duet.compose.claude import ClaudeComposer
         from duet.compose.service import revise
-        from duet.copyright import CopyrightGuard
 
-        edit = partial(revise, composer=ClaudeComposer(), guard=CopyrightGuard.load())
+        edit = partial(
+            revise,
+            composer=ClaudeComposer(),
+            keyboard=_keyboard(args),
+            guard=CopyrightGuard.load(),
+        )
     score, note = vary(read_score(args.score), args.instruction, edit, _robot(args))
     write_score(score, args.out)
     print(note)
@@ -241,7 +254,9 @@ def cmd_teach(args) -> int:
     from duet.pedagogy import teach_song
 
     title = Path(args.audio).stem
-    path = teach_song(transcribe_file(args.audio), args.target, title)
+    path = teach_song(
+        transcribe_file(args.audio), args.target, title, _robot(args), _keyboard(args)
+    )
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for i, step in enumerate(path.steps, start=1):
@@ -489,7 +504,13 @@ def cmd_compose(args) -> int:
     request = CompositionRequest(
         prompt=args.prompt, difficulty=args.difficulty, bars=args.bars, lead=args.lead
     )
-    result = compose(request, ClaudeComposer(model=args.model))
+    result = compose(
+        request,
+        ClaudeComposer(model=args.model),
+        robot=_robot(args),
+        keyboard=_keyboard(args),
+        guard=CopyrightGuard.load(),  # as the API: never hand back a protected melody
+    )
     write_score(result.score, args.out)
     print(f"{result.score.meta.title}: {result.score.bar_count} bars in {result.rounds} round(s)")
     print(result.explanation)
@@ -512,7 +533,13 @@ def cmd_transcribe(args) -> int:
     if args.duet:
         from duet.audio.arranger import arrange
 
-        arrangement = arrange(result, difficulty=args.difficulty, title=Path(args.audio).stem)
+        arrangement = arrange(
+            result,
+            difficulty=args.difficulty,
+            robot=_robot(args),
+            keyboard=_keyboard(args),
+            title=Path(args.audio).stem,
+        )
         write_score(arrangement.score, args.duet)
         print(
             f"duet: transposed {arrangement.transpose:+d}, melody on bottles "

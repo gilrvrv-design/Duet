@@ -158,7 +158,6 @@ def build_messages(
     def us(seconds: float) -> int:
         return start_us + round(seconds * 1_000_000)
 
-    spb = seconds_per_beat(score.meta.tempo_bpm)
     tagged: list[tuple[str, Message]] = []
     planned: list[PlannedNote] = []
     plans: dict[str, RobotPlan] = {}
@@ -182,9 +181,8 @@ def build_messages(
                     )
                     tagged.append((p.part, move))
                 tagged.append((p.part, StrikeAt(us(cmd.fire_s), cmd.pulse_us)))
-                bar = 1 + int(cmd.sound_s / spb // score.meta.beats_per_bar)
                 pitch = robot.pitches[cmd.bottle]
-                planned.append(PlannedNote(p.part, "bot", us(cmd.sound_s), pitch, bar))
+                planned.append(PlannedNote(p.part, "bot", us(cmd.sound_s), pitch, cmd.bar))
         else:
             cues = led_plan(score, p.profile, count_in_bars=0 if counted_in else 1, part=p.part)
             counted_in = True

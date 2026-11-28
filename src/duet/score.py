@@ -157,7 +157,8 @@ class Event(_Model):
 class Section(_Model):
     name: str
     bars: tuple[int, int]
-    repeat: int = Field(1, ge=1)
+    # Repeats are not played: a score writes its bars out. Refused rather than ignored.
+    repeat: int = Field(1, ge=1, le=1)
 
 
 class Turn(_Model):

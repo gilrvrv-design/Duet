@@ -95,6 +95,11 @@ def create_app(
     async def _line_up(_: Request, exc: LineUpError):
         return problem_response(Problem("LINE_UP_INVALID", str(exc)))
 
+    @app.exception_handler(Exception)
+    async def _internal(_: Request, exc: Exception):
+        # A bug: answered as a problem like every other error (it is still logged).
+        return problem_response(Problem("INTERNAL", f"internal error: {type(exc).__name__}"))
+
     @app.exception_handler(NotFound)
     async def _not_found(_: Request, exc: NotFound):
         return problem_response(Problem("NOT_FOUND", str(exc.args[0])))

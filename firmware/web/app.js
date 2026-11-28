@@ -397,21 +397,31 @@ function showSlots() {
   select.value = chosen !== "" && chosen < slots ? chosen : String(free ?? 0);
 }
 
-// Store a song file in the chosen slot; true if the rig took it.
+// The slot the next song goes into, as chosen.
+function chosenSlot() {
+  return Number($("slot").value);
+}
+
+// After a song is stored: the songs as the rig has them, and the next free slot chosen.
+// (Re-chosen here every time: a store that leaves the song list unchanged, the same
+// title into the same slot, would otherwise leave no slot chosen.)
+async function afterStore() {
+  await refresh();
+  $("slot").value = "";
+  showSlots();
+}
+
+// Store a song file in the chosen slot.
 async function storeSong(file, title) {
-  const slot = Number($("slot").value);
+  const slot = chosenSlot();
   const stored = await fetch(`/api/songs/${slot}`, {
     method: "PUT",
     headers: { "Content-Type": "text/plain" },
     body: file,
   });
-  if (stored.ok) {
-    say(`“${title}” is on the rig, in slot ${slot}.`, "ok");
-    $("slot").value = "";  // the next song goes into the next free slot
-  } else {
-    say(`The rig refused “${title}”: ${(await stored.json()).error}.`);
-  }
-  await refresh();
+  if (stored.ok) say(`“${title}” is on the rig, in slot ${slot}.`, "ok");
+  else say(`The rig refused “${title}”: ${(await stored.json()).error}.`);
+  await afterStore();
 }
 
 // The optional planner module (docs/design/esp-first.md): MIDI files only where it is.
@@ -424,7 +434,7 @@ function offerMidi(planner) {
 // A MIDI file, planned by the rig itself; its title is the file's name.
 async function loadMidiFile(chosen) {
   const title = chosen.name.replace(/\.midi?$/i, "");
-  const slot = Number($("slot").value);
+  const slot = chosenSlot();
   const stored = await fetch(`/api/songs/${slot}/midi?title=${encodeURIComponent(title)}`, {
     method: "PUT",
     headers: { "Content-Type": "audio/midi" },
@@ -434,11 +444,10 @@ async function loadMidiFile(chosen) {
   if (stored.ok) {
     const notes = answer.warnings.length ? ` (${answer.warnings.join("; ")})` : "";
     say(`“${title}” is on the rig, in slot ${slot}${notes}.`, "ok");
-    $("slot").value = "";
   } else {
     say(`The rig could not plan “${title}”: ${answer.error}.`);
   }
-  await refresh();
+  await afterStore();
 }
 
 // A song file made by the Hub (duet song): its first line is its title.

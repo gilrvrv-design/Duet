@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from duet.difficulty import LEVELS
 from duet.listening import Report
 from duet.pitch import is_black_key
+from duet.profile import KeyboardProfile, RobotProfile
 from duet.score import DuetScore
 from duet.timing import EPSILON, onset_groups, timed_events
 
@@ -175,14 +176,22 @@ class LessonPath:
         return self.steps[step].passed
 
 
-def teach_song(transcription, target_level: int = 3, title: str = "Your song") -> LessonPath:
+def teach_song(
+    transcription,
+    target_level: int = 3,
+    title: str = "Your song",
+    robot: RobotProfile | None = None,
+    keyboard: KeyboardProfile | None = None,
+) -> LessonPath:
     """ "Teach me this song" (FR-A26): from the easiest part slowly to the target level at
     full speed. Each level is first played at 70% tempo, then at full tempo."""
     from duet.audio.arranger import arrange
 
     path = LessonPath(title)
     for level in range(1, target_level + 1):
-        score = arrange(transcription, difficulty=level, title=title).score
+        score = arrange(
+            transcription, difficulty=level, robot=robot, keyboard=keyboard, title=title
+        ).score
         for factor in (0.7, 1.0):
             tempo = round(score.meta.tempo_bpm * factor, 1)
             label = "slowly" if factor < 1 else "at full speed"

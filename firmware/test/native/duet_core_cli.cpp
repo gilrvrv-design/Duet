@@ -11,7 +11,7 @@
 // {"error": reason}, exit status 1), for tests/test_midi_contract.py.
 //
 // --song <file> [instrument]: the song the planner makes of a MIDI file for the rig (its
-// carriage instrument, rig.h's PROFILE_ID unless named, and piano-88), one command per
+// carriage instrument, rig.h's PROFILE_ID unless named, and its KEYBOARD_ID), one command per
 // line (or {"error": reason}, exit status 1), for tests/test_planner_contract.py.
 #include <algorithm>
 #include <cinttypes>
@@ -34,12 +34,8 @@
 
 using namespace duet;
 
-// The rig's channels, as boards/*/board.h: 0 the carriage and striker, 1 the LED strip,
-// 2 MIDI out.
-static constexpr Channel kRigChannels[] = {{ChannelKind::CarriageStriker, 0},
-                                           {ChannelKind::LedStrip, 176},
-                                           {ChannelKind::MidiOut, 0}};
-static constexpr Channels kRig{kRigChannels, 3};
+// The rig's channels, exactly as every board has them (src/rig.h).
+static constexpr const Channels& kRig = BOARD_CHANNELS;
 
 struct Print : Sink {
   void send(const char* json) override {
@@ -51,8 +47,8 @@ struct Print : Sink {
 
 static constexpr int kRigInstrument = instrument_index(kCarriageInstruments, PROFILE_ID);
 static_assert(kRigInstrument >= 0, "rig.h's PROFILE_ID names no carriage instrument");
-static constexpr int kPiano = instrument_index(kKeyboardInstruments, "piano-88");
-static_assert(kPiano >= 0, "no piano-88 among the instruments");
+static constexpr int kPiano = instrument_index(kKeyboardInstruments, KEYBOARD_ID);
+static_assert(kPiano >= 0, "the rig's keyboard is not among the instruments");
 
 static int refuse(const std::string& why) {
   std::printf("{\"error\":%s}\n", json_string(why).c_str());

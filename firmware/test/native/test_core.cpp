@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "duet_api.hpp"
+#include "rig.h"
 #include "duet_json.hpp"
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
@@ -20,12 +21,8 @@
 
 using namespace duet;
 
-// The rig's channels, as boards/*/board.h: 0 the carriage and striker, 1 the LED strip,
-// 2 MIDI out.
-static constexpr Channel kRigChannels[] = {{ChannelKind::CarriageStriker, 0},
-                                           {ChannelKind::LedStrip, 176},
-                                           {ChannelKind::MidiOut, 0}};
-static constexpr Channels kRig{kRigChannels, 3};
+// The rig's channels, exactly as every board has them (src/rig.h).
+static constexpr const Channels& kRig = BOARD_CHANNELS;
 
 static int failures = 0;
 #define CHECK(cond)                                                    \
@@ -219,7 +216,7 @@ static void test_greeting_hello_then_channels_and_oversize_is_rejected() {
                       Identity{"a-device-id-of-32-characters-xxx", "a-board-name-24-chars-xx",
                                "a-profile-id-24-chars-xx", all, kRig});
   CHECK(n > 0 && n <= static_cast<int>(kMaxMessage));
-  CHECK(write_channel(buf, sizeof buf, 0, kRigChannels[0], Config{}) <= int(kMaxMessage));
+  CHECK(write_channel(buf, sizeof buf, 0, RIG_CHANNELS[0], Config{}) <= int(kMaxMessage));
   SimHal hal;
   Capture out;
   Executor ex(hal, out, kRig);

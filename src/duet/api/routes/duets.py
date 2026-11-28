@@ -135,7 +135,9 @@ def create_variation(ctx: Ctx, duet_id: str, body: VariationIn, background: bool
     def work(progress):
         edit = None
         if not is_built_in(body.instruction):
-            edit = partial(revise, composer=ctx.composer_factory(), guard=ctx.guard)
+            edit = partial(
+                revise, composer=ctx.composer_factory(), guard=ctx.guard, progress=progress
+            )
         try:
             score, note = vary(parent.data, body.instruction, edit=edit)
         except VariationError as exc:

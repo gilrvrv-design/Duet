@@ -25,6 +25,7 @@ STATUS = {
     "PRACTICE_BUSY": 409,  # a practice is already playing
     "COMPOSITION_FAILED": 502,
     "LLM_ERROR": 502,
+    "SEPARATION_FAILED": 500,  # the full-mix route's source separation (Demucs) failed
     "INTERNAL": 500,
 }
 
