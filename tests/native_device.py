@@ -24,11 +24,6 @@ class NativeDevice:
     serial_url: str  # tcp://127.0.0.1:<port>, for the Hub's DeviceGateway
     http_url: str  # http://127.0.0.1:<port>, the device API and web app
 
-    def press(self) -> None:
-        """Press the play button."""
-        self.process.stdin.write("press\n")
-        self.process.stdin.flush()
-
     def api(
         self, method: str, path: str, body: dict | str | bytes | None = None
     ) -> tuple[int, dict]:

@@ -106,16 +106,14 @@ class RobotProfile:
     def pitches(self) -> list[int]:
         return self.instrument.pitches
 
-    def bottle_index(self, midi: int, tolerance_cents: float | None = None) -> int | None:
-        """Index of the note that sounds ``midi`` within the tolerance (the instrument's
-        unless given), using measured pitch."""
-        if tolerance_cents is None:
-            tolerance_cents = self.tolerance_cents
+    def bottle_index(self, midi: int) -> int | None:
+        """Index of the note that sounds ``midi`` within the instrument's tolerance, using
+        measured pitch."""
         target = midi_to_hz(midi)
         best = min(
             range(len(self.notes)), key=lambda i: abs(cents_between(target, self.notes[i].hz))
         )
-        if abs(cents_between(target, self.notes[best].hz)) <= tolerance_cents:
+        if abs(cents_between(target, self.notes[best].hz)) <= self.tolerance_cents:
             return best
         return None
 

@@ -43,7 +43,8 @@ def test_bottle_lookup_uses_measured_pitch():
     sharp = (notes[0].revised({"hz": 535.0}), *notes[1:])  # C5, 38 cents sharp
     shifted = RobotProfile(bottles.instrument.revised({"notes": sharp}))
     assert shifted.bottle_index(72) == 0
-    assert shifted.bottle_index(72, tolerance_cents=30) is None
+    with pytest.raises(ValueError, match="cents off its name"):  # beyond any lookup
+        bottles.instrument.revised({"notes": sharp, "tolerance_cents": 30})
 
 
 def test_a_bottle_far_from_its_name_is_rejected():

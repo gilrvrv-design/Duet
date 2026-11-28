@@ -26,6 +26,8 @@ from duet.timing import seconds_per_beat, timed_events
 OFF = (0, 0, 0)
 
 EARLY_PRESS_US = 300_000  # a key pressed this soon before its cue still counts
+LOOKAHEAD_US = 500_000  # how long before its time each message is sent
+HOMING_TIMEOUT_S = 30.0
 FOLLOW_LOOKAHEAD_US = 150_000  # short, so tempo changes reach the robot quickly
 
 
@@ -37,7 +39,6 @@ class State(StrEnum):
     WAITING = "WAITING"
     ENDING = "ENDING"
     REVIEW = "REVIEW"
-    FAULT = "FAULT"
 
 
 class Device(Protocol):
@@ -146,7 +147,6 @@ class Program:
 
 def build_messages(
     score: DuetScore,
-    start_us: int,
     *,
     instruments: Instruments = NO_OVERRIDES,
     start_steps: Mapping[str, int] | None = None,
@@ -154,11 +154,12 @@ def build_messages(
 ) -> Program:
     """Every part's messages: each bot part's moves and strikes, each human part's light
     cues (the first human part's lights also count everyone in). ``start_steps``: where
-    each bot's carriage is now (default: home)."""
+    each bot's carriage is now (default: home). Times count from bar 1 beat 1 at 0; see
+    :meth:`Program.at`."""
     start_steps = start_steps or {}
 
     def us(seconds: float) -> int:
-        return start_us + round(seconds * 1_000_000)
+        return round(seconds * 1_000_000)
 
     tagged: list[tuple[str, Message]] = []
     planned: list[PlannedNote] = []
@@ -247,9 +248,7 @@ def perform(
     clock: Clock,
     *,
     instruments: Instruments = NO_OVERRIDES,
-    lookahead_s: float = 0.5,
     buffer_s: float = 0.3,
-    homing_timeout_s: float = 30.0,
     keys: KeyInput | None = None,
     mode: str = "wait",
     home: bool = True,
@@ -258,7 +257,7 @@ def perform(
     start_at_us: int | None = None,
 ) -> Performance:
     """Play a score: home, count in, then stream every part's messages to its devices
-    (``routes``) ``lookahead_s`` ahead of time. ``instruments``: the ones in use, before
+    (``routes``) ahead of time. ``instruments``: the ones in use, before
     the built-in ones (say, a calibrated rig).
 
     With ``keys``: in "wait" mode the performance pauses at every note of the human
@@ -274,7 +273,7 @@ def perform(
     perf = Performance()
     _enter(perf, State.PREPARING)
     if home:
-        _home_carriages(score, routes, instruments, homing_timeout_s)
+        _home_carriages(score, routes, instruments, HOMING_TIMEOUT_S)
         start_steps = None
     program = _schedule(
         score, perf, clock, instruments, start_steps, count_in, buffer_s, start_at_us
@@ -284,18 +283,17 @@ def perform(
     sender = _Sender(routes, program, keys, perf, score, instruments, start_steps or {})
     if keys is not None and mode == "follow":
         return _follow(perf, program, score, instruments, sender, clock, keys)
-    lookahead_us = round(lookahead_s * 1_000_000)
     gates = _WaitGates(perf, clock, keys) if keys is not None else None
 
     def send(msg: Message) -> None:
-        if clock.now_us() >= perf.start_us - lookahead_us:
+        if clock.now_us() >= perf.start_us - LOOKAHEAD_US:
             _enter(perf, State.PLAYING)
         sender.send(msg)
 
     stream(
         program.messages,
         clock,
-        lookahead_us,
+        LOOKAHEAD_US,
         send,
         before=gates.wait_before if gates else None,
         time_of=gates.time_of if gates else message_time_us,
@@ -330,7 +328,7 @@ def _schedule(
     """When the performance starts (after the count-in, and the carriages' way to their
     first notes), its messages at that time, and where each carriage ends up."""
     program = build_messages(
-        score, 0, instruments=instruments, start_steps=start_steps, count_in=count_in
+        score, instruments=instruments, start_steps=start_steps, count_in=count_in
     )
     count_in_s = (
         score.meta.beats_per_bar * seconds_per_beat(score.meta.tempo_bpm) if count_in else 0

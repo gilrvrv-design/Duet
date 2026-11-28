@@ -16,7 +16,7 @@ from duet.profile import RobotProfile
 from duet.score import DuetScore
 from duet.timing import EPSILON, beat_index, seconds_per_beat
 
-DEFAULT_MARGIN_S = 0.010  # spare time on top of the carriage's travel time
+MARGIN_S = 0.010  # spare time on top of the carriage's travel time
 MAX_SPEED_UP = 1.5  # follow mode never plays the robot part faster than this
 
 
@@ -70,9 +70,7 @@ class _Strike:
     vel: int
 
 
-def robot_strikes(
-    score: DuetScore, profile: RobotProfile, *, part: str, tolerance_cents: float | None = None
-):
+def robot_strikes(score: DuetScore, profile: RobotProfile, *, part: str):
     """Map a bot part's events to its notes. Returns (strikes sorted by time, unmapped
     event indices)."""
     spb = seconds_per_beat(score.meta.tempo_bpm)
@@ -81,7 +79,7 @@ def robot_strikes(
     for i, event in enumerate(score.events):
         if event.part != part:
             continue
-        bottle = profile.bottle_index(event.pitch, tolerance_cents)
+        bottle = profile.bottle_index(event.pitch)
         if bottle is None:
             unmapped.append(i)
             continue
@@ -105,15 +103,13 @@ class StrikeGap:
         return self.gap_s <= EPSILON
 
 
-def needed_s(matrix, prev_bottle: int, bottle: int, margin_s: float = DEFAULT_MARGIN_S) -> float:
+def needed_s(matrix, prev_bottle: int, bottle: int) -> float:
     """The one rule for what the robot can play: how soon after a strike on
     ``prev_bottle`` the next can be on ``bottle`` (travel, the striker, and a margin)."""
-    return matrix.min_interval(prev_bottle, bottle) + margin_s
+    return matrix.min_interval(prev_bottle, bottle) + MARGIN_S
 
 
-def strike_gaps(
-    strikes: list[_Strike], profile: RobotProfile, margin_s: float = DEFAULT_MARGIN_S
-) -> list[StrikeGap]:
+def strike_gaps(strikes: list[_Strike], profile: RobotProfile) -> list[StrikeGap]:
     """The one rule for what the robot can play: every gap against its travel time."""
     matrix = reachability(profile)
     return [
@@ -121,20 +117,18 @@ def strike_gaps(
             prev,
             cur,
             cur.time_s - prev.time_s,
-            needed_s(matrix, prev.bottle, cur.bottle, margin_s),
+            needed_s(matrix, prev.bottle, cur.bottle),
         )
         for prev, cur in zip(strikes, strikes[1:], strict=False)
     ]
 
 
-def max_speed_up(
-    score: DuetScore, robot: RobotProfile, *, part: str, margin_s: float = DEFAULT_MARGIN_S
-) -> float:
+def max_speed_up(score: DuetScore, robot: RobotProfile, *, part: str) -> float:
     """How much faster than written a bot part can go and still be playable
     (1.0 to ``MAX_SPEED_UP``)."""
     strikes, _ = robot_strikes(score, robot, part=part)
     slack = min(
-        (g.gap_s / g.needed_s for g in strike_gaps(strikes, robot, margin_s) if not g.simultaneous),
+        (g.gap_s / g.needed_s for g in strike_gaps(strikes, robot) if not g.simultaneous),
         default=float("inf"),
     )
     return max(1.0, min(slack, MAX_SPEED_UP))
@@ -145,14 +139,12 @@ def check_robot(
     profile: RobotProfile,
     *,
     part: str,
-    margin_s: float = DEFAULT_MARGIN_S,
-    tolerance_cents: float | None = None,
 ) -> Report:
     """What a carriage-striker bot cannot play in ``part``."""
-    strikes, unmapped = robot_strikes(score, profile, part=part, tolerance_cents=tolerance_cents)
+    strikes, unmapped = robot_strikes(score, profile, part=part)
     violations = (
         _unmapped(score, profile, unmapped)
-        + _too_close(strikes, profile, margin_s)
+        + _too_close(strikes, profile)
         + _check_duty(strikes, profile)
     )
     return Report(sorted(violations, key=lambda v: (v.bar, v.beat, v.code)))
@@ -173,10 +165,10 @@ def _unmapped(score: DuetScore, profile: RobotProfile, unmapped: list[int]) -> l
     ]
 
 
-def _too_close(strikes, profile: RobotProfile, margin_s: float) -> list[Violation]:
+def _too_close(strikes, profile: RobotProfile) -> list[Violation]:
     """Notes that start together, or too soon after the one before for the carriage."""
     found = []
-    for gap in strike_gaps(strikes, profile, margin_s):
+    for gap in strike_gaps(strikes, profile):
         prev, cur, needed = gap.prev, gap.cur, gap.needed_s
         target = midi_to_name(profile.pitches[cur.bottle])
         if gap.simultaneous:

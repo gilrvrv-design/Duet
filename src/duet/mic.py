@@ -261,7 +261,7 @@ class SoundDeviceSource:
     Blocks are stamped with the Hub clock when they arrive, minus their length, which
     is accurate to the audio driver's latency (a few ms; calibrate it like the strikes).
     Every read gives the first block's time, so the listener re-anchors after the driver
-    drops audio; ``overflows`` counts the blocks PortAudio flagged.
+    drops audio.
     """
 
     def __init__(self, sr: int = DEFAULT_SR, device=None, block: int = 512) -> None:
@@ -273,11 +273,8 @@ class SoundDeviceSource:
 
         self._queue: queue.Queue = queue.Queue()
         self._now = hub_now_us
-        self.overflows = 0
 
-        def callback(indata, frames, _time, status):
-            if status:
-                self.overflows += 1
+        def callback(indata, frames, _time, _status):
             self._queue.put((indata[:, 0].copy(), self._now() - round(frames / sr * 1e6)))
 
         self._stream = sounddevice.InputStream(

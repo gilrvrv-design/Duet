@@ -72,7 +72,7 @@ def compile_song(
         off = [t for t in timed_events(score, p.part) if not p.profile.contains(t.event.pitch)]
         if off:
             raise SongError(f"key {off[0].event.pitch} is not on the keyboard")
-    messages = build_messages(score, 0, instruments=playing, count_in=count_in).messages
+    messages = build_messages(score, instruments=playing, count_in=count_in).messages
     if not messages:
         raise SongError("the score has nothing to play")
     if len(messages) > MAX_LINES:

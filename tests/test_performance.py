@@ -16,7 +16,7 @@ EXAMPLE = ROOT / "examples" / "rain-on-the-bottles.json"
 
 def test_messages_are_sorted_numbered_and_serialisable():
     score = make_score(robot=[(1, 1, 1, "C5"), (1, 3, 1, "G5")], pianist=[(1, 1, 2, "C4")])
-    program = build_messages(score, 5_000_000, instruments=in_use(BOTTLES, PIANO))
+    program = build_messages(score, instruments=in_use(BOTTLES, PIANO)).at(5_000_000)
     messages, planned = program.messages, program.planned
     times = [message_time_us(m) for m in messages]
     assert times == sorted(times)
@@ -102,5 +102,5 @@ def test_bot_notes_keep_their_bars():
     """On a downbeat, seconds / beats can land a hair short of the bar: the bar is the
     score's, not recomputed (at 90 bpm bars 8, 15, 26, ... came out one early)."""
     score = make_score(robot=[(bar, 1, 1, "C5") for bar in range(1, 33)], tempo=90)
-    bars = [n.bar for n in build_messages(score, 0).planned if n.performer == "bot"]
+    bars = [n.bar for n in build_messages(score).planned if n.performer == "bot"]
     assert bars == list(range(1, 33))

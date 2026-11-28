@@ -49,7 +49,6 @@ def create_app(
     store: Store | None = None,
     guard: CopyrightGuard | None = None,
     examples_dir: Path | str | None = None,
-    device_origins: str | None = None,
     live_inputs: KeyInputs | None = None,
 ) -> FastAPI:
     """Build the app. Everything it depends on can be passed in; the defaults read
@@ -76,7 +75,7 @@ def create_app(
         ctx.live.shutdown()
 
     app = FastAPI(title="Duet", version=__version__, lifespan=lifespan)
-    origins = device_origins or os.environ.get("DUET_DEVICE_ORIGINS") or DEVICE_ORIGINS
+    origins = os.environ.get("DUET_DEVICE_ORIGINS") or DEVICE_ORIGINS
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=origins,
@@ -84,8 +83,6 @@ def create_app(
         allow_headers=["Content-Type"],
     )
     app.state.ctx = ctx
-    app.state.store = store  # kept for tools and tests that inspect the store
-    app.state.jobs = ctx.jobs
 
     @app.exception_handler(Problem)
     async def _problem(_: Request, exc: Problem):

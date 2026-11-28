@@ -3,7 +3,8 @@ import statistics
 import pytest
 
 from duet.conductor import VirtualClock, one_rig, perform
-from duet.follow import Follower, TempoPianist, max_speed_up
+from duet.feasibility import max_speed_up
+from duet.follow import Follower, TempoPianist
 from duet.listening import Expected, PlayedNote
 from duet.performers import in_use
 from duet.profile import keyboard_profile, robot_profile

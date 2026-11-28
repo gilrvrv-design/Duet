@@ -17,7 +17,6 @@ import math
 from dataclasses import dataclass, field
 
 from duet.feasibility import (
-    DEFAULT_MARGIN_S,
     Code,
     check_robot,
     needed_s,
@@ -61,18 +60,17 @@ def repair_robot(
     profile: RobotProfile,
     *,
     part: str,
-    margin_s: float = DEFAULT_MARGIN_S,
     keep_tempo: bool = False,
 ) -> RepairResult:
     """Make a carriage-striker bot's ``part`` playable. ``keep_tempo``: never slow down
     (for live sessions); drop or shift notes instead."""
     robot_notes = sum(e.part == part for e in score.events)
-    result = _repair_once(score, profile, part, margin_s)
+    result = _repair_once(score, profile, part)
     too_many_dropped = robot_notes and result.count("drop") / robot_notes > MAX_DROP_RATIO
     if too_many_dropped and not keep_tempo:
-        slower = _slower_tempo(score, profile, part, margin_s)
+        slower = _slower_tempo(score, profile, part)
         if slower is not None and slower < score.meta.tempo_bpm:
-            retry = _repair_once(score.with_tempo(slower), profile, part, margin_s)
+            retry = _repair_once(score.with_tempo(slower), profile, part)
             if retry.count("drop") < result.count("drop"):
                 retry.changes.insert(
                     0,
@@ -84,21 +82,19 @@ def repair_robot(
                     ),
                 )
                 result = retry
-    final = check_robot(result.score, profile, part=part, margin_s=margin_s)
+    final = check_robot(result.score, profile, part=part)
     if not final.ok:  # a bug, not a user error: repair must always succeed
         raise AssertionError(f"repair left violations:\n{final.feedback()}")
     return result
 
 
-def _repair_once(
-    score: DuetScore, profile: RobotProfile, part: str, margin_s: float
-) -> RepairResult:
+def _repair_once(score: DuetScore, profile: RobotProfile, part: str) -> RepairResult:
     changes: list[Change] = []
     events = list(score.events)
     events = _fold(events, profile, part, changes)
     score = score.with_events(events)
-    score = _fix_timing(score, profile, part, margin_s, changes)
-    score = _fix_duty(score, profile, part, margin_s, changes)
+    score = _fix_timing(score, profile, part, changes)
+    score = _fix_duty(score, profile, part, changes)
     return RepairResult(score, changes)
 
 
@@ -124,7 +120,7 @@ def _fold(
 
 
 def _fix_timing(
-    score: DuetScore, profile: RobotProfile, part: str, margin_s: float, changes: list[Change]
+    score: DuetScore, profile: RobotProfile, part: str, changes: list[Change]
 ) -> DuetScore:
     spb = seconds_per_beat(score.meta.tempo_bpm)
     per_bar = score.meta.beats_per_bar
@@ -141,7 +137,7 @@ def _fix_timing(
         if prev is None:
             prev = (strike.bottle, strike.time_s)
             continue
-        earliest = prev[1] + needed_s(matrix, prev[0], strike.bottle, margin_s)
+        earliest = prev[1] + needed_s(matrix, prev[0], strike.bottle)
         if strike.time_s >= earliest - EPSILON:
             prev = (strike.bottle, strike.time_s)
             continue
@@ -172,9 +168,9 @@ def _fix_timing(
 
 
 def _fix_duty(
-    score: DuetScore, profile: RobotProfile, part: str, margin_s: float, changes: list[Change]
+    score: DuetScore, profile: RobotProfile, part: str, changes: list[Change]
 ) -> DuetScore:
-    report = check_robot(score, profile, part=part, margin_s=margin_s)
+    report = check_robot(score, profile, part=part)
     drop = {v.event_index for v in report.violations if v.code == Code.DUTY_CYCLE}
     for i in sorted(drop):
         event = score.events[i]
@@ -184,18 +180,12 @@ def _fix_duty(
     return score.with_events([e for i, e in enumerate(score.events) if i not in drop])
 
 
-def _slower_tempo(
-    score: DuetScore, profile: RobotProfile, part: str, margin_s: float
-) -> float | None:
+def _slower_tempo(score: DuetScore, profile: RobotProfile, part: str) -> float | None:
     """Tempo at which every robot gap is wide enough, rounded down to a whole bpm."""
     strikes, _ = robot_strikes(score, profile, part=part)
     factor = max(
         # simultaneous notes are dropped whatever the tempo
-        (
-            g.needed_s / g.gap_s
-            for g in strike_gaps(strikes, profile, margin_s)
-            if not g.simultaneous
-        ),
+        (g.needed_s / g.gap_s for g in strike_gaps(strikes, profile) if not g.simultaneous),
         default=1.0,
     )
     factor = max(factor, 1.0)

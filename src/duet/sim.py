@@ -36,7 +36,6 @@ from duet.protocol import (
 class Sound:
     t_us: int
     pitch: int
-    pulse_us: int
 
 
 @dataclass(frozen=True)
@@ -117,7 +116,7 @@ class SimulatedRig:
         if self.stopped:
             return
         if isinstance(msg, Home):
-            self.position = self.target = HOME_STEPS
+            self.position = HOME_STEPS
             self.arrives_us = 0
             self.homed = True
         elif isinstance(msg, MoveAt):
@@ -137,7 +136,7 @@ class SimulatedRig:
         if msg.t_us < self.arrives_us:
             self._fault(msg.t_us, "MOVE_OVERLAP", "move started before the last one ended")
         travel = move_time_s(self.position, msg.target_steps, self.profile.kinematics)
-        self.position = self.target = msg.target_steps
+        self.position = msg.target_steps
         self.arrives_us = msg.t_us + round(travel * 1_000_000)
 
     def _strike(self, msg: StrikeAt) -> None:
@@ -154,7 +153,7 @@ class SimulatedRig:
         if bottle is None:
             return self._fault(msg.t_us, "OFF_BOTTLE", "strike away from any bottle")
         latency = round(self.profile.striker.latency_ms * 1000)
-        self.sounds.append(Sound(msg.t_us + latency, bottle.midi, msg.pulse_us))
+        self.sounds.append(Sound(msg.t_us + latency, bottle.midi))
         return None
 
     def _duty_allows(self, t_us: int, pulse_us: int) -> bool:

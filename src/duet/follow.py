@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from duet.feasibility import MAX_SPEED_UP, max_speed_up
+from duet.feasibility import MAX_SPEED_UP
 from duet.listening import Expected, PlayedNote
 
 MATCH_WINDOW_US = 400_000  # a played note this close to the expected time can match
@@ -92,6 +92,3 @@ class TempoPianist:
         self.schedule = self.schedule[len(due) :]
         self.played += due
         return due
-
-
-__all__ = ["Follower", "max_speed_up"]
