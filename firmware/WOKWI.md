@@ -51,7 +51,7 @@ are the only differences from the rig build. Every decision is made by the same
 3. Open the `firmware/` folder in VS Code. Wokwi reads `wokwi.toml` and `diagram.json`
    from there.
 
-The `wokwi` build does not need `src/secrets.h`.
+The `wokwi` build joins Wokwi's own network (`src/wokwi.h`), so it skips the Wi-Fi setup.
 
 ## Run it
 

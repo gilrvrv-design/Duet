@@ -35,6 +35,4 @@ jobs:
           path: ~/.platformio
           key: platformio-${{ matrix.board }}-${{ hashFiles('firmware/platformio.ini') }}
       - run: pip install platformio
-      # The Wi-Fi password is never committed; CI builds with the example.
-      - run: cp firmware/src/secrets.example.h firmware/src/secrets.h
       - run: pio run -d firmware -e ${{ matrix.board }}

@@ -36,6 +36,30 @@
       <h2>This board</h2>
       <ul id="abilities" class="abilities"></ul>
     </section>
+
+    <section id="settings">
+      <h2 id="settings-title">Settings</h2>
+      <p id="setup-intro" class="muted" hidden>
+        The rig is not on your Wi-Fi yet. Choose the network it should join.
+      </p>
+      <form id="settings-form">
+        <label>Wi-Fi network
+          <input id="wifi-ssid" name="wifi_ssid" required maxlength="32" autocomplete="off">
+        </label>
+        <label>Wi-Fi password
+          <input id="wifi-password" name="wifi_password" type="password" maxlength="63"
+                 autocomplete="new-password">
+          <span id="password-hint" class="hint">Leave empty for an open network.</span>
+        </label>
+        <label>Servers
+          <textarea id="servers" name="servers" rows="2" spellcheck="false"
+                    placeholder="https://duet.example.com"></textarea>
+          <span class="hint">One address per line, up to 4. They add composing, lessons and
+            more when they can be reached.</span>
+        </label>
+        <button type="submit">Save</button>
+      </form>
+    </section>
   </main>
 </body>
 </html>

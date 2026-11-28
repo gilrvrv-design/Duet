@@ -16,13 +16,17 @@ for people: it shows what the device is, and it plays the songs stored on it.
 
 | Request | Answer |
 |---|---|
-| `GET /api/info` | `{"hello":{..},"channels":[..],"state":"idle"\|"homing"\|"playing","slot":k,"estopped":bool}`. `hello` and `channels` are the messages the Hub hears on connecting. `slot` is the song playing or last played (-1 before any). |
+| `GET /api/info` | `{"hello":{..},"channels":[..],"state":"idle"\|"homing"\|"playing","slot":k,"estopped":bool,"network":"station"\|"setup"}`. `hello` and `channels` are the messages the Hub hears on connecting. `slot` is the song playing or last played (-1 before any). `network` is `setup` while the board serves its setup network. |
 | `GET /api/songs` | `{"slots":8,"songs":[{"slot":k},..]}`: the slots that hold a song |
 | `POST /api/songs/<k>/play` | Home, then play stored song *k* |
 | `POST /api/stop` | Stop playing |
 | `POST /api/estop` | Emergency stop, latched as with the hardware button |
+| `GET /api/settings` | `{"wifi_ssid":..,"wifi_password_set":bool,"servers":[..]}`. The password itself is never sent back. |
+| `POST /api/settings` | Body `{"wifi_ssid":..,"wifi_password":..,"servers":[..]}`. Leave out `wifi_password` to keep the saved one. A new network answers `{"ok":true,"restart":true}`, and the board restarts to join it. |
 
 Success is `200 {"ok":true}`. Errors are `{"error":"..."}` with one of these statuses:
+- 400: a bad request body (settings: a network name of 1-32 bytes, a password of
+  8-63 characters or none, at most 4 `http://` or `https://` servers);
 - 404: no such path;
 - 405: the wrong method;
 - 409: the device cannot do it now (`already playing`, `no song in that slot`,
@@ -30,6 +34,23 @@ Success is `200 {"ok":true}`. Errors are `{"error":"..."}` with one of these sta
 
 On the ESP32 the app is at `http://duet-rig-1.local` (port 80, announced over mDNS).
 Boards that serve it report the `web` feature; QEMU's serial-only board does not.
+
+## Wi-Fi setup
+
+A board with nothing saved, or one that cannot join its saved network within 20 seconds,
+opens an open network called `Duet-setup`. On that network, every name leads to the
+board (a captive portal), so a phone shows the setup page by itself. The page puts the
+Wi-Fi form first while `network` is `setup`. The board keeps trying a saved network
+meanwhile, and closes `Duet-setup` once it has joined.
+
+The settings are kept in NVS, the ESP32's non-volatile storage, where ESP-IDF keeps its
+own Wi-Fi credentials. Anyone holding the board and a USB cable can read them. NVS
+encryption (with flash encryption) would close that gap; it is not enabled.
+
+The native device keeps settings in RAM and starts with none (`network` is `setup`).
+Saving a network stands for the restart that joins it.
+
+## The native device
 
 The native device prints `http <port>` as its second line, and `--http-port N` chooses
 the port. The tests in `tests/test_device_api.py` run against it.

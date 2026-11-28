@@ -54,8 +54,8 @@ Native tests (any machine with g++):
 make -C firmware test
 ```
 
-A board (needs [PlatformIO](https://platformio.org)); for the boards with Wi-Fi, copy
-`src/secrets.example.h` to `src/secrets.h` first:
+A board (needs [PlatformIO](https://platformio.org)). On first boot it opens the Wi-Fi
+network `Duet-setup`; join it from a phone to choose the rig's Wi-Fi (docs/rig-guide.md):
 
 ```bash
 cd firmware && pio run -e esp32-classic -t upload

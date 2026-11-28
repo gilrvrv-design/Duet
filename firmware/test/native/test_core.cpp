@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "duet_api.hpp"
+#include "duet_json.hpp"
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "duet_features.hpp"
@@ -432,46 +433,108 @@ static void test_midi_notes_off_and_estop_and_boards_without_midi() {
 static void test_the_api_reports_the_device_and_plays_its_songs() {
   Rig r;
   r.hal.place(4000);
-  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", kPlayButton, kRig});
-  Response info = api.handle("GET", "/api/info", r.hal.now_us);
+  MemorySettingsStore settings;
+  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", kPlayButton, kRig}, settings);
+  Response info = api.handle("GET", "/api/info", "", r.hal.now_us);
   CHECK(info.status == 200);
   CHECK(info.body.find(R"({"hello":{"type":"hello")") == 0);  // as the Hub hears it
   CHECK(info.body.find(R"("features":["play_button"])") != std::string::npos);
   CHECK(info.body.find(R"("kind":"midi_out")") != std::string::npos);
-  CHECK(info.body.find(R"("state":"idle","slot":-1,"estopped":false})") != std::string::npos);
+  CHECK(info.body.find(R"("state":"idle","slot":-1,"estopped":false,"network":"station"})") != std::string::npos);
 
-  CHECK(api.handle("GET", "/api/songs", 0).body == R"({"slots":8,"songs":[]})");
+  CHECK(api.handle("GET", "/api/songs", "", 0).body == R"({"slots":8,"songs":[]})");
   upload(r, 2);
   upload(r, 5, 9);
-  CHECK(api.handle("GET", "/api/songs", 0).body ==
+  CHECK(api.handle("GET", "/api/songs", "", 0).body ==
         R"({"slots":8,"songs":[{"slot":2},{"slot":5}]})");
 
-  Response none = api.handle("POST", "/api/songs/0/play", r.hal.now_us);
+  Response none = api.handle("POST", "/api/songs/0/play", "", r.hal.now_us);
   CHECK(none.status == 409 && none.body == R"({"error":"no song in that slot"})");
-  CHECK(api.handle("POST", "/api/songs/2/play", r.hal.now_us).status == 200);
+  CHECK(api.handle("POST", "/api/songs/2/play", "", r.hal.now_us).status == 200);
   CHECK(r.dev.playing() && r.dev.slot() == 2);
-  CHECK(api.handle("POST", "/api/songs/5/play", r.hal.now_us).body ==
+  CHECK(api.handle("POST", "/api/songs/5/play", "", r.hal.now_us).body ==
         R"({"error":"already playing"})");
-  CHECK(api.handle("GET", "/api/info", 0).body.find(R"("state":"homing","slot":2)") !=
+  CHECK(api.handle("GET", "/api/info", "", 0).body.find(R"("state":"homing","slot":2)") !=
         std::string::npos);
-  CHECK(api.handle("POST", "/api/stop", r.hal.now_us).status == 200 && !r.dev.playing());
+  CHECK(api.handle("POST", "/api/stop", "", r.hal.now_us).status == 200 && !r.dev.playing());
 
-  CHECK(api.handle("POST", "/api/estop", r.hal.now_us).status == 200 && r.dev.estopped());
-  CHECK(api.handle("POST", "/api/songs/2/play", r.hal.now_us).body ==
+  CHECK(api.handle("POST", "/api/estop", "", r.hal.now_us).status == 200 && r.dev.estopped());
+  CHECK(api.handle("POST", "/api/songs/2/play", "", r.hal.now_us).body ==
         R"({"error":"emergency stop"})");
 }
 
 static void test_the_api_refuses_unknown_paths_and_wrong_methods() {
   Rig r;
-  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", 0, kRig});
-  CHECK(api.handle("GET", "/api/nothing", 0).status == 404);
-  CHECK(api.handle("POST", "/api/songs/8/play", 0).status == 404);  // slots are 0-7
-  CHECK(api.handle("POST", "/api/songs/x/play", 0).status == 404);
-  CHECK(api.handle("POST", "/api/songs/1/playx", 0).status == 404);
-  CHECK(api.handle("POST", "/api/info", 0).status == 405);
-  CHECK(api.handle("GET", "/api/stop", 0).status == 405);
-  CHECK(api.handle("GET", "/api/songs/1/play", 0).status == 405);
+  MemorySettingsStore settings;
+  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", 0, kRig}, settings);
+  CHECK(api.handle("GET", "/api/nothing", "", 0).status == 404);
+  CHECK(api.handle("POST", "/api/songs/8/play", "", 0).status == 404);  // slots are 0-7
+  CHECK(api.handle("POST", "/api/songs/x/play", "", 0).status == 404);
+  CHECK(api.handle("POST", "/api/songs/1/playx", "", 0).status == 404);
+  CHECK(api.handle("POST", "/api/info", "", 0).status == 405);
+  CHECK(api.handle("GET", "/api/stop", "", 0).status == 405);
+  CHECK(api.handle("GET", "/api/songs/1/play", "", 0).status == 405);
   CHECK(!r.dev.estopped());
+}
+
+static void test_json_objects_of_strings_and_lists() {
+  JsonObject o;
+  CHECK(read_object(R"( {"a":"x\"y\\zé\n", "list":["1", "2"], "empty":[]} )", o));
+  CHECK(o.strings["a"] == "x\"y\\z\xc3\xa9\n");
+  CHECK((o.lists["list"] == std::vector<std::string>{"1", "2"}) && o.lists["empty"].empty());
+  CHECK(read_object("{}", o) && o.strings.empty());
+  CHECK(!read_object(R"({"a":1})", o));            // numbers are not settings
+  CHECK(!read_object(R"({"a":"x"} trailing)", o));  // exactly one object
+  CHECK(!read_object(R"({"a":"x)", o));
+  CHECK(!read_object(R"({"a":"\ud83c"})", o));     // surrogate pairs: refused, not mangled
+  CHECK(!read_object("", o));
+  CHECK(json_string("say \"hi\"\\\n") == R"("say \"hi\"\\\u000a")");
+}
+
+static void test_settings_are_saved_and_the_password_never_leaves() {
+  Rig r;
+  MemorySettingsStore store;
+  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", 0, kRig}, store);
+  api.set_network(Network::Setup);
+  CHECK(api.handle("GET", "/api/info", "", 0).body.find(R"("network":"setup")") !=
+        std::string::npos);
+  CHECK(api.handle("GET", "/api/settings", "", 0).body ==
+        R"({"wifi_ssid":"","wifi_password_set":false,"servers":[]})");
+
+  Response joined = api.handle(
+      "POST", "/api/settings",
+      R"({"wifi_ssid":"Home \"5\"","wifi_password":"correct horse","servers":["https://duet.example"]})",
+      0);
+  CHECK(joined.status == 200 && joined.restart);  // a new network: restart to join it
+  CHECK(store.load().wifi_password == "correct horse");
+  CHECK(api.handle("GET", "/api/settings", "", 0).body ==
+        R"({"wifi_ssid":"Home \"5\"","wifi_password_set":true,"servers":["https://duet.example"]})");
+
+  // Only the servers change: the password is kept, and there is no restart.
+  Response servers = api.handle(
+      "POST", "/api/settings", R"({"wifi_ssid":"Home \"5\"","servers":["http://10.0.0.2:8000"]})", 0);
+  CHECK(servers.status == 200 && !servers.restart);
+  CHECK(store.load().wifi_password == "correct horse");
+  CHECK(store.load().servers == std::vector<std::string>{"http://10.0.0.2:8000"});
+}
+
+static void test_bad_settings_are_refused_and_nothing_is_saved() {
+  Rig r;
+  MemorySettingsStore store;
+  Api api(r.dev, Identity{"duet-rig-1", "native", "bottles-v1", 0, kRig}, store);
+  const char* bad[] = {
+      R"({"wifi_ssid":"","servers":[]})",
+      R"({"wifi_ssid":"123456789012345678901234567890123","servers":[]})",
+      R"({"wifi_ssid":"home","wifi_password":"short","servers":[]})",
+      R"({"wifi_ssid":"home","servers":["ftp://x"]})",
+      R"({"wifi_ssid":"home","servers":["http://a","http://b","http://c","http://d","http://e"]})",
+      R"({"wifi_ssid":"home"})",
+      R"(not json)",
+  };
+  for (const char* body : bad) CHECK(api.handle("POST", "/api/settings", body, 0).status == 400);
+  CHECK(!store.load().has_wifi());
+  CHECK(api.handle("POST", "/api/settings", R"({"wifi_ssid":"open cafe","servers":[]})", 0).status ==
+        200);  // an open network needs no password
 }
 
 int main() {
@@ -495,6 +558,9 @@ int main() {
   test_playing_from_memory_keeps_the_rig_safe();
   test_the_api_reports_the_device_and_plays_its_songs();
   test_the_api_refuses_unknown_paths_and_wrong_methods();
+  test_json_objects_of_strings_and_lists();
+  test_settings_are_saved_and_the_password_never_leaves();
+  test_bad_settings_are_refused_and_nothing_is_saved();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

@@ -9,6 +9,9 @@
 // with '#' report what the stubbed hardware did (duet_report_hal.hpp). One Hub at a time;
 // the device keeps its state (and its stored songs) between connections, like a powered
 // rig. A line "press" on stdin presses the play button.
+//
+// Wi-Fi settings are kept in RAM. With none saved the device reports its setup network,
+// as an ESP32 does on first boot; saving a network stands for the restart that joins it.
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -107,10 +110,14 @@ int main(int argc, char** argv) {
   duet::MemorySongStore songs;
   duet::Device device(executor, songs, sink);
   constexpr duet::Identity identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS};
-  duet::Api api(device, identity);
-  HttpServer http([&](const std::string& method, const std::string& path) {
+  duet::MemorySettingsStore settings;
+  duet::Api api(device, identity, settings);
+  api.set_network(duet::Network::Setup);  // nothing saved yet
+  HttpServer http([&](const std::string& method, const std::string& path,
+                      const std::string& body) {
     if (path.rfind("/api/", 0) == 0) {
-      duet::Response r = api.handle(method.c_str(), path.c_str(), hal.now_us);
+      duet::Response r = api.handle(method.c_str(), path.c_str(), body.c_str(), hal.now_us);
+      if (r.restart) api.set_network(duet::Network::Station);  // "restarted and joined"
       return HttpReply{r.status, "application/json", r.body};
     }
     const duet::WebAsset* asset = duet::find_asset(duet::kWebAssets, path.c_str());

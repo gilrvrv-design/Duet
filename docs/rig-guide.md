@@ -245,18 +245,29 @@ classic board, so the divider, the 74AHCT125 and the MOSFET Driver are unchanged
 
 ```mermaid
 flowchart TD
-    t["make -C firmware test<br/>(native core tests, no board)"] --> s["cp firmware/src/secrets.example.h<br/>firmware/src/secrets.h<br/>and add your Wi-Fi"]
-    s --> p["Install PlatformIO"]
+    t["make -C firmware test<br/>(native core tests, no board)"] --> p["Install PlatformIO"]
     p --> f["cd firmware &&<br/>pio run -e esp32-classic -t upload"]
     f --> m["pio device monitor"]
-    m --> ok{"Prints<br/>duet: duet-rig-1 on ws://IP:8765,<br/>the app on http://duet-rig-1.local ?"}
+    m --> setup["Prints<br/>duet: no Wi-Fi; join Duet-setup"]
+    setup --> phone["Phone: join the Duet-setup network;<br/>the setup page opens<br/>(or open http://192.168.4.1)"]
+    phone --> save["Choose your Wi-Fi, Save;<br/>the rig restarts"]
+    save --> ok{"Prints<br/>duet: duet-rig-1 on ws://IP:8765,<br/>the app on http://duet-rig-1.local ?"}
     ok -->|"yes"| next["Bench test over serial"]
-    ok -->|"no, stuck"| wifi["Check SSID and password;<br/>the ESP32 needs 2.4 GHz Wi-Fi"]
+    ok -->|"no: Duet-setup is back after 20 s"| wifi["Check the name and password;<br/>the ESP32 needs 2.4 GHz Wi-Fi"]
 ```
 
+The first time, the rig has no Wi-Fi to join, so it opens its own open network,
+`Duet-setup`. Join it from a phone, and the setup page opens by itself, as at a hotel or
+café; if it does not, open `http://192.168.4.1`. Choose your Wi-Fi network and save. The
+rig restarts and joins it.
+
+If the rig cannot join within 20 seconds (a wrong password, or the router is still
+starting), `Duet-setup` opens again. The rig keeps trying the saved network meanwhile,
+and closes `Duet-setup` as soon as it has joined.
+
 The rig's own page is at `http://duet-rig-1.local`. Open it from a phone or laptop on the
-same network. It shows what the board can do, plays the songs stored on the rig and has
-an emergency stop (docs/device-api.md).
+same network. It shows what the board can do, plays the songs stored on the rig, has
+an emergency stop, and holds the settings (docs/device-api.md).
 
 Commands, in order:
 
@@ -265,14 +276,10 @@ make -C firmware test
 ```
 
 ```bash
-cp firmware/src/secrets.example.h firmware/src/secrets.h
-```
-
-```bash
 cd firmware && pio run -e esp32-classic -t upload && pio device monitor
 ```
 
-`secrets.h` is ignored by git; never commit it. On an ESP32-S3, use `-e esp32-s3`.
+On an ESP32-S3, use `-e esp32-s3`.
 
 ## Bench test over serial
 

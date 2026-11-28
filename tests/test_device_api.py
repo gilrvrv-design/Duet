@@ -73,3 +73,26 @@ def test_unknown_paths_and_wrong_methods(device):
     assert device.api("GET", "/api/nope") == (404, {"error": "no such path"})
     assert device.api("POST", "/api/info") == (405, {"error": "use GET"})
     assert device.api("GET", "/api/stop") == (405, {"error": "use POST"})
+
+
+def test_wifi_setup(device):
+    """A new board has no Wi-Fi: it serves its setup network until one is saved."""
+    assert device.api("GET", "/api/info")[1]["network"] == "setup"
+    assert device.api("GET", "/api/settings")[1] == {
+        "wifi_ssid": "",
+        "wifi_password_set": False,
+        "servers": [],
+    }
+    home = {"wifi_ssid": "Home", "wifi_password": "correct horse", "servers": []}
+    assert device.api("POST", "/api/settings", home) == (200, {"ok": True, "restart": True})
+    assert device.api("GET", "/api/info")[1]["network"] == "station"  # restarted, joined
+    servers = {"wifi_ssid": "Home", "servers": ["https://duet.example"]}
+    assert device.api("POST", "/api/settings", servers) == (200, {"ok": True})  # no restart
+    assert device.api("GET", "/api/settings")[1] == {
+        "wifi_ssid": "Home",
+        "wifi_password_set": True,  # kept, and never sent back
+        "servers": ["https://duet.example"],
+    }
+    short = {"wifi_ssid": "Home", "wifi_password": "short", "servers": []}
+    status, answer = device.api("POST", "/api/settings", short)
+    assert status == 400 and "8-63 characters" in answer["error"]

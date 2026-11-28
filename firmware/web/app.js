@@ -27,8 +27,9 @@ async function api(method, path) {
   return body;
 }
 
-function say(text) {
+function say(text, kind = "error") {
   $("message").textContent = text;
+  $("message").dataset.kind = kind;
   $("message").hidden = !text;
 }
 
@@ -110,6 +111,64 @@ function showBoard(info) {
   );
 }
 
+// Settings ----------------------------------------------------------------------
+
+let saved = null;  // the settings as the device has them
+
+async function loadSettings() {
+  saved = await api("GET", "/api/settings");
+  $("wifi-ssid").value = saved.wifi_ssid;
+  $("wifi-password").value = "";
+  $("servers").value = saved.servers.join("\n");
+  showPasswordHint();
+}
+
+function showPasswordHint() {
+  const keeps = saved.wifi_password_set && $("wifi-ssid").value === saved.wifi_ssid;
+  $("password-hint").textContent = keeps
+    ? "Leave empty to keep the saved password."
+    : "Leave empty for an open network.";
+}
+
+// On the setup network the form comes first; once on Wi-Fi it is at the end.
+function placeSettings(setup) {
+  const section = $("settings");
+  $("settings-title").textContent = setup ? "Connect to Wi-Fi" : "Settings";
+  $("setup-intro").hidden = !setup;
+  if (setup) $("estop").after(section);
+  else document.querySelector("main").append(section);
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const ssid = $("wifi-ssid").value;
+  const password = $("wifi-password").value;
+  const body = {
+    wifi_ssid: ssid,
+    servers: $("servers").value.split("\n").map((s) => s.trim()).filter(Boolean),
+  };
+  const keeps = password === "" && saved.wifi_password_set && ssid === saved.wifi_ssid;
+  if (!keeps) body.wifi_password = password;
+  const reply = await fetch("/api/settings", { method: "POST", body: JSON.stringify(body) });
+  const answer = await reply.json();
+  if (!reply.ok) {
+    say(`Not saved: ${answer.error}.`);
+    return;
+  }
+  if (answer.restart) {
+    say(
+      `Saved. The rig is restarting to join “${ssid}”. Connect this device to “${ssid}” ` +
+        `too, then open http://${shown.state.hello.device_id}.local`,
+      "ok",
+    );
+  } else {
+    say("Saved.", "ok");
+  }
+  await loadSettings();
+}
+
+// The page ------------------------------------------------------------------------
+
 async function refresh() {
   let info, songs;
   try {
@@ -125,11 +184,15 @@ async function refresh() {
     shown.songs = songsKey;
   }
   if (shown.state === null) showBoard(info);
+  if (shown.state?.network !== info.network) placeSettings(info.network === "setup");
   shown.state = info;
   showState(info);
 }
 
 $("estop").addEventListener("click", () => command("/api/estop"));
 $("stop").addEventListener("click", () => command("/api/stop"));
+$("settings-form").addEventListener("submit", saveSettings);
+$("wifi-ssid").addEventListener("input", showPasswordHint);
+loadSettings();
 refresh();
 setInterval(refresh, POLL_MS);

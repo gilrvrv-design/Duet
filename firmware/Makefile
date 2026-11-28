@@ -2,7 +2,7 @@
 CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Werror
 CORE := lib/duet_core/src
-SRCS := $(CORE)/duet_protocol.cpp $(CORE)/duet_executor.cpp $(CORE)/duet_device.cpp $(CORE)/duet_api.cpp
+SRCS := $(addprefix $(CORE)/,duet_protocol.cpp duet_executor.cpp duet_device.cpp duet_api.cpp duet_json.cpp duet_settings.cpp)
 INC := -I$(CORE)
 
 .PHONY: test clean qemu-image device

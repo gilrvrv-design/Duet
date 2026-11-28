@@ -108,3 +108,42 @@ def test_the_page_says_when_the_device_stops_answering(page, device):
     device.stop()
     poll(page)
     expect(page.locator("#state")).to_have_text("Not answering")
+
+
+def test_a_new_board_asks_for_wifi_first(page, device):
+    page.goto(device.http_url)
+    expect(page.get_by_role("heading", name="Connect to Wi-Fi")).to_be_visible()
+    page.get_by_label("Wi-Fi network").fill("Home")
+    page.get_by_label("Wi-Fi password").fill("correct horse")
+    page.get_by_label("Servers").fill("https://duet.example\n\n http://10.0.0.2:8000 ")
+    page.get_by_role("button", name="Save").click()
+    expect(page.locator("#message")).to_contain_text("restarting to join “Home”")
+    assert device.api("GET", "/api/settings")[1] == {
+        "wifi_ssid": "Home",
+        "wifi_password_set": True,
+        "servers": ["https://duet.example", "http://10.0.0.2:8000"],
+    }
+    poll(page)  # the board has joined: the form moves to the end
+    expect(page.get_by_role("heading", name="Settings")).to_be_visible()
+    expect(page.locator("#password-hint")).to_have_text("Leave empty to keep the saved password.")
+
+
+def test_changing_servers_keeps_the_password(page, device):
+    home = {"wifi_ssid": "Home", "wifi_password": "correct horse", "servers": []}
+    device.api("POST", "/api/settings", home)
+    page.goto(device.http_url)
+    expect(page.get_by_label("Wi-Fi network")).to_have_value("Home")
+    page.get_by_label("Servers").fill("https://duet.example")
+    page.get_by_role("button", name="Save").click()
+    expect(page.locator("#message")).to_have_text("Saved.")
+    status, settings = device.api("GET", "/api/settings")
+    assert settings["wifi_password_set"] and settings["servers"] == ["https://duet.example"]
+
+
+def test_a_refused_setting_says_why(page, device):
+    page.goto(device.http_url)
+    page.get_by_label("Wi-Fi network").fill("Home")
+    page.get_by_label("Wi-Fi password").fill("short")
+    page.get_by_role("button", name="Save").click()
+    expect(page.locator("#message")).to_contain_text("Not saved: a Wi-Fi password is 8-63")
+    assert device.api("GET", "/api/settings")[1]["wifi_ssid"] == ""

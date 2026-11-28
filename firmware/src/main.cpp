@@ -3,6 +3,7 @@
 // connects it to the hardware.
 #include <Adafruit_NeoPixel.h>
 #include <Arduino.h>
+#include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <FastAccelStepper.h>
 #include <WebServer.h>
@@ -16,12 +17,11 @@
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
 #include "flash_songs.h"
+#include "nvs_settings.h"
 #include "serial_link.h"
 #include "web_assets.h"  // generated from firmware/web/ (tools/embed_web.py)
 #ifdef DUET_WOKWI
 #include "wokwi.h"  // simulator build: Wokwi's open Wi-Fi and a virtual home sensor
-#else
-#include "secrets.h"
 #endif
 
 namespace {
@@ -111,8 +111,11 @@ Link link;
 duet::Executor executor(hal, link, BOARD_CHANNELS);
 FlashSongStore songs;
 duet::Device device(executor, songs, link);  // songs stored in flash, played without the Hub
-duet::Api api(device, IDENTITY);
+NvsSettingsStore settings;
+duet::Api api(device, IDENTITY, settings);
 WebServer web(HTTP_PORT);
+DNSServer dns;  // on the setup network, every name leads to the setup page
+bool setup_network = false;
 
 // Every request: the device API under /api/, else a file of the web app. Requests are
 // small and quick (the page asks once a second), so the main loop is not held up.
@@ -120,12 +123,21 @@ void serve_web() {
   const String& path = web.uri();
   if (path.startsWith("/api/")) {
     const char* method = web.method() == HTTP_GET ? "GET" : web.method() == HTTP_POST ? "POST" : "";
-    duet::Response r = api.handle(method, path.c_str(), now_us());
+    duet::Response r = api.handle(method, path.c_str(), web.arg("plain").c_str(), now_us());
     web.sendHeader("Cache-Control", "no-store");
     web.send(r.status, "application/json", r.body.c_str());
+    if (r.restart) {  // new Wi-Fi settings: restart to join that network
+      delay(500);     // let the answer reach the phone first
+      ESP.restart();
+    }
     return;
   }
   const duet::WebAsset* asset = duet::find_asset(duet::kWebAssets, path.c_str());
+  if (asset == nullptr && setup_network) {  // a phone checking for a login page: show ours
+    web.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/");
+    web.send(302, "text/plain", "");
+    return;
+  }
   if (asset == nullptr) {
     web.send(404, "text/plain", "not found");
     return;
@@ -175,6 +187,46 @@ void on_ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
+// Join the saved network, or (none saved, or it cannot be joined) open the setup network
+// "Duet-setup" for a phone to connect to. With a saved network the board keeps trying it
+// meanwhile, and closes the setup network once it has joined (loop()).
+void start_network() {
+  WiFi.setSleep(false);  // power saving adds tens of ms of latency
+#ifdef DUET_WOKWI
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD, WIFI_CHANNEL);
+  while (WiFi.status() != WL_CONNECTED) delay(100);
+#else
+  duet::Settings saved = settings.load();
+  if (saved.has_wifi()) {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(saved.wifi_ssid.c_str(), saved.wifi_password.c_str());
+    for (uint32_t start = millis(); millis() - start < JOIN_TIMEOUT_MS;) {
+      if (WiFi.status() == WL_CONNECTED) return;
+      delay(100);
+    }
+  }
+  WiFi.mode(saved.has_wifi() ? WIFI_AP_STA : WIFI_AP);
+  WiFi.softAP(SETUP_SSID);
+  if (saved.has_wifi()) WiFi.begin(saved.wifi_ssid.c_str(), saved.wifi_password.c_str());
+  dns.start(53, "*", WiFi.softAPIP());
+  setup_network = true;
+  api.set_network(duet::Network::Setup);
+  Serial.printf("duet: no Wi-Fi; join \"%s\" and open http://%s\n", SETUP_SSID,
+                WiFi.softAPIP().toString().c_str());
+#endif
+}
+
+void leave_setup_network_once_joined() {
+  if (!setup_network || WiFi.status() != WL_CONNECTED) return;
+  dns.stop();
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  setup_network = false;
+  api.set_network(duet::Network::Station);
+  Serial.printf("duet: joined; the app on http://%s.local\n", DEVICE_ID);
+}
+
 }  // namespace
 
 void setup() {
@@ -183,14 +235,7 @@ void setup() {
   pinMode(PIN_ESTOP, ESTOP_NEEDS_EXTERNAL_PULLUP ? INPUT : INPUT_PULLUP);
   pinMode(PIN_PLAY, INPUT_PULLUP);
   if (!songs.begin_fs()) Serial.println("duet: flash storage failed; songs cannot be stored");
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);  // power saving adds tens of ms of latency
-#ifdef DUET_WOKWI
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD, WIFI_CHANNEL);
-#else
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-#endif
-  while (WiFi.status() != WL_CONNECTED) delay(100);
+  start_network();
   MDNS.begin(DEVICE_ID);
   MDNS.addService("duet", "tcp", WS_PORT);  // the Hub finds the rig as _duet._tcp
   MDNS.addService("http", "tcp", HTTP_PORT);
@@ -198,13 +243,16 @@ void setup() {
   server.onEvent(on_ws_event);
   web.onNotFound(serve_web);
   web.begin();
-  Serial.printf("duet: %s on ws://%s:%u, the app on http://%s.local\n", DEVICE_ID,
-                WiFi.localIP().toString().c_str(), WS_PORT, DEVICE_ID);
+  if (!setup_network)
+    Serial.printf("duet: %s on ws://%s:%u, the app on http://%s.local\n", DEVICE_ID,
+                  WiFi.localIP().toString().c_str(), WS_PORT, DEVICE_ID);
 }
 
 void loop() {
   server.loop();
   web.handleClient();
+  if (setup_network) dns.processNextRequest();
+  leave_setup_network_once_joined();
   read_serial(device, now_us());
   read_play_button();
   if (digitalRead(PIN_ESTOP) == LOW && !executor.estopped()) {

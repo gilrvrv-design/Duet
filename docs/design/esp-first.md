@@ -102,7 +102,7 @@ not fit a board is switched off for that board, explicitly. CI builds every boar
 | 0 | Board layer; boards report board and features; `esp32-s3`; CI builds every board | native tests, gateway tests, CI build matrix |
 | 1 | Instrument / performer / mechanism model; N-part score with v1 migration; the conductor plays every part on its own devices; the ensemble is a score (done, in slices 1a–1f) | Python tests; every existing test still passes |
 | 2 | Protocol channels; multi-channel executor; MIDI-out mechanism; a bot plays the piano (done, in slices 2a–2c) | native tests, full loop |
-| 3 | Device web server, web app, device API (docs/device-api.md), Wi-Fi setup | the native device serves the same API; browser tests |
+| 3 | Device web server, web app, device API (docs/device-api.md), Wi-Fi setup (done, in slices 3a–3d) | the native device serves the same API; browser tests |
 | 4 | The app finds and uses servers, and falls back | browser tests with servers up, down, failing |
 | 5 | Offline MIDI → song on the device | contract tests against the Python planner |
 | 6 | Wait and follow modes started from the app | full loop |

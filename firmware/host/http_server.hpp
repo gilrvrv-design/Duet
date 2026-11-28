@@ -7,7 +7,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -22,7 +25,8 @@ struct HttpReply {
 
 class HttpServer {
  public:
-  using Handler = std::function<HttpReply(const std::string& method, const std::string& path)>;
+  using Handler = std::function<HttpReply(const std::string& method, const std::string& path,
+                                          const std::string& body)>;
 
   explicit HttpServer(Handler handler) : handler_(std::move(handler)) {}
 
@@ -74,8 +78,15 @@ class HttpServer {
     ssize_t n = recv(fd, buf, sizeof buf, 0);
     if (n <= 0) return true;
     request.append(buf, static_cast<size_t>(n));
-    if (request.find("\r\n\r\n") == std::string::npos)
-      return request.size() > kMaxRequest && (answer(fd, {431, "text/plain", "too large"}), true);
+    if (request.size() > kMaxRequest) {
+      answer(fd, {413, "text/plain", "too large"});
+      return true;
+    }
+    size_t head_end = request.find("\r\n\r\n");
+    if (head_end == std::string::npos) return false;
+    std::string head = request.substr(0, head_end);
+    size_t body_size = content_length(head);
+    if (request.size() < head_end + 4 + body_size) return false;  // more of the body to come
     char method[16], target[1024];
     if (std::sscanf(request.c_str(), "%15s %1023s", method, target) != 2) {
       answer(fd, {400, "text/plain", "bad request"});
@@ -83,8 +94,14 @@ class HttpServer {
     }
     std::string path = target;
     path = path.substr(0, path.find('?'));
-    answer(fd, handler_(method, path));
+    answer(fd, handler_(method, path, request.substr(head_end + 4, body_size)));
     return true;
+  }
+
+  static size_t content_length(std::string head) {
+    for (char& c : head) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    size_t at = head.find("\r\ncontent-length:");
+    return at == std::string::npos ? 0 : std::strtoul(head.c_str() + at + 17, nullptr, 10);
   }
 
   static void answer(int fd, const HttpReply& reply) {
@@ -108,7 +125,7 @@ class HttpServer {
       case 404: return "Not Found";
       case 405: return "Method Not Allowed";
       case 409: return "Conflict";
-      case 431: return "Request Header Fields Too Large";
+      case 413: return "Content Too Large";
       default: return "Error";
     }
   }

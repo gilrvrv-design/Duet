@@ -1,4 +1,5 @@
 build/
 .pio/
+# No longer used (Wi-Fi is set from the setup page); never commit one.
 src/secrets.h
 wokwi.vcd
