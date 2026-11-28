@@ -141,6 +141,30 @@ def test_firmware_limits_match_the_profile(firmware_cli):
     assert any("duty_limit" in m for m in mismatches(limits, robot_profile("glock-v1")))
 
 
+def test_firmware_and_hub_agree_on_the_constants_the_hub_mirrors(firmware_cli):
+    """Every firmware number the Hub keeps a copy of, checked rather than trusted."""
+    from duet.device.gateway import HEARTBEAT_EVERY_S
+    from duet.device.limits import STRIKE_HISTORY
+    from duet.protocol import MAX_MESSAGE_BYTES, PROTOCOL, TITLE_BYTES
+    from duet.songs import MAX_LINES, SLOTS
+
+    out = subprocess.run(
+        [str(firmware_cli), "--constants"], capture_output=True, text=True, check=True
+    ).stdout
+    firmware = json.loads(out)
+    assert firmware == {
+        "protocol": PROTOCOL,
+        "max_message": MAX_MESSAGE_BYTES,
+        "max_title": TITLE_BYTES,
+        "song_slots": SLOTS,
+        "max_song_lines": MAX_LINES,
+        "duty_slots": STRIKE_HISTORY,
+        "watchdog_us": firmware["watchdog_us"],
+    }
+    # The Hub's heartbeats keep the watchdog quiet with room for three to be lost.
+    assert firmware["watchdog_us"] >= HEARTBEAT_EVERY_S * 4 * 1_000_000
+
+
 def test_firmware_and_hub_know_the_same_features(firmware_cli):
     from duet.device.features import KNOWN
 

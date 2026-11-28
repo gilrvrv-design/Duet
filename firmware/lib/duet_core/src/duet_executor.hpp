@@ -21,10 +21,9 @@ class Sink {
   virtual void send(const char* json) = 0;
 };
 
-struct Stats {
+struct Stats {  // for the contract CLI (tests/test_firmware_contract.py)
   uint32_t executed = 0;
-  uint32_t late = 0;
-  int64_t worst_late_us = 0;
+  uint32_t late = 0;  // run later than Config::late_tolerance_us after their time
   uint32_t faults = 0;
 };
 
@@ -33,7 +32,8 @@ class Executor {
   // ``channels``: what the board drives (board.h); timed commands must name one of them.
   Executor(Hal& hal, Sink& sink, Channels channels, Config config = Config{});
 
-  void on_message(const char* json, int64_t now_us);
+  void on_message(const char* json, int64_t now_us);  // parses it, then on_command
+  void on_command(const Command& c, int64_t now_us);  // a message already parsed
   // Call instead of on_message when a frame or line was longer than kMaxMessage.
   void on_oversize(int64_t now_us);
   const Config& config() const { return cfg_; }
@@ -43,9 +43,9 @@ class Executor {
   // the Hub. Every safety rule still applies once a command is queued.
   bool submit(const Command& c);   // queue a timed command; false if refused
   bool accepts(const Command& c) const;  // a timed command for one of the board's channels
-  const Channels& channels() const { return channels_; }
   void start_homing(int64_t now_us);
-  void cancel();                   // drop the queue, stop the carriage and the solenoid
+  void cancel();  // quiet, LEDs off, homing abandoned: a stopped song or performance
+  void estop();   // quiet, and latched until power-off: nothing more plays
   void keepalive(int64_t now_us);  // the device is its own conductor: no watchdog stop
 
   bool homed() const { return homed_; }
@@ -68,6 +68,7 @@ class Executor {
   void report();  // telemetry: homed, position, queue depth
   void finish_homing();
   void silence();  // MIDI out: All Notes Off on every MIDI channel, nothing sounding
+  void quiet();    // nothing moving, struck or sounding, and nothing more queued
   bool sounding() const { return sounding_ > 0; }
 
   Hal& hal_;

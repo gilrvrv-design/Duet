@@ -14,7 +14,7 @@ struct Config {
   int64_t duty_window_us = 10000000;  // solenoid on-time limit window (FR-R6)
   float duty_limit = 0.2f;
   int32_t max_pulse_us = 50000;
-  int64_t late_tolerance_us = 5000;   // later than this counts as late in telemetry
+  int64_t late_tolerance_us = 5000;   // later than this counts as late (Stats::late)
 };
 
 }  // namespace duet

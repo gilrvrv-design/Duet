@@ -56,7 +56,7 @@ GREET_RETRY_S = 1.0  # on a serial link, ask for the greeting again this often
 # Faults after which the rig cannot carry on without a person (docs/device-protocol.md).
 FATAL_FAULTS = frozenset({"WATCHDOG", "HOMING_TIMEOUT"})
 SYNC_SAMPLES = 16
-HEARTBEAT_EVERY_S = 0.25  # a quarter of the firmware's 1 s watchdog
+HEARTBEAT_EVERY_S = 0.25  # a quarter of the firmware's 1 s watchdog (a contract test checks)
 RESYNC_EVERY_S = 2.0
 
 

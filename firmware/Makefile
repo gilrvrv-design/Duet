@@ -34,7 +34,7 @@ qemu-image:
 device: build/duet_device build/duet_device_basic
 
 # Two builds, as a board can be built with or without the optional planner module.
-DEVICE_DEPS := host/duet_device.cpp host/http_server.hpp build/gen/web_assets.h boards/native/board.h src/rig.h src/rig_planner.h $(SRCS) $(wildcard $(CORE)/*.hpp)
+DEVICE_DEPS := host/duet_device.cpp host/http_server.hpp build/gen/web_assets.h boards/native/board.h src/rig.h src/identity.h src/rig_planner.h $(SRCS) $(wildcard $(CORE)/*.hpp)
 build/duet_device: $(DEVICE_DEPS)
 	@mkdir -p build
 	$(CXX) $(CXXFLAGS) $(INC) -Iboards/native -Isrc -Ibuild/gen -DDUET_PLANNER -o $@ host/duet_device.cpp $(SRCS)

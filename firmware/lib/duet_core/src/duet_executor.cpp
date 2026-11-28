@@ -43,12 +43,17 @@ void Executor::on_oversize(int64_t now_us) {
 }
 
 void Executor::on_message(const char* json, int64_t now_us) {
-  last_message_us_ = now_us;
   Command c;
   if (!parse(json, c)) {
+    last_message_us_ = now_us;
     ack(c.seq, "error: cannot parse");
     return;
   }
+  on_command(c, now_us);
+}
+
+void Executor::on_command(const Command& c, int64_t now_us) {
+  last_message_us_ = now_us;
   switch (c.type) {
     case Type::Heartbeat:
       return;  // last_message_us_ is already updated
@@ -59,11 +64,7 @@ void Executor::on_message(const char* json, int64_t now_us) {
       return;
     }
     case Type::Estop:
-      estopped_ = true;  // latched until power cycle: safety first
-      hal_.stop();
-      hal_.solenoid(false);
-      silence();
-      queue_.clear();
+      estop();
       ack(c.seq, "ok");
       return;
     default:
@@ -115,14 +116,23 @@ bool Executor::submit(const Command& c) {
   return queue_.push(c);
 }
 
-void Executor::cancel() {
+void Executor::quiet() {
   queue_.clear();
   hal_.stop();
   hal_.solenoid(false);
-  hal_.led_clear();  // a stopped song must not leave a key lit
-  silence();         // nor a note sounding
   pulse_end_us_ = -1;
+  silence();
+}
+
+void Executor::cancel() {
+  quiet();
+  hal_.led_clear();  // a stopped song must not leave a key lit
   homing_ = false;
+}
+
+void Executor::estop() {
+  estopped_ = true;  // latched until power cycle: safety first
+  quiet();
 }
 
 void Executor::keepalive(int64_t now_us) { last_message_us_ = now_us; }
@@ -151,9 +161,7 @@ void Executor::poll(int64_t now_us) {
     return;
   }
   if ((hal_.is_moving() || sounding()) && now_us - last_message_us_ > cfg_.watchdog_us) {
-    hal_.stop();
-    silence();
-    queue_.clear();
+    quiet();
     homed_ = false;  // position is no longer trusted
     fault("WATCHDOG", "hub silent while playing");
     report();
@@ -162,10 +170,7 @@ void Executor::poll(int64_t now_us) {
   while (!queue_.empty() && queue_.top().t_us <= now_us) {
     Command c = queue_.pop();
     int64_t late = now_us - c.t_us;
-    if (late > cfg_.late_tolerance_us) {
-      ++stats_.late;
-      if (late > stats_.worst_late_us) stats_.worst_late_us = late;
-    }
+    if (late > cfg_.late_tolerance_us) ++stats_.late;
     run(c, now_us);
   }
 }

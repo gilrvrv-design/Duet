@@ -46,7 +46,14 @@ void Device::on_message(const char* json, int64_t now_us) {
         break;
     }
   }
-  ex_.on_message(json, now_us);
+  if (ok) ex_.on_command(c, now_us);  // parsed once
+  else ex_.on_message(json, now_us);  // the executor says it cannot be parsed
+}
+
+void Device::estop(int64_t now_us) {
+  stop();
+  ex_.keepalive(now_us);
+  ex_.estop();
 }
 
 void Device::greet() {
@@ -78,7 +85,7 @@ bool valid_song_title(const std::string& title) {
 
 bool read_song_title(const char* json, std::string& title) {
   title.clear();
-  if (std::strstr(json, "\"title\"") && !string_field(json, "title", title)) return false;
+  if (find_key(json, "title") && !string_field(json, "title", title)) return false;
   return valid_song_title(title);
 }
 

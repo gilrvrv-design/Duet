@@ -63,6 +63,29 @@ struct Reader {
       }
     }
   }
+  // Past one value of any kind: a string, an array or object (strings inside them read
+  // as strings), or a number or literal.
+  bool skip_value() {
+    space();
+    std::string ignored;
+    if (*p == '"') return string(ignored);
+    if (*p == '[' || *p == '{') {
+      int depth = 0;
+      do {
+        if (*p == '"') {
+          if (!string(ignored)) return false;
+          continue;
+        }
+        if (*p == '\0') return false;
+        depth += (*p == '[' || *p == '{') - (*p == ']' || *p == '}');
+        ++p;
+      } while (depth > 0);
+      return true;
+    }
+    const char* start = p;
+    while (*p && *p != ',' && *p != '}' && *p != ']') ++p;
+    return p != start;
+  }
   bool list(std::vector<std::string>& out) {
     if (!take('[')) return false;
     out.clear();
@@ -95,12 +118,24 @@ bool read_object(const char* json, JsonObject& out) {
   return *r.p == '\0';
 }
 
+const char* find_key(const char* json, const char* key) {
+  Reader r{json};
+  if (!r.take('{') || r.take('}')) return nullptr;
+  std::string name;
+  do {
+    if (!r.string(name) || !r.take(':')) return nullptr;
+    r.space();
+    if (name == key) return r.p;
+    if (!r.skip_value()) return nullptr;
+  } while (r.take(','));
+  return nullptr;
+}
+
 bool string_field(const char* json, const char* key, std::string& out) {
-  std::string pattern = "\"" + std::string(key) + "\"";
-  const char* at = std::strstr(json, pattern.c_str());
+  const char* at = find_key(json, key);
   if (at == nullptr) return false;
-  Reader r{at + pattern.size()};
-  return r.take(':') && r.string(out);
+  Reader r{at};
+  return r.string(out);
 }
 
 std::string json_string(const std::string& text) {

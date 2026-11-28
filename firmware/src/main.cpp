@@ -13,6 +13,7 @@
 #include <esp_timer.h>
 
 #include "board.h"  // from boards/<name>/, chosen by the PlatformIO environment
+#include "identity.h"
 #include "rig.h"
 #include "duet_api.hpp"
 #include "duet_device.hpp"
@@ -92,7 +93,7 @@ class Esp32Hal : public duet::Hal {
   FastAccelStepperEngine engine_;
   FastAccelStepper* stepper_ = nullptr;
 #ifdef DUET_WOKWI
-  int32_t home_offset_ = WOKWI_START_STEPS;  // power-on: the carriage is this far from home
+  int32_t home_offset_ = SIM_START_STEPS;  // power-on: the carriage is this far from home
 #endif
   Adafruit_NeoPixel strip_{LED_COUNT, PIN_LEDS, NEO_GRB + NEO_KHZ800};
 };
@@ -108,7 +109,6 @@ class Link : public duet::Sink {
   }
 };
 
-constexpr duet::Identity IDENTITY{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS};
 
 Esp32Hal hal;
 Link link;
@@ -118,7 +118,7 @@ duet::Device device(executor, songs, link, IDENTITY);  // songs in flash, played
 NvsSettingsStore settings;
 duet::Api api(device, settings);
 #ifdef DUET_PLANNER
-duet::MidiPlanner planner = rig_planner(device, BOARD_CHANNELS);
+duet::MidiPlanner planner = rig_planner(device);
 #endif
 WebServer web(HTTP_PORT);
 DNSServer dns;  // on the setup network, every name leads to the setup page
@@ -304,7 +304,7 @@ void loop() {
   read_serial(device, now_us());
   read_play_button();
   if (digitalRead(PIN_ESTOP) == LOW && !executor.estopped()) {
-    device.on_message("{\"type\":\"estop\",\"seq\":0}", now_us());  // also ends a song
+    device.estop(now_us());  // also ends a song
   }
   device.poll(now_us());
 }

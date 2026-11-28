@@ -25,3 +25,7 @@ constexpr duet::Channel RIG_CHANNELS[] = {
 };
 static_assert(duet::at_most_one_carriage(RIG_CHANNELS), "one carriage per rig");
 constexpr duet::Channels BOARD_CHANNELS{RIG_CHANNELS, sizeof RIG_CHANNELS / sizeof RIG_CHANNELS[0]};
+
+// Where a simulated carriage is at power-on (QEMU, Wokwi, the native device): away from
+// home, so homing is exercised. Homing at 4000 steps/s takes about a second.
+constexpr int32_t SIM_START_STEPS = 4000;

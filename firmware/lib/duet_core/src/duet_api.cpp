@@ -70,7 +70,7 @@ Response Api::handle(const char* method, const char* path, const char* body, int
   }
   if (std::strcmp(path, "/api/estop") == 0) {
     if (!post) return error(405, "use POST");
-    device_.on_message("{\"type\":\"estop\",\"seq\":0}", now_us);
+    device_.estop(now_us);
     return kOk;
   }
   int slot = song_slot(path, "/play");

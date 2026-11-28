@@ -64,6 +64,7 @@ class Device {
 
   Refusal request_play(int slot, int64_t now_us);  // play a stored song
   void stop();  // stop playing: a stored song, or the Hub's queued commands
+  void estop(int64_t now_us);  // the emergency stop button, or the page's: latched
   Refusal delete_song(int slot);
 
   // Storing a song, from the Hub (the song message) or the device API (a song file), one

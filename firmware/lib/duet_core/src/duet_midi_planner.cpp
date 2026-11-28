@@ -24,7 +24,7 @@ Response MidiPlanner::plan_midi(const std::vector<uint8_t>& midi, const std::str
   if (!read_midi(midi.data(), midi.size(), score, why)) return refused(400, why);
   if (Refusal busy = device_.begin_song(slot, title); busy != Refusal::None) return refused(busy);
   IntoSong into(device_);
-  if (!plan_song(score, robot_, keyboard_, channels_, into, why)) {
+  if (!plan_song(score, robot_, keyboard_, device_.identity().channels, into, why)) {
     device_.abort_song();
     return refused(422, why);  // the Hub refuses the same score (SONG_INVALID)
   }

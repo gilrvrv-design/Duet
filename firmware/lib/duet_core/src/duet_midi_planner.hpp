@@ -10,9 +10,8 @@ namespace duet {
 
 class MidiPlanner : public Planner {
  public:
-  MidiPlanner(Device& device, const CarriageInstrument& robot,
-              const KeyboardInstrument& keyboard, const Channels& channels)
-      : device_(device), robot_(robot), keyboard_(keyboard), channels_(channels) {}
+  MidiPlanner(Device& device, const CarriageInstrument& robot, const KeyboardInstrument& keyboard)
+      : device_(device), robot_(robot), keyboard_(keyboard) {}
 
   Response plan_midi(const std::vector<uint8_t>& midi, const std::string& title,
                      int slot) override;
@@ -21,7 +20,6 @@ class MidiPlanner : public Planner {
   Device& device_;
   const CarriageInstrument& robot_;
   const KeyboardInstrument& keyboard_;
-  Channels channels_;
 };
 
 }  // namespace duet

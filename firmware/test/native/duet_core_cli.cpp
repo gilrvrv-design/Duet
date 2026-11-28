@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "duet_executor.hpp"
+#include "duet_songs.hpp"
 #include "duet_features.hpp"
 #include "duet_json.hpp"
 #include "duet_midi.hpp"
@@ -109,6 +110,14 @@ int main(int argc, char** argv) {
       write_channel(buf, sizeof buf, static_cast<int>(ch), kRig.items[ch], Config{});
       std::printf("%s\n", buf);
     }
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--constants") {  // what the Hub mirrors
+    std::printf(
+        "{\"protocol\":%d,\"max_message\":%zu,\"max_title\":%zu,\"song_slots\":%d,"
+        "\"max_song_lines\":%d,\"duty_slots\":%zu,\"watchdog_us\":%lld}\n",
+        kProtocol, kMaxMessage, kMaxTitle, kSongSlots, static_cast<int>(kMaxSongLines), kDutySlots,
+        static_cast<long long>(Config{}.watchdog_us));
     return 0;
   }
   if (argc > 1 && std::string(argv[1]) == "--features") {  // every feature it knows

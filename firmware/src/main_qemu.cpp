@@ -8,6 +8,7 @@
 #include <esp_timer.h>
 
 #include "board.h"  // boards/qemu
+#include "identity.h"
 #include "rig.h"
 #include "duet_device.hpp"
 #include "duet_executor.hpp"
@@ -18,7 +19,6 @@ namespace {
 
 int64_t now_us() { return esp_timer_get_time(); }
 
-constexpr int32_t START_STEPS = 4000;  // power-on: the carriage is this far from home
 
 class SerialSink : public duet::Sink {
  public:
@@ -29,15 +29,14 @@ duet::ReportingHal hal([](const char* line) { Serial.println(line); });
 SerialSink link;
 duet::Executor executor(hal, link, BOARD_CHANNELS);
 duet::MemorySongStore songs;  // QEMU: songs in RAM; the rig keeps them in flash
-duet::Device device(executor, songs, link,
-                    duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS});
+duet::Device device(executor, songs, link, IDENTITY);
 
 }  // namespace
 
 void setup() {
   Serial.begin(115200);
   hal.now_us = now_us();
-  hal.place(START_STEPS);  // the Hub asks for the greeting when it connects (greet)
+  hal.place(SIM_START_STEPS);  // the Hub asks for the greeting when it connects (greet)
   // In QEMU, a byte that arrives while the chip is still booting crashes the emulated
   // chip (a real one ignores it), so the test harness waits for this line first.
   Serial.println("# duet: ready");

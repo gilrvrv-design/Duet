@@ -321,6 +321,18 @@ static void test_a_song_keeps_its_title() {
   CHECK(r.store.title(1) == "Rain \"on\" the Bottles \xc3\xa9");  // the stored song stays
 }
 
+static void test_a_key_is_never_read_from_inside_a_value() {
+  // A title that reads like a key, before that key: the key's own value is read.
+  Rig r;
+  r.msg(R"({"type":"song","seq":5,"title":"slot \"lines\": 9","slot":2,"lines":1})");
+  r.msg(kSong[0]);
+  CHECK(r.out.has(R"({"type":"ack","seq":5,"status":"ok"})") && r.store.has(2));
+  CHECK(r.store.title(2) == "slot \"lines\": 9");
+  Command c;
+  CHECK(parse(R"({"title":"type","type":"stop","seq":3})", c) && c.type == Type::Stop);
+  CHECK(!parse(R"({"note":"\"type\":\"stop\""})", c));  // only inside a value: not a stop
+}
+
 static void test_a_bad_song_is_refused_whole() {
   Rig r;
   r.msg(R"({"type":"song","seq":3,"slot":0,"lines":2})");
@@ -967,7 +979,7 @@ static void test_the_api_plans_a_midi_file_with_the_planner_installed() {
   CHECK(api.begin_upload("/api/songs/3/midi", "Three notes").body ==
         R"({"error":"this board has no MIDI planner"})");
 
-  MidiPlanner planner(r.dev, kBottles, kPiano88, kRig);
+  MidiPlanner planner(r.dev, kBottles, kPiano88);
   api.install_planner(planner);
   CHECK(api.begin_upload("/api/songs/3/midi", "Three notes").status == 200);
   for (size_t at = 0; at < file.size(); at += 5)  // in pieces, as a web server hands it over
@@ -1013,6 +1025,7 @@ int main() {
   test_midi_notes_off_and_estop_and_boards_without_midi();
   test_upload_then_play_from_memory();
   test_a_song_keeps_its_title();
+  test_a_key_is_never_read_from_inside_a_value();
   test_a_bad_song_is_refused_whole();
   test_a_stalled_upload_is_dropped();
   test_the_button_plays_the_next_song_and_stops();

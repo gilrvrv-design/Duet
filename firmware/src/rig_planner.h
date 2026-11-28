@@ -11,7 +11,7 @@ constexpr int kRigKeyboard = duet::instrument_index(duet::kKeyboardInstruments, 
 static_assert(kRigRobot >= 0, "the rig's carriage instrument is not compiled in");
 static_assert(kRigKeyboard >= 0, "the rig's keyboard is not compiled in");
 
-inline duet::MidiPlanner rig_planner(duet::Device& device, const duet::Channels& channels) {
+inline duet::MidiPlanner rig_planner(duet::Device& device) {
   return duet::MidiPlanner(device, duet::kCarriageInstruments[kRigRobot],
-                           duet::kKeyboardInstruments[kRigKeyboard], channels);
+                           duet::kKeyboardInstruments[kRigKeyboard]);
 }

@@ -29,6 +29,7 @@
 #include <string>
 
 #include "board.h"  // boards/native
+#include "identity.h"
 #include "rig.h"
 #include "duet_api.hpp"
 #include "duet_device.hpp"
@@ -102,7 +103,7 @@ int listen_on(int port) {
 int main(int argc, char** argv) {
   int port = 0;
   int http_port = 0;
-  int32_t start_steps = 4000;
+  int32_t start_steps = SIM_START_STEPS;
   for (int i = 1; i + 1 < argc; i += 2) {
     std::string flag = argv[i];
     if (flag == "--port") port = std::atoi(argv[i + 1]);
@@ -116,13 +117,12 @@ int main(int argc, char** argv) {
   SocketSink sink;
   duet::Executor executor(hal, sink, BOARD_CHANNELS);
   duet::MemorySongStore songs;
-  duet::Device device(executor, songs, sink,
-                     duet::Identity{DEVICE_ID, BOARD, PROFILE_ID, FEATURES, BOARD_CHANNELS});
+  duet::Device device(executor, songs, sink, IDENTITY);
   duet::MemorySettingsStore settings;
   duet::Api api(device, settings);
   api.set_network(duet::Network::Setup);  // nothing saved yet
 #ifdef DUET_PLANNER
-  duet::MidiPlanner planner = rig_planner(device, BOARD_CHANNELS);
+  duet::MidiPlanner planner = rig_planner(device);
   api.install_planner(planner);
 #endif
   HttpServer http([&](const std::string& method, const std::string& path,

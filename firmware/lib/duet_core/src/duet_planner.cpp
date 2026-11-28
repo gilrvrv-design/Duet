@@ -544,12 +544,6 @@ class Song {
   std::vector<Command> cmds_;
 };
 
-int channel_of(const Channels& channels, ChannelKind kind) {
-  for (size_t i = 0; i < channels.count; ++i)
-    if (channels.items[i].kind == kind) return static_cast<int>(i);
-  return -1;
-}
-
 }  // namespace
 
 bool plan_song(const MidiScore& score, const CarriageInstrument& instrument,
@@ -576,8 +570,8 @@ bool plan_song(const MidiScore& score, const CarriageInstrument& instrument,
           std::to_string(kMaxSongLines);
     return false;
   }
-  int carriage_ch = channel_of(channels, ChannelKind::CarriageStriker);
-  int led_ch = channel_of(channels, ChannelKind::LedStrip);
+  int carriage_ch = channels.first(ChannelKind::CarriageStriker);
+  int led_ch = channels.first(ChannelKind::LedStrip);
   std::string missing;  // by name, sorted: carriage_striker before led_strip
   if (bot_commands && carriage_ch < 0) missing = kind_name(ChannelKind::CarriageStriker);
   if (led_ch < 0) {

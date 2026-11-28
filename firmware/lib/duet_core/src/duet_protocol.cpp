@@ -1,6 +1,7 @@
 #include "duet_protocol.hpp"
 
 #include "duet_config.hpp"
+#include "duet_json.hpp"
 #include "duet_features.hpp"
 
 #include <cinttypes>
@@ -11,19 +12,8 @@
 namespace duet {
 namespace {
 
-// Find the value that follows "key": in a flat JSON object.
-const char* find_value(const char* json, const char* key) {
-  char pattern[40];
-  std::snprintf(pattern, sizeof pattern, "\"%s\"", key);
-  const char* p = std::strstr(json, pattern);
-  if (!p) return nullptr;
-  p += std::strlen(pattern);
-  while (*p == ' ' || *p == ':') ++p;
-  return p;
-}
-
 bool get_int(const char* json, const char* key, int64_t& out) {
-  const char* p = find_value(json, key);
+  const char* p = find_key(json, key);
   if (!p) return false;
   char* end = nullptr;
   long long v = std::strtoll(p, &end, 10);
@@ -33,7 +23,7 @@ bool get_int(const char* json, const char* key, int64_t& out) {
 }
 
 bool get_float(const char* json, const char* key, float& out) {
-  const char* p = find_value(json, key);
+  const char* p = find_key(json, key);
   if (!p) return false;
   char* end = nullptr;
   float v = std::strtof(p, &end);
@@ -50,7 +40,7 @@ bool get_ch(const char* json, Command& out) {
 }
 
 bool type_is(const char* json, const char* name) {
-  const char* p = find_value(json, "type");
+  const char* p = find_key(json, "type");
   if (!p || *p != '"') return false;
   size_t len = std::strlen(name);
   return std::strncmp(p + 1, name, len) == 0 && p[1 + len] == '"';
@@ -114,7 +104,7 @@ bool parse(const char* json, Command& out) {
     if (!get_ch(json, out) || !get_int(json, "t_us", out.t_us) ||
         !get_int(json, "first", first) || !get_int(json, "count", count))
       return false;
-    const char* p = find_value(json, "rgb");
+    const char* p = find_key(json, "rgb");
     if (!p || *p != '[') return false;
     char* end = nullptr;
     ++p;

@@ -26,11 +26,12 @@ struct Channels {
   bool has(int32_t ch, ChannelKind kind) const {
     return ch >= 0 && static_cast<size_t>(ch) < count && items[ch].kind == kind;
   }
-  bool any(ChannelKind kind) const {
+  int first(ChannelKind kind) const {  // the first channel of this kind, or -1
     for (size_t i = 0; i < count; ++i)
-      if (items[i].kind == kind) return true;
-    return false;
+      if (items[i].kind == kind) return static_cast<int>(i);
+    return -1;
   }
+  bool any(ChannelKind kind) const { return first(kind) >= 0; }
 };
 
 constexpr const char* kind_name(ChannelKind kind) {
