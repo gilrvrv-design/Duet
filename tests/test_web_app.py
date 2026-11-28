@@ -22,6 +22,8 @@ def test_the_page_shows_what_the_board_can_do(page, device):
     missing = page.locator("#abilities li[data-missing]")
     expect(missing.filter(has_text="lost at power-off")).to_have_count(1)  # no flash
     expect(missing.filter(has_text="No hardware emergency stop")).to_have_count(1)
+    expect(missing.filter(has_text="No MIDI planner installed")).to_have_count(1)
+    expect(page.locator("#song-file")).to_have_attribute("accept", ".song,.txt")  # no MIDI
     expect(page.locator("#no-songs")).to_be_visible()
 
 

@@ -12,6 +12,10 @@ const FEATURES = {
   flash: ["Songs stay stored when the power is off", "Songs are kept in memory and lost at power-off"],
   play_button: ["A play button on the rig", "No play button: play songs from this page"],
   estop_button: ["A hardware emergency stop", "No hardware emergency stop: use the button on this page"],
+  planner: [
+    "MIDI files are planned on the rig, with no server",
+    "No MIDI planner installed: load song files from the Hub, or use a server",
+  ],
 };
 const CHANNELS = {
   carriage_striker: () => "A bot plays the bottles (carriage and striker)",
@@ -101,6 +105,7 @@ function showSongs(songs) {
 
 function showBoard(info) {
   const { hello, channels } = info;
+  offerMidi(hello.features.includes("planner"));
   $("device").textContent = `${hello.device_id} · ${hello.board}`;
   const items = [
     ...channels.map((c) => [true, CHANNELS[c.kind](c)]),
@@ -306,10 +311,38 @@ async function storeSong(file, title) {
   await refresh();
 }
 
+// The optional planner module (docs/design/esp-first.md): MIDI files only where it is.
+function offerMidi(planner) {
+  $("song-file").accept = planner ? ".song,.txt,.mid,.midi" : ".song,.txt";
+  $("load-label").textContent = planner ? "Load a song or MIDI file" : "Load a song file";
+  $("midi-hint").hidden = !planner;
+}
+
+// A MIDI file, planned by the rig itself; its title is the file's name.
+async function loadMidiFile(chosen) {
+  const title = chosen.name.replace(/\.midi?$/i, "");
+  const slot = Number($("slot").value);
+  const stored = await fetch(`/api/songs/${slot}/midi?title=${encodeURIComponent(title)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "audio/midi" },
+    body: chosen,
+  });
+  const answer = await stored.json();
+  if (stored.ok) {
+    const notes = answer.warnings.length ? ` (${answer.warnings.join("; ")})` : "";
+    say(`“${title}” is on the rig, in slot ${slot}${notes}.`, "ok");
+    $("slot").value = "";
+  } else {
+    say(`The rig could not plan “${title}”: ${answer.error}.`);
+  }
+  await refresh();
+}
+
 // A song file made by the Hub (duet song): its first line is its title.
 async function loadSongFile(input) {
   const [chosen] = input.files;
   input.value = "";  // the same file can be chosen again
+  if (/\.midi?$/i.test(chosen.name)) return loadMidiFile(chosen);
   const text = await chosen.text();
   let title = chosen.name;
   try {

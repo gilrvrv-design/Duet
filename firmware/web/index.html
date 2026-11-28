@@ -29,11 +29,12 @@
       <p id="no-songs" class="muted" hidden>No songs are stored yet.</p>
       <div class="load">
         <label class="inline">Put songs into <select id="slot"></select></label>
-        <label class="file">Load a song file
+        <label class="file"><span id="load-label">Load a song file</span>
           <input id="song-file" type="file" accept=".song,.txt">
         </label>
       </div>
       <p class="hint">
+        <span id="midi-hint" hidden>A MIDI file is planned here, on the rig. </span>
         The Hub makes song files: <code>duet song score.json -o score.song</code>
       </p>
     </section>
