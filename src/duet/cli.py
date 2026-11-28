@@ -7,14 +7,19 @@ import contextlib
 import sys
 from pathlib import Path
 
+import mido
+
 from duet.audio.fullmix import RouteUnavailable, SeparationFailed
 from duet.audio.io import AudioError
 from duet.calibration import SWEEP_INTERVAL_S
 from duet.compose.service import ComposerError, CompositionError
 from duet.conductor import RealClock, VirtualClock, one_rig, perform
 from duet.copyright import CopyrightGuard
-from duet.device.gateway import DeviceFault, DeviceMismatch
+from duet.device.gateway import DeviceFault, DeviceGateway, DeviceMismatch
+from duet.follow import TempoPianist
 from duet.instruments import Instrument
+from duet.listening import MidiKeys, SimulatedPianist
+from duet.live import StoppableClock, Stopped, play_live, summary
 from duet.midi_io import read_midi, save_midi
 from duet.performers import (
     Bot,
@@ -34,8 +39,8 @@ from duet.profile import (
     save_profile_file,
 )
 from duet.score import DUO, DuetScore, Duo, LineUpError, load_score
-from duet.sim import SimulatedRig
-from duet.songs import SongError
+from duet.sim import RIG_CHANNELS, SimulatedRig
+from duet.songs import SongError, check_slot, compile_song
 from duet.variations import VariationError
 
 
@@ -87,9 +92,13 @@ def cmd_check(args) -> int:
     return 1 if any(problems[part] for part in score.parts_played_by("bot")) else 0
 
 
-def _playable(score, args):
-    """The score with every bot part repaired, saying so when something changed."""
-    result = repair_bots(score, _in_use(args))
+def _source(args, robot: RobotProfile) -> DuetScore:
+    """The score a command plays: read, cut to ``--only`` if given, and its bot parts made
+    playable (saying so when something changed)."""
+    score = read_score(args.score)
+    if args.only:
+        score = score.only(args.only)
+    result = repair_bots(score, in_use(robot, _keyboard(args)))
     if result.changes:
         print(f"repaired {len(result.changes)} problem(s) so the bots can play it")
     return result.score
@@ -108,41 +117,47 @@ def cmd_convert(args) -> int:
 
 
 def cmd_play(args) -> int:
-    robot = _robot(args)
-    score = read_score(args.score)
+    robot, instruments = _robot(args), _in_use(args)
+    score = _source(args, robot)
     if args.only:
-        score = score.only(args.only)
         print(f"playing the {args.only} part only ({len(score.events)} notes)")
-    score = _playable(score, args)
-    mode = "follow" if args.follow else "wait" if args.wait or args.midi_in or args.mic else "play"
+    keys = _keys(args)
+    mode = "follow" if args.follow else "wait" if keys is not None else "play"
     if args.device:
-        return _play_on_device(score, robot, _in_use(args), args.device, mode, _keys(args))
+        return _play_on_device(score, robot, instruments, args.device, mode, keys)
     if not args.sim:
         print("choose --sim or --device ws://host:port", file=sys.stderr)
         return 2
+    realtime = args.realtime or _live_keys(args) is not None
+    return _play_sim(score, robot, instruments, keys, mode, realtime)
+
+
+def _play_sim(score, robot, instruments, keys, mode: str, realtime: bool) -> int:
+    """Play on the simulated rig, and report what it played (and how the pianist did)."""
     rig = SimulatedRig(robot)
-    keys = _keys(args)
-    live = args.midi_in or args.mic is not None
-    clock = RealClock() if args.realtime or live else VirtualClock()
     perf = perform(
         score,
         one_rig(score, [rig]),
-        clock,
-        instruments=_in_use(args),
+        RealClock() if realtime else VirtualClock(),
+        instruments=instruments,
         keys=keys,
         mode="follow" if mode == "follow" else "wait",
     )
     rig.run()
     if keys is not None:
-        from duet.listening import grade
+        print(summary(perf, mode))
+    all_played = _report_bots(score, instruments, perf, rig)
+    print(f"LED frames: {len(rig.led_frames)}, faults: {len(rig.faults)}")
+    for fault in rig.faults:
+        print(f"  {fault}")
+    return 0 if not rig.faults and all_played else 1
 
-        if args.follow:
-            print(f"followed the pianist: tempo now {100 / perf.final_rate:.0f}% of written")
-        else:
-            print(f"waited {perf.waited_us / 1e6:.1f} s for the pianist")
-        print(grade(perf.expected_pianist(), perf.played).feedback())
+
+def _report_bots(score, instruments, perf, rig: SimulatedRig) -> bool:
+    """One line per bot part: notes heard of those planned, and the worst timing error.
+    True if every planned note was heard."""
     all_played = True
-    for bot in (p for p in performers(score, _in_use(args)) if isinstance(p, Bot)):
+    for bot in (p for p in performers(score, instruments) if isinstance(p, Bot)):
         planned = sorted(n.t_us for n in perf.planned if n.part == bot.part)
         heard = sorted(_heard(rig, bot))
         errors = [abs(h - t) for h, t in zip(heard, planned, strict=False)]
@@ -151,10 +166,7 @@ def cmd_play(args) -> int:
             f"max timing error {max(errors, default=0)} us"
         )
         all_played &= len(heard) == len(planned)
-    print(f"LED frames: {len(rig.led_frames)}, faults: {len(rig.faults)}")
-    for fault in rig.faults:
-        print(f"  {fault}")
-    return 0 if not rig.faults and all_played else 1
+    return all_played
 
 
 def _heard(rig: SimulatedRig, bot: Bot) -> list[int]:
@@ -164,28 +176,26 @@ def _heard(rig: SimulatedRig, bot: Bot) -> list[int]:
     return [n.t_us for n in rig.notes if n.vel > 0 and n.midi == bot.mechanism.midi_channel]
 
 
-def _keys(args):
-    """Wait and follow modes need someone at the keys: a MIDI keyboard or a simulated pianist."""
+def _live_keys(args):
+    """A real pianist, where one was asked for (--mic or --midi-in), else None."""
     if args.mic is not None:
-        from duet.mic import MicKeys, MicListener, SoundDeviceSource
+        from duet.mic import microphone_keys  # sounddevice: only where it is installed
 
-        device = None if args.mic == "default" else args.mic
-        return MicKeys(MicListener(22050, robot=_robot(args)), SoundDeviceSource(device=device))
+        return microphone_keys(_robot(args), None if args.mic == "default" else args.mic)
     if args.midi_in:
-        import mido
-
-        from duet.listening import MidiKeys
-
         return MidiKeys(mido.open_input(args.midi_in))
-    if args.follow:
-        from duet.follow import TempoPianist
-
-        return TempoPianist(stretch=args.stretch)
-    if args.wait:
-        from duet.listening import SimulatedPianist
-
-        return SimulatedPianist(reaction_s=args.reaction)
     return None
+
+
+def _keys(args):
+    """Who plays the human part for wait and follow modes: a real pianist if one was
+    asked for, else a simulated one; None when nobody is listened to."""
+    live = _live_keys(args)
+    if live is not None:
+        return live
+    if args.follow:
+        return TempoPianist(stretch=args.stretch)
+    return SimulatedPianist(reaction_s=args.reaction) if args.wait else None
 
 
 DEMO_PHRASES = [
@@ -281,8 +291,9 @@ def cmd_jam(args) -> int:
     from duet.session import PhrasePianist, call_and_response
 
     robot = _robot(args)
-    live = args.midi_in or args.mic is not None
-    keys = _keys(args) if live else PhrasePianist(DEMO_PHRASES, args.tempo)
+    keys = _live_keys(args)
+    live = keys is not None
+    keys = keys or PhrasePianist(DEMO_PHRASES, args.tempo)
     rig = SimulatedRig(robot)
     clock = RealClock() if live else VirtualClock(hub_now_us())
     session = call_and_response(
@@ -334,15 +345,8 @@ def describe(hello) -> str:
 def cmd_song(args) -> int:
     """Write a song file: the score made playable and compiled for the rig, for its web
     page to load with no server (docs/device-api.md, "Song files")."""
-    from duet.sim import RIG_CHANNELS
-    from duet.songs import compile_song
-
     robot = _robot(args)
-    score = read_score(args.score)
-    if args.only:
-        score = score.only(args.only)
-    score = _playable(score, args)
-    song = compile_song(score, robot, keyboard_profile(args.piano), RIG_CHANNELS)
+    song = compile_song(_source(args, robot), robot, _keyboard(args), RIG_CHANNELS)
     Path(args.out).write_text(song.song_file(), encoding="utf-8")
     print(
         f"wrote {song.title!r} to {args.out}: {len(song.commands)} commands, "
@@ -353,18 +357,12 @@ def cmd_song(args) -> int:
 
 def cmd_upload(args) -> int:
     """Store a song on the device, to play without the Hub (press its play button)."""
-    from duet.device.gateway import DeviceGateway
-    from duet.songs import check_slot, compile_song
-
     robot = _robot(args)
-    score = read_score(args.score)
-    if args.only:
-        score = score.only(args.only)
-    score = _playable(score, args)
+    score = _source(args, robot)
     slot = check_slot(args.slot)
     with DeviceGateway(args.device, profile=robot) as gateway:
         print(f"connected to {describe(gateway.hello)}")
-        song = compile_song(score, robot, keyboard_profile(args.piano), gateway.channels)
+        song = compile_song(score, robot, _keyboard(args), gateway.channels)
         gateway.upload(slot, song)
         print(
             f"stored {song.title!r} in slot {slot}: {len(song.commands)} commands, "
@@ -378,7 +376,6 @@ def cmd_upload(args) -> int:
 
 def _play_on_device(score, robot, instruments, url: str, mode: str, keys) -> int:
     """A live performance on a rig (duet.live), in play, wait or follow mode."""
-    from duet.live import StoppableClock, Stopped, play_live, summary
 
     def connected(gateway) -> None:
         sync = gateway.sync
@@ -543,7 +540,29 @@ def cmd_transcribe(args) -> int:
     return 0
 
 
+def _options() -> dict[str, argparse.ArgumentParser]:
+    """Options several commands share, each defined once (argparse parents)."""
+
+    def group() -> argparse.ArgumentParser:
+        return argparse.ArgumentParser(add_help=False)
+
+    source = group()  # a score to play or store, whole or one part of it
+    source.add_argument("score")
+    source.add_argument(
+        "--only", metavar="PART", help="one part alone, e.g. robot (the bottles) or pianist"
+    )
+    pianist = group()  # how a real pianist is heard; without either, none or a simulated one
+    pianist.add_argument("--midi-in", help="MIDI keyboard port (default: a simulated pianist)")
+    pianist.add_argument(
+        "--mic", nargs="?", const="default", help="listen to an acoustic piano (input device)"
+    )
+    model = group()
+    model.add_argument("--model", default=None, help="Claude model id (default: DUET_MODEL)")
+    return {"source": source, "pianist": pianist, "model": model}
+
+
 def build_parser() -> argparse.ArgumentParser:
+    shared = _options()
     parser = argparse.ArgumentParser(prog="duet", description=__doc__)
     parser.add_argument(
         "--robot", default=DUO.bot_instrument, help="robot profile id or calibrated .yaml file"
@@ -565,13 +584,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("out")
     p.set_defaults(func=cmd_convert)
 
-    p = sub.add_parser("compose", help="write a duet from a text request (needs Claude)")
+    p = sub.add_parser(
+        "compose", help="write a duet from a text request (needs Claude)", parents=[shared["model"]]
+    )
     p.add_argument("prompt")
     p.add_argument("out", help="output .json or .mid")
     p.add_argument("--difficulty", type=int, default=2)
     p.add_argument("--bars", type=int, default=8)
     p.add_argument("--lead", choices=["bot", "human"], default="bot", help="who has the melody")
-    p.add_argument("--model", default=None, help="Claude model id (default: DUET_MODEL or Opus)")
     p.set_defaults(func=cmd_compose)
 
     p = sub.add_parser("transcribe", help="audio file (wav, mp3, m4a, video...) to MIDI")
@@ -583,34 +603,28 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--difficulty", type=int, default=1, help="pianist level for --duet")
     p.set_defaults(func=cmd_transcribe)
 
-    p = sub.add_parser("play", help="perform a score")
-    p.add_argument("score")
+    p = sub.add_parser(
+        "play", help="perform a score", parents=[shared["source"], shared["pianist"]]
+    )
     p.add_argument("--sim", action="store_true", help="use the simulated rig")
     p.add_argument("--realtime", action="store_true", help="run the clock in real time")
     p.add_argument(
         "--device", help="play on a device: ws://host:port (the rig) or tcp://host:port (serial)"
     )
-    p.add_argument(
-        "--only",
-        metavar="PART",
-        help="play one part alone, e.g. robot (the bottles solo) or pianist (practise alone)",
-    )
     p.add_argument("--wait", action="store_true", help="wait mode: pause for each pianist note")
     p.add_argument("--follow", action="store_true", help="follow mode: robot keeps your tempo")
     p.add_argument("--stretch", type=float, default=1.1, help="simulated pianist tempo factor")
-    p.add_argument("--midi-in", help="MIDI keyboard port (default: a simulated pianist)")
-    p.add_argument(
-        "--mic", nargs="?", const="default", help="listen to an acoustic piano (input device)"
-    )
     p.add_argument("--reaction", type=float, default=0.3, help="simulated pianist delay (s)")
     p.set_defaults(func=cmd_play)
-    p = sub.add_parser("eval", help="run the composition evaluation set (calls Claude)")
+
+    p = sub.add_parser(
+        "eval", help="run the composition evaluation set (calls Claude)", parents=[shared["model"]]
+    )
     p.add_argument("cases", nargs="?", default="evals/prompts.yaml")
     p.add_argument("--out", help="save results (JSON), e.g. as the next baseline")
     p.add_argument("--baseline", help="fail if results regress against this run")
     p.add_argument("--limit", type=int, default=0, help="only the first N cases")
     p.add_argument("--workers", type=int, default=4)
-    p.add_argument("--model", default=None)
     p.set_defaults(func=cmd_eval)
 
     p = sub.add_parser("vary", help="a variation: slower, faster, easier, swap, or any request")
@@ -634,13 +648,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default="lesson")
     p.set_defaults(func=cmd_teach)
 
-    p = sub.add_parser("jam", help="call and response: you play, the robot answers")
+    p = sub.add_parser(
+        "jam", help="call and response: you play, the robot answers", parents=[shared["pianist"]]
+    )
     p.add_argument("--turns", type=int, default=4)
     p.add_argument("--bars", type=int, default=2, help="bars per turn")
     p.add_argument("--tempo", type=float, default=90)
-    p.add_argument("--midi-in", help="MIDI keyboard port (default: a simulated pianist)")
-    p.add_argument("--mic", nargs="?", const="default", help="listen to an acoustic piano")
-    p.set_defaults(func=cmd_jam, wait=False, follow=False)
+    p.set_defaults(func=cmd_jam)
 
     p = sub.add_parser("grade", help="grade a recorded pianist performance (MIDI)")
     p.add_argument("score")
@@ -658,18 +672,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--interval", type=float, default=SWEEP_INTERVAL_S)
     p.set_defaults(func=cmd_calibrate)
 
-    p = sub.add_parser("upload", help="store a song on the device, to play without the Hub")
-    p.add_argument("score")
+    p = sub.add_parser(
+        "upload",
+        help="store a song on the device, to play without the Hub",
+        parents=[shared["source"]],
+    )
     p.add_argument("--device", required=True, help="ws://host:port or tcp://host:port")
     p.add_argument("--slot", type=int, default=0, help="song slot 0-7 (default 0)")
-    p.add_argument("--only", metavar="PART", help="store one part alone")
     p.add_argument("--play", action="store_true", help="play it right away")
     p.set_defaults(func=cmd_upload)
 
-    p = sub.add_parser("song", help="write a song file for the rig's page to load")
-    p.add_argument("score")
+    p = sub.add_parser(
+        "song", help="write a song file for the rig's page to load", parents=[shared["source"]]
+    )
     p.add_argument("-o", "--out", required=True, help="the song file to write (say rain.song)")
-    p.add_argument("--only", metavar="PART", help="one part alone")
     p.set_defaults(func=cmd_song)
 
     p = sub.add_parser("device-sim", help="run a simulated rig device on a WebSocket")

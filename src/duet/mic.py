@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from duet.audio.io import DEFAULT_SR
 from duet.difficulty import COMFORTABLE_RANGE
 from duet.listening import PlayedNote, wait_for_pitches
 from duet.pitch import midi_to_hz
@@ -263,7 +264,7 @@ class SoundDeviceSource:
     drops audio; ``overflows`` counts the blocks PortAudio flagged.
     """
 
-    def __init__(self, sr: int = 22050, device=None, block: int = 512) -> None:
+    def __init__(self, sr: int = DEFAULT_SR, device=None, block: int = 512) -> None:
         import queue
 
         import sounddevice
@@ -300,3 +301,9 @@ class SoundDeviceSource:
     def close(self) -> None:
         self._stream.stop()
         self._stream.close()
+
+
+def microphone_keys(robot: RobotProfile, device=None) -> MicKeys:
+    """The pianist heard through a microphone (sounddevice's ``device``, or the default
+    input): the listener and the audio at one sample rate."""
+    return MicKeys(MicListener(DEFAULT_SR, robot=robot), SoundDeviceSource(DEFAULT_SR, device))

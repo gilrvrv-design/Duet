@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 from duet.conductor import Clock, Device, home_all, one_rig, perform, send_to
 from duet.kinematics import move_time_s
-from duet.listening import KeyInput, PlayedNote
+from duet.listening import KeyInput, PlayedNote, listen_until
 from duet.performers import in_use
 from duet.plans import HOME_STEPS, led_count
 from duet.profile import KeyboardProfile, RobotProfile
@@ -117,15 +117,10 @@ def _listen_and_preposition(keys, clock, start, end, responder, robot, devices, 
         position = target
 
     reposition()  # a recall answer is known before the pianist plays anything
-    while True:
-        upcoming = keys.next_event_us(clock)
-        if upcoming is None or upcoming >= end:
-            clock.sleep_until(end)
-            keys.poll(clock)
-            return position
-        clock.sleep_until(upcoming)
-        if keys.poll(clock):
+    while clock.now_us() < end:
+        if listen_until(keys, clock, end) and clock.now_us() < end:
             reposition()
+    return position
 
 
 @dataclass

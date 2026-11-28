@@ -132,9 +132,9 @@ def _midi_keys(port: str) -> KeyInput:
 
 
 def _mic_keys(robot: RobotProfile) -> KeyInput:
-    from duet.mic import MicKeys, MicListener, SoundDeviceSource
+    from duet.mic import microphone_keys  # sounddevice: only where it is installed
 
-    return MicKeys(MicListener(22050, robot=robot), SoundDeviceSource())
+    return microphone_keys(robot)
 
 
 @dataclass

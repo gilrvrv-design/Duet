@@ -93,6 +93,14 @@ class MidiKeys:
 MIDI_POLL_US = 2000
 
 
+def listen_until(keys, clock, deadline_us: int) -> list[PlayedNote]:
+    """Wait until the next key event or ``deadline_us``, whichever comes first, then
+    return what was played since the last listen."""
+    upcoming = keys.next_event_us(clock)
+    clock.sleep_until(deadline_us if upcoming is None else min(upcoming, deadline_us))
+    return keys.poll(clock)
+
+
 def wait_for_pitches(keys, pitches, since_us: int, clock, timeout_s: float | None, poll_us: int):
     """Poll ``keys`` until every pitch was played since ``since_us``; return when the last
     of them was. After ``timeout_s`` give up on the note and return the time now, so the

@@ -14,7 +14,9 @@ from typing import Protocol
 
 from duet import midi_bot
 from duet.device.clock import hub_now_us
-from duet.listening import KeyInput
+from duet.feasibility import max_speed_up
+from duet.follow import Follower
+from duet.listening import Expected, KeyInput, listen_until
 from duet.performers import NO_OVERRIDES, Bot, Instruments, performers
 from duet.plans import HOME_STEPS, LedCue, RobotPlan, led_plan, robot_plan
 from duet.protocol import CHANNEL_KIND, Home, LedFrameAt, Message, MoveAt, StrikeAt, message_time_us
@@ -22,6 +24,9 @@ from duet.score import DuetScore, PerformerKind
 from duet.timing import seconds_per_beat, timed_events
 
 OFF = (0, 0, 0)
+
+EARLY_PRESS_US = 300_000  # a key pressed this soon before its cue still counts
+FOLLOW_LOOKAHEAD_US = 150_000  # short, so tempo changes reach the robot quickly
 
 
 class State(StrEnum):
@@ -88,13 +93,10 @@ class Performance:
     messages_sent: int = 0
     waited_us: int = 0  # total time spent waiting for the pianist (wait mode)
     played: list = field(default_factory=list)  # what the pianist played, if heard
-    follow_matches: list = field(default_factory=list)  # follow mode: (score us, clock us)
     final_rate: float = 1.0  # follow mode: clock time per score time at the end
     end_steps: dict[str, int] = field(default_factory=dict)  # bot part -> carriage at the end
 
     def expected_pianist(self):
-        from duet.listening import Expected
-
         return [Expected(p.t_us, p.pitch, p.bar) for p in self.planned if p.performer == "human"]
 
 
@@ -266,15 +268,67 @@ def perform(
     For back-to-back pieces (call and response), pass ``home=False``, ``count_in=False``,
     where each bot's carriage is (``start_steps``), and when to start.
     """
+    if mode not in ("wait", "follow"):
+        raise ValueError(f"mode {mode!r}: wait or follow")
     _check_routes(score, routes, instruments)
     perf = Performance()
-    perf.states.append(State.PREPARING)
-    bot_devices = list(  # the carriages to home
-        {id(d): d for part in _moving_bots(score, instruments) for d in routes[part]}.values()
-    )
+    _enter(perf, State.PREPARING)
     if home:
-        home_all(bot_devices, homing_timeout_s)
+        _home_carriages(score, routes, instruments, homing_timeout_s)
         start_steps = None
+    program = _schedule(
+        score, perf, clock, instruments, start_steps, count_in, buffer_s, start_at_us
+    )
+    _check_channels(program, routes)
+    _enter(perf, State.COUNT_IN)
+    sender = _Sender(routes, program, keys, perf, score, instruments, start_steps or {})
+    if keys is not None and mode == "follow":
+        return _follow(perf, program, score, instruments, sender, clock, keys)
+    lookahead_us = round(lookahead_s * 1_000_000)
+    gates = _WaitGates(perf, clock, keys) if keys is not None else None
+
+    def send(msg: Message) -> None:
+        if clock.now_us() >= perf.start_us - lookahead_us:
+            _enter(perf, State.PLAYING)
+        sender.send(msg)
+
+    stream(
+        program.messages,
+        clock,
+        lookahead_us,
+        send,
+        before=gates.wait_before if gates else None,
+        time_of=gates.time_of if gates else message_time_us,
+    )
+    _enter(perf, State.PLAYING)
+    if gates is not None:
+        perf.waited_us = gates.delay
+        perf.played = list(keys.played)
+        perf.planned = [_shifted(p, gates.shifts) for p in perf.planned]
+    perf.states += [State.ENDING, State.REVIEW]
+    return perf
+
+
+def _enter(perf: Performance, state: State) -> None:
+    """Record reaching ``state``: once, except WAITING and PLAYING, which alternate in
+    wait mode and are recorded at each change."""
+    repeats = state in (State.WAITING, State.PLAYING)
+    if (perf.states[-1] != state) if repeats else (state not in perf.states):
+        perf.states.append(state)
+
+
+def _home_carriages(score, routes: Routes, instruments: Instruments, timeout_s: float) -> None:
+    """Home the devices of every bot that moves (each device once)."""
+    devices = {id(d): d for part in _moving_bots(score, instruments) for d in routes[part]}
+    home_all(list(devices.values()), timeout_s)
+
+
+def _schedule(
+    score, perf: Performance, clock: Clock, instruments, start_steps, count_in, buffer_s,
+    start_at_us,
+) -> Program:  # fmt: skip
+    """When the performance starts (after the count-in, and the carriages' way to their
+    first notes), its messages at that time, and where each carriage ends up."""
     program = build_messages(
         score, 0, instruments=instruments, start_steps=start_steps, count_in=count_in
     )
@@ -285,7 +339,6 @@ def perform(
     earliest = clock.now_us() + round((buffer_s + max(count_in_s, preroll_s)) * 1_000_000)
     perf.start_us = earliest if start_at_us is None else max(start_at_us, earliest)
     program = program.at(perf.start_us)
-    _check_channels(program, routes)
     perf.planned = program.planned
     perf.end_steps = {
         part: plan.commands[-1].target_steps
@@ -293,52 +346,33 @@ def perform(
         else (start_steps or {}).get(part, HOME_STEPS)
         for part, plan in program.plans.items()
     }
+    return program
 
-    perf.states.append(State.COUNT_IN)
-    sender = _Sender(routes, program, keys, perf, score, instruments, start_steps or {})
-    messages = program.messages
-    if keys is not None and mode == "follow":
-        return _follow(perf, program, score, instruments, sender, clock, keys)
-    gates = _gates(perf.planned) if keys is not None else []
-    shifts: list[tuple[int, int]] = []  # (original gate time, total delay from then on)
-    delay = 0
-    lookahead_us = round(lookahead_s * 1_000_000)
 
-    def wait_for_pianist(msg: Message) -> None:
-        nonlocal delay
-        while gates and message_time_us(msg) >= gates[0][0]:
-            # Nothing at or after the next human note is sent until it is played,
-            # because its time is not known yet (wait mode, FR-P2).
-            gate_t, pitches = gates.pop(0)
-            cue = gate_t + delay
-            clock.sleep_until(cue)
-            perf.states.append(State.WAITING)
-            pressed = keys.wait_for(pitches, cue - EARLY_PRESS_US, clock)
-            delay += max(0, pressed - cue)
-            shifts.append((gate_t, delay))
-            perf.states.append(State.PLAYING)
+class _WaitGates:
+    """Wait mode (FR-P2): nothing at or after the next human note is sent until that
+    note is played, because its time is not known until then; everything after shifts
+    by how long the pianist took."""
 
-    def send(msg: Message) -> None:
-        if State.PLAYING not in perf.states and clock.now_us() >= perf.start_us - lookahead_us:
-            perf.states.append(State.PLAYING)
-        sender.send(msg)
+    def __init__(self, perf: Performance, clock: Clock, keys: KeyInput) -> None:
+        self.perf, self.clock, self.keys = perf, clock, keys
+        self.pending = _gates(perf.planned)  # (time, pitches) of each human onset
+        self.delay = 0  # how long the pianist has been waited for so far
+        self.shifts: list[tuple[int, int]] = []  # (original gate time, delay from then on)
 
-    stream(
-        messages,
-        clock,
-        lookahead_us,
-        send,
-        before=wait_for_pianist,
-        time_of=lambda m: message_time_us(m) + delay,
-    )
-    if State.PLAYING not in perf.states:
-        perf.states.append(State.PLAYING)
-    perf.waited_us = delay
-    if keys is not None:
-        perf.played = list(keys.played)
-        perf.planned = [_shifted(p, shifts) for p in perf.planned]
-    perf.states += [State.ENDING, State.REVIEW]
-    return perf
+    def wait_before(self, msg: Message) -> None:
+        while self.pending and message_time_us(msg) >= self.pending[0][0]:
+            gate_t, pitches = self.pending.pop(0)
+            cue = gate_t + self.delay
+            self.clock.sleep_until(cue)
+            _enter(self.perf, State.WAITING)
+            pressed = self.keys.wait_for(pitches, cue - EARLY_PRESS_US, self.clock)
+            self.delay += max(0, pressed - cue)
+            self.shifts.append((gate_t, self.delay))
+            _enter(self.perf, State.PLAYING)
+
+    def time_of(self, msg: Message) -> int:
+        return message_time_us(msg) + self.delay
 
 
 def stream(
@@ -406,15 +440,25 @@ class _Carriage:
     latency_us: int
 
 
-EARLY_PRESS_US = 300_000  # a key pressed this soon before its cue still counts
-FOLLOW_LOOKAHEAD_US = 150_000  # short, so tempo changes reach the robot quickly
-
-
 def _follow(perf, program, score, instruments, sender, clock, keys) -> Performance:
     """Follow mode: every command is timed through the follower's current tempo map."""
-    from duet.feasibility import max_speed_up
-    from duet.follow import Follower
+    follower = _follower(perf, score, instruments, keys)
+    timing = _FollowTiming(program, follower)
+    _enter(perf, State.PLAYING)
+    for msg in program.messages:
+        # Listen until it is time to send: the tempo, and so the time, may change meanwhile.
+        while (target := timing.when(msg) - FOLLOW_LOOKAHEAD_US) > clock.now_us():
+            for note in listen_until(keys, clock, target):
+                follower.hear(note)
+        sender.send(timing.sent(msg, max(clock.now_us(), timing.when(msg))))
+    perf.played = list(keys.played)
+    perf.final_rate = follower.rate
+    perf.states += [State.ENDING, State.REVIEW]
+    return perf
 
+
+def _follower(perf: Performance, score, instruments, keys) -> Follower:
+    """A follower of the human parts, never faster than the slowest bot can go."""
     bots = [p for p in performers(score, instruments) if isinstance(p, Bot) and p.moves]
     fastest = min((max_speed_up(score, b.profile, part=b.part) for b in bots), default=1.0)
     follower = Follower(perf.expected_pianist(), min_rate=1 / fastest)
@@ -422,46 +466,32 @@ def _follow(perf, program, score, instruments, sender, clock, keys) -> Performan
     if begin is not None:  # a simulated pianist needs to know when to play
         begin(perf.expected_pianist())
     follower.anchor_score_us = follower.anchor_clock_us = perf.start_us
-    perf.states.append(State.PLAYING)
+    return follower
 
-    def listen():
-        for note in keys.poll(clock):
-            follower.hear(note)
 
-    # A move's travel time is physical: time it back from its own strike, never scale it.
-    lead_of = _move_leads(program)
-    arrival: dict[str, int] = {}  # part -> when its carriage reaches its last move's target
+class _FollowTiming:
+    """When each command goes, through the follower's tempo. A move's travel time is
+    physical: it is timed back from its own strike, never scaled; a strike waits for
+    its carriage to arrive."""
 
-    def when(msg) -> int:
+    def __init__(self, program: Program, follower: Follower) -> None:
+        self.program, self.follower = program, follower
+        self.lead_of = _move_leads(program)
+        self.arrival: dict[str, int] = {}  # part -> when its carriage reaches its target
+
+    def when(self, msg: Message) -> int:
         if isinstance(msg, MoveAt):
-            strike_t, lead = lead_of[msg.seq]
-            return follower.to_clock(strike_t) - lead
-        t = follower.to_clock(message_time_us(msg))
+            strike_t, lead = self.lead_of[msg.seq]
+            return self.follower.to_clock(strike_t) - lead
+        t = self.follower.to_clock(message_time_us(msg))
         if isinstance(msg, StrikeAt):
-            return max(t, arrival.get(program.part_of[msg.seq], 0))
+            return max(t, self.arrival.get(self.program.part_of[msg.seq], 0))
         return t
 
-    for msg in program.messages:
-        while True:
-            target = when(msg) - FOLLOW_LOOKAHEAD_US
-            upcoming = keys.next_event_us(clock)
-            if upcoming is not None and upcoming < target:
-                clock.sleep_until(upcoming)
-                listen()
-                continue
-            clock.sleep_until(target)
-            listen()
-            if when(msg) - FOLLOW_LOOKAHEAD_US <= clock.now_us():
-                break
-        t = max(clock.now_us(), when(msg))
+    def sent(self, msg: Message, t: int) -> Message:
         if isinstance(msg, MoveAt):
-            arrival[program.part_of[msg.seq]] = t + lead_of[msg.seq][1]
-        sender.send(replace(msg, t_us=t))
-    perf.played = list(keys.played)
-    perf.follow_matches = list(follower.matches)
-    perf.final_rate = follower.rate
-    perf.states += [State.ENDING, State.REVIEW]
-    return perf
+            self.arrival[self.program.part_of[msg.seq]] = t + self.lead_of[msg.seq][1]
+        return replace(msg, t_us=t)
 
 
 def _move_leads(program: Program) -> dict[int, tuple[int, int]]:
