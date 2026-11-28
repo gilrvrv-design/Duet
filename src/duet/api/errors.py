@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 STATUS = {
     "NOT_FOUND": 404,
     "SCORE_INVALID": 422,
+    "LINE_UP_INVALID": 422,  # a part names an unknown instrument or a performer it cannot have
     "MIDI_INVALID": 422,
     "FILE_TOO_LARGE": 413,
     "FILE_EMPTY": 422,

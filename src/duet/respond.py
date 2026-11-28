@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from duet.listening import PlayedNote
 from duet.profile import RobotProfile
 from duet.repair import repair_robot
-from duet.score import COMMON_TIME, DuetScore
+from duet.score import COMMON_TIME, DuetScore, Duo
 
 GRID_BEATS = 0.5
 VARIATIONS = ("echo", "answer", "sequence", "retrograde")
@@ -125,10 +125,11 @@ def reply_score(
     robot: RobotProfile,
     beats_per_bar: int = COMMON_TIME[0],
 ) -> DuetScore:
-    """A robot-only score for the answer, made playable by repair."""
+    """A bot-only score for the answer, made playable by repair."""
+    duo = Duo(bot_instrument=robot.id)
     events = [
         {
-            "part": "robot",
+            "part": duo.bot,
             "bar": int(n.beat // beats_per_bar) + 1,
             "beat": n.beat % beats_per_bar + 1,
             "dur": n.dur,
@@ -144,9 +145,10 @@ def reply_score(
                 "tempo_bpm": tempo_bpm,
                 "time_signature": [beats_per_bar, 4],
             },
+            "parts": duo.parts(),
             "events": events,
         }
     )
     return repair_robot(
-        score, robot, part="robot", keep_tempo=True
+        score, robot, part=duo.bot, keep_tempo=True
     ).score  # the session's beat holds

@@ -16,7 +16,7 @@ PIANO = keyboard_profile()
 
 def test_robot_plan_moves_just_in_time():
     score = make_score(robot=[(1, 1, 1, "C5"), (1, 3, 1, "E5"), (2, 1, 1, "E5")])
-    plan = robot_plan(score, BOTTLES)
+    plan = robot_plan(score, BOTTLES, part="robot")
     first, second, third = plan.commands
     assert first.sound_s == 0 and first.fire_s == pytest.approx(-0.012)
     assert first.move_start_s < first.fire_s
@@ -29,7 +29,7 @@ def test_robot_plan_moves_just_in_time():
 
 def test_robot_plan_refuses_infeasible_scores():
     with pytest.raises(InfeasibleScoreError, match="no bottle"):
-        robot_plan(make_score(robot=[(1, 1, 1, "C#5")]), BOTTLES)
+        robot_plan(make_score(robot=[(1, 1, 1, "C#5")]), BOTTLES, part="robot")
 
 
 def test_led_strip_covers_keyboard():
@@ -49,7 +49,7 @@ def test_led_spans_are_about_two_per_semitone_and_ordered():
 
 def test_led_plan_cues():
     score = make_score(pianist=[(1, 1, 1, "C4"), (1, 3, 2, "E4")], tempo=120)
-    cues = led_plan(score, PIANO)
+    cues = led_plan(score, PIANO, part="pianist")
     kinds = [c.kind for c in cues]
     assert kinds.count("count_in") == 4
     assert kinds.count("now") == 2 and kinds.count("pre") == 2

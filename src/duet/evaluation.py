@@ -40,7 +40,7 @@ def prompt_pack_id(robot: RobotProfile | None = None) -> str:
             "x",
             difficulty=level,
             bars=1,
-            lead="robot",
+            lead="bot",
             pianist_range=("C4", "C5"),
             tempo_bpm=100,
             time_signature=(3, 4),
@@ -99,7 +99,9 @@ def run_case(case: dict, composer_factory: Callable[[], Composer]) -> CaseResult
         repairs=len(result.repairs),
         difficulty_target=request.difficulty,
         difficulty_actual=human_difficulty(result.score),
-        robot_notes=len(result.score.part_events("robot")),
+        robot_notes=sum(
+            len(result.score.part_events(p)) for p in result.score.parts_played_by("bot")
+        ),
         seconds=round(time.monotonic() - started, 2),
     )
 

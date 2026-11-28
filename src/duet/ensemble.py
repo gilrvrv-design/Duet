@@ -16,7 +16,7 @@ from duet.midi_io import TrackNote
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import message_time_us
 from duet.repair import repair_robot
-from duet.score import DuetScore
+from duet.score import DUO, DuetScore
 from duet.timing import bar_and_beat, seconds_per_beat
 
 
@@ -118,7 +118,7 @@ def build_players(
             continue
         track, octave = assignment.parts[instrument.name]
         notes = skyline(tracks[track]) if instrument.is_robot else tracks[track]
-        part = "robot" if instrument.is_robot else "pianist"
+        part = DUO.bot if instrument.is_robot else DUO.human
         events = []
         for n in notes:
             bar, beat = bar_and_beat(n.beat, per_bar)
@@ -146,7 +146,7 @@ def build_players(
         )
         if instrument.is_robot:
             fitted = score.with_events([e for e in score.events if instrument.fits(e.pitch)])
-            score = repair_robot(fitted, instrument.robot, part="robot", keep_tempo=True).score
+            score = repair_robot(fitted, instrument.robot, part=DUO.bot, keep_tempo=True).score
         players.append(Player(instrument, score, devices.get(instrument.name, [])))
     return players
 
@@ -165,7 +165,10 @@ def perform_ensemble(
 
     home_all([d for p in players for d in p.devices])
     silent = _silent_robot(players)
-    plans = {p.instrument.name: robot_plan(p.score, p.instrument.robot or silent) for p in players}
+    plans = {
+        p.instrument.name: robot_plan(p.score, p.instrument.robot or silent, part=DUO.bot)
+        for p in players
+    }
     first = players[0].score
     count_in_s = first.meta.beats_per_bar * seconds_per_beat(first.meta.tempo_bpm)
     preroll = max(

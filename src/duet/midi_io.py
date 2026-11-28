@@ -1,12 +1,14 @@
 """DuetScore <-> MIDI (spec §5.2 FR-S6, FR-S7).
 
-Export writes a Type 1 file: track 0 holds tempo, time signature and markers,
-track 1 the robot part (channel 1), track 2 the pianist part (channel 2).
+Export writes a Type 1 file: track 0 holds tempo, time signature and markers, then one
+track per part, named after it, on its own channel, with its instrument's General MIDI
+program.
 
-Import accepts any MIDI file. Tracks named "robot" / "pianist" are used as is.
-Otherwise the track with the highest average pitch becomes the robot's melody and
-the rest goes to the pianist; a single track is split by taking the top note of
-each onset for the robot (a "skyline" split).
+Import makes a duet for a ``Duo`` (by default the rig's: a bot on the bottles, a human
+at the piano). Tracks named after the duo's parts are used as is. Otherwise the track
+with the highest average pitch becomes the bot's melody and the rest goes to the human;
+a single track is split by taking the top note of each onset for the bot (a "skyline"
+split).
 """
 
 from __future__ import annotations
@@ -18,12 +20,19 @@ from pathlib import Path
 
 import mido
 
-from duet.score import COMMON_TIME, DuetScore, Event, PartName, clamp_tempo
+from duet.instruments import instrument
+from duet.score import COMMON_TIME, DUO, DuetScore, Duo, Event, PartName, clamp_tempo
 from duet.timing import bar_and_beat, beat_index
 
 TICKS_PER_QUARTER = 480
-CHANNELS: dict[PartName, int] = {"robot": 0, "pianist": 1}
-PROGRAMS: dict[PartName, int] = {"robot": 13, "pianist": 0}  # GM xylophone, grand piano
+DRUMS = 9  # General MIDI's percussion channel: never a part's
+
+
+def _channels(parts: list[str]) -> dict[str, int]:
+    usable = [ch for ch in range(16) if ch != DRUMS]
+    if len(parts) > len(usable):
+        raise ValueError(f"MIDI has {len(usable)} channels for parts; the score has {len(parts)}")
+    return dict(zip(parts, usable, strict=False))
 
 
 def _ticks_per_beat(score_unit: int) -> int:
@@ -63,11 +72,11 @@ def score_to_midi(score: DuetScore) -> mido.MidiFile:
         meta.append((tick, 1, mido.MetaMessage("marker", text=f"lead:{turn.lead}")))
     midi.tracks.append(_track_from_abs(meta))
 
-    for part in ("robot", "pianist"):
-        ch = CHANNELS[part]
+    for part, ch in _channels(list(score.parts)).items():
+        program = instrument(score.parts[part].instrument).midi_program
         msgs: list = [
             (0, 0, mido.MetaMessage("track_name", name=part)),
-            (0, 0, mido.Message("program_change", channel=ch, program=PROGRAMS[part])),
+            (0, 0, mido.Message("program_change", channel=ch, program=program)),
         ]
         for e in score.part_events(part):
             start = round(beat_index(e.bar, e.beat, beats) * tpb)
@@ -158,11 +167,11 @@ def _read_notes(midi: mido.MidiFile, warnings: list[str] | None = None):
     return notes, names, tempo, signature
 
 
-def _assign_parts(notes: list[_Note], names: dict[int, str]) -> dict[int, PartName]:
+def _assign_parts(notes: list[_Note], names: dict[int, str], duo: Duo) -> dict[int, PartName]:
     tracks = sorted({n.track for n in notes})
-    named = {t: names[t] for t in tracks if names.get(t) in ("robot", "pianist")}
+    named = {t: names[t] for t in tracks if names.get(t) in (duo.bot, duo.human)}
     if named:
-        return {t: named.get(t, "pianist") for t in tracks}
+        return {t: named.get(t, duo.human) for t in tracks}
     if len(tracks) == 1:
         return {}
     mean = {
@@ -170,10 +179,10 @@ def _assign_parts(notes: list[_Note], names: dict[int, str]) -> dict[int, PartNa
         for t in tracks
     }
     melody = max(tracks, key=lambda t: mean[t])
-    return {t: "robot" if t == melody else "pianist" for t in tracks}
+    return {t: duo.bot if t == melody else duo.human for t in tracks}
 
 
-def _skyline(notes: list[_Note]) -> dict[_Note, PartName]:
+def _skyline(notes: list[_Note], duo: Duo) -> dict[_Note, PartName]:
     by_onset: dict[int, list[_Note]] = defaultdict(list)
     for n in notes:
         by_onset[n.start].append(n)
@@ -181,18 +190,24 @@ def _skyline(notes: list[_Note]) -> dict[_Note, PartName]:
     for group in by_onset.values():
         top = max(group, key=lambda n: n.pitch)
         for n in group:
-            parts[n] = "robot" if n is top else "pianist"
+            parts[n] = duo.bot if n is top else duo.human
     return parts
 
 
 def midi_to_score(
-    source: Source, title: str | None = None, quantize_beats: float | None = None
+    source: Source,
+    title: str | None = None,
+    quantize_beats: float | None = None,
+    duo: Duo = DUO,
 ) -> DuetScore:
-    return read_midi(source, title, quantize_beats)[0]
+    return read_midi(source, title, quantize_beats, duo)[0]
 
 
 def read_midi(
-    source: Source, title: str | None = None, quantize_beats: float | None = None
+    source: Source,
+    title: str | None = None,
+    quantize_beats: float | None = None,
+    duo: Duo = DUO,
 ) -> tuple[DuetScore, list[str]]:
     """The score, and what the import had to ignore or change to make it."""
     warnings: list[str] = []
@@ -201,8 +216,8 @@ def read_midi(
     tpb = midi.ticks_per_beat * 4 / unit
     tempo_bpm = _bpm(tempo_us, unit)
 
-    by_track = _assign_parts(notes, names)
-    part_of = {n: by_track[n.track] for n in notes} if by_track else _skyline(notes)
+    by_track = _assign_parts(notes, names, duo)
+    part_of = {n: by_track[n.track] for n in notes} if by_track else _skyline(notes, duo)
 
     def to_beats(ticks: int) -> float:
         value = ticks / tpb
@@ -227,7 +242,9 @@ def read_midi(
     meta = {"tempo_bpm": allowed, "time_signature": (beats, unit)}
     if title:
         meta["title"] = title
-    score = DuetScore.model_validate({"meta": meta, "events": [e.model_dump() for e in events]})
+    score = DuetScore.model_validate(
+        {"meta": meta, "parts": duo.parts(), "events": [e.model_dump() for e in events]}
+    )
     return score, warnings
 
 

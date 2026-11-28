@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 from duet.pitch import name_to_midi
-from duet.score import PARTS, DuetScore
+from duet.score import DuetScore
 
 MATCH = 7  # consecutive matching intervals that make a melody recognisable
 REVIEW = 5  # shorter runs worth a person's look
@@ -111,7 +111,7 @@ class CopyrightGuard:
 
     def check(self, score: DuetScore) -> Verdict:
         verdict = Verdict()
-        for part in PARTS:
+        for part in score.parts:
             line = melody_line(score, part)
             intervals = tuple(b - a for a, b in zip(line, line[1:], strict=False))
             for melody in self.melodies:

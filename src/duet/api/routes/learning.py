@@ -50,7 +50,7 @@ class LessonOptions(BaseModel):
 
 def graded(score: DuetScore, take: Take) -> tuple[Report, dict]:
     played = [PlayedNote(round(p.t_ms * 1000), p.pitch, p.velocity) for p in take.played]
-    report = grade_take(score, played)
+    report = grade_take(score, played, score.part_played_by("human"))
     return report, {
         "accuracy": round(report.accuracy, 3),
         "results": [g.result for g in report.grades],

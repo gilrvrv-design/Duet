@@ -8,6 +8,7 @@ from duet.compose.prompts import difficulty_rules, system_prompt
 from duet.compose.service import CompositionError
 from duet.feasibility import check_robot
 from duet.profile import robot_profile
+from duet.score import Duo
 from helpers import GOOD, REQUEST, TOO_FAST, ScriptedComposer, draft
 
 
@@ -83,17 +84,14 @@ def test_draft_round_trip_and_errors():
         draft_to_score("[]", prompt="p", difficulty=1, pianist_range=("C4", "C5"))
 
 
-def test_drafts_name_the_profiles_they_were_composed_for():
-    score, _ = draft_to_score(
-        GOOD,
-        prompt="p",
-        difficulty=1,
-        pianist_range=("C4", "C5"),
-        robot_profile_id="glock-v1",
-        keyboard_profile_id="piano-61",
-    )
-    assert score.parts["robot"].instrument == "glock-v1"
-    assert score.parts["pianist"].instrument == "piano-61"
+def test_drafts_are_written_for_a_duo():
+    """The draft's two voices become the duo's parts, on the duo's instruments."""
+    duo = Duo(bot="bells", bot_instrument="glock-v1", human="me", human_instrument="piano-61")
+    score, _ = draft_to_score(GOOD, prompt="p", difficulty=1, pianist_range=("C4", "C5"), duo=duo)
+    assert score.parts["bells"].instrument == "glock-v1"
+    assert score.parts["bells"].performer == "bot"
+    assert score.parts["me"].instrument == "piano-61"
+    assert {e.part for e in score.events} == {"bells", "me"}
 
 
 def test_schema_is_strict_friendly():

@@ -240,9 +240,13 @@ classDiagram
 
 - Scores are **immutable** (frozen pydantic models). Every change makes a new score.
 - Each part names an **instrument** (`duet.instruments`) and its **performer**: a bot or
-  a human. Version-1 files (exactly "robot" and "pianist", with `instrument_profile`)
-  are read as version 2. Until step 1e of `docs/design/esp-first.md`, a score has those
-  two parts; the rule is checked when a score is made.
+  a human (`duet.performers`), which owns the rule for what it can play. Version-1 files
+  (exactly "robot" and "pianist", with `instrument_profile`) are read as version 2.
+- Code never asks for "the robot part". Things that make a duet (the composer, MIDI
+  import, the arranger, call and response) make it for a `Duo` (part names and
+  instruments as data); features made for duets (swap, teaching a part, live playing
+  until step 1e) ask for `score.part_played_by("bot")`, which says clearly when a score
+  is not a duet.
 - Pitches are stored as MIDI numbers and written as names (`"E5"`), so JSON stays readable.
 - `timing` is the only module that turns bars and beats into seconds.
 - Claude never writes a DuetScore directly. It writes a smaller, strict **draft** JSON

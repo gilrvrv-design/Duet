@@ -21,6 +21,7 @@ notes:
   - { name: B7, hz: 3951.07 }
   - { name: C8, hz: 4186.01 }
 sound: { decay_ms: 2500, partials: [1.0, 2.76, 5.40] }
+midi_program: 9  # General MIDI glockenspiel
 bot:
   mechanism: carriage_striker
   positions: [1200, 4400, 7600, 10800, 14000, 17200, 20400, 23600, 26800, 30000, 33200, 36400, 39600, 42800, 46000]

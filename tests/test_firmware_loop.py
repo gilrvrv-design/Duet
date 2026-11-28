@@ -133,7 +133,7 @@ def test_the_firmware_plays_a_score_on_time(device_url):
         assert gateway.limits.travel_steps == 48000
         perf = perform(score, robot, keyboard_profile(), [gateway], VirtualClock(hub_now_us()))
         gateway.wait_acked()
-        planned = [p for p in perf.planned if p.part == "robot"]
+        planned = [p for p in perf.planned if p.performer == "bot"]
         deadline = time.monotonic() + (planned[-1].t_us - hub_now_us()) / 1e6 + 5
         while len(strikes(gateway)) < len(planned) and time.monotonic() < deadline:
             time.sleep(0.05)

@@ -29,7 +29,7 @@ def test_simulated_performance_plays_every_note_on_time():
     perf = perform(score, BOTTLES, PIANO, [rig], VirtualClock())
     rig.run()
     assert rig.faults == []
-    robot_planned = [p for p in perf.planned if p.part == "robot"]
+    robot_planned = [p for p in perf.planned if p.performer == "bot"]
     assert [s.pitch for s in rig.sounds] == [p.pitch for p in robot_planned]
     assert all(abs(s.t_us - p.t_us) <= 1 for s, p in zip(rig.sounds, robot_planned, strict=True))
     assert perf.states == [

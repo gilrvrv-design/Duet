@@ -21,6 +21,7 @@ from duet.compose.service import Composer
 from duet.copyright import CopyrightGuard
 from duet.jobs import JobRunner
 from duet.library import seed_featured
+from duet.score import LineUpError
 from duet.storage import NotFound, Store
 
 
@@ -62,6 +63,10 @@ def create_app(
     @app.exception_handler(Problem)
     async def _problem(_: Request, exc: Problem):
         return problem_response(exc)
+
+    @app.exception_handler(LineUpError)
+    async def _line_up(_: Request, exc: LineUpError):
+        return problem_response(Problem("LINE_UP_INVALID", str(exc)))
 
     @app.exception_handler(NotFound)
     async def _not_found(_: Request, exc: NotFound):

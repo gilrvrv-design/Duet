@@ -24,7 +24,7 @@ from duet.pitch import (
 )
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.repair import Change, repair_robot
-from duet.score import DuetScore
+from duet.score import DuetScore, Duo
 
 BEATS_PER_BAR = 4
 # Diatonic triads used for simple accompaniment: (root offset from tonic, is minor).
@@ -155,6 +155,7 @@ def arrange(
 ) -> Arrangement:
     robot = robot or robot_profile()
     keyboard = keyboard or keyboard_profile()
+    duo = Duo(bot_instrument=robot.id, human_instrument=keyboard.id)
     melody = melody_track(t)
     pitches = [n.pitch for n in melody]
     before = coverage(pitches, robot.pitches)
@@ -179,7 +180,7 @@ def arrange(
         bar, beat = int(start // BEATS_PER_BAR) + 1, start % BEATS_PER_BAR + 1
         events.append(
             {
-                "part": "robot",
+                "part": duo.bot,
                 "bar": bar,
                 "beat": round(beat, 6),
                 "dur": dur,
@@ -193,7 +194,7 @@ def arrange(
     _, tonic, mode = estimate_key(moved + backing)
     chords = _bar_chords(harmony, tonic, mode, bars)
     low, high = (name_to_midi(p) for p in pianist_range)
-    events += _pianist_part(chords, difficulty, low, high)
+    events += _pianist_part(duo.human, chords, difficulty, low, high)
 
     key_name = estimate_key(moved + backing)[0]
     score = DuetScore.model_validate(
@@ -206,20 +207,11 @@ def arrange(
                 "difficulty_target": difficulty,
                 "style_tags": ["transcribed"],
             },
-            "parts": {
-                "robot": {"instrument": robot.id, "performer": "bot", "role": "melody"},
-                "pianist": {
-                    "instrument": keyboard.id,
-                    "performer": "human",
-                    "role": "accompaniment",
-                    "hand": "left",
-                    "range": list(pianist_range),
-                },
-            },
+            "parts": duo.parts(human_range=pianist_range, hand="left"),
             "events": events,
         }
     )
-    repaired = repair_robot(score, robot, part="robot")
+    repaired = repair_robot(score, robot, part=duo.bot)
     return Arrangement(
         score=repaired.score,
         transpose=shift,
@@ -231,7 +223,7 @@ def arrange(
     )
 
 
-def _pianist_part(chords, difficulty: int, low: int, high: int) -> list[dict]:
+def _pianist_part(part: str, chords, difficulty: int, low: int, high: int) -> list[dict]:
     """Simple accompaniment with smooth voice leading (each note is the chord tone nearest
     the previous one).
 
@@ -256,7 +248,7 @@ def _pianist_part(chords, difficulty: int, low: int, high: int) -> list[dict]:
         previous = notes[-1][2][0]
         for beat, dur, pitches in notes:
             events += [
-                {"part": "pianist", "bar": bar, "beat": beat, "dur": dur, "pitch": p, "vel": 70}
+                {"part": part, "bar": bar, "beat": beat, "dur": dur, "pitch": p, "vel": 70}
                 for p in pitches
             ]
     return events

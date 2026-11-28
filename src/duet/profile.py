@@ -53,6 +53,7 @@ class RobotProfile(_Model):
     striker: Striker
     sound: Sound
     calibration: CalibrationInfo | None = None
+    midi_program: int = 0
     # How far a bottle may sound from its name and still play that note. Calibration
     # renames a bottle that drifts further (calibration.RENAME_CENTS).
     tolerance_cents: float = Field(50.0, gt=0, le=100)
@@ -92,6 +93,7 @@ class RobotProfile(_Model):
             striker=inst.bot.striker,
             sound=inst.sound,
             calibration=inst.calibration,
+            midi_program=inst.midi_program,
             tolerance_cents=inst.tolerance_cents,
         )
 
@@ -101,6 +103,7 @@ class RobotProfile(_Model):
             name=self.name,
             notes=tuple(Note(name=b.midi, hz=b.hz) for b in self.notes),
             sound=self.sound,
+            midi_program=self.midi_program,
             tolerance_cents=self.tolerance_cents,
             calibration=self.calibration,
             bot=CarriageStriker(
@@ -141,6 +144,7 @@ class KeyboardProfile(_Model):
     low: Pitch
     high: Pitch
     led: Led
+    midi_program: int = 0
 
     @classmethod
     def from_instrument(cls, inst: Instrument) -> KeyboardProfile:
@@ -152,6 +156,7 @@ class KeyboardProfile(_Model):
             name=inst.name,
             low=inst.range[0],
             high=inst.range[1],
+            midi_program=inst.midi_program,
             led=Led(
                 leds_per_m=g.leds_per_m, white_key_mm=g.white_key_mm, first_led_mm=g.first_led_mm
             ),
@@ -160,7 +165,11 @@ class KeyboardProfile(_Model):
     def to_instrument(self) -> Instrument:
         guide = LedStrip(guide="led_strip", **self.led.model_dump())
         return Instrument(
-            id=self.id, name=self.name, range=(self.low, self.high), human=HumanPlay(guide=guide)
+            id=self.id,
+            name=self.name,
+            range=(self.low, self.high),
+            midi_program=self.midi_program,
+            human=HumanPlay(guide=guide),
         )
 
     def contains(self, midi: int) -> bool:

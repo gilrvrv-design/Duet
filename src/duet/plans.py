@@ -43,12 +43,15 @@ class RobotPlan:
     preroll_s: float  # time needed before bar 1 to reach the first bottle from home
 
 
-def robot_plan(score: DuetScore, profile: RobotProfile, start_steps: int = HOME_STEPS) -> RobotPlan:
-    """``start_steps``: where the carriage is now (home, or where the last piece ended)."""
-    report = check_robot(score, profile, part="robot")
+def robot_plan(
+    score: DuetScore, profile: RobotProfile, start_steps: int = HOME_STEPS, *, part: str
+) -> RobotPlan:
+    """The carriage-striker's commands for a bot's ``part``. ``start_steps``: where the
+    carriage is now (home, or where the last piece ended)."""
+    report = check_robot(score, profile, part=part)
     if not report.ok:
         raise InfeasibleScoreError(report.feedback())
-    strikes, _ = robot_strikes(score, profile, part="robot")
+    strikes, _ = robot_strikes(score, profile, part=part)
     latency = profile.striker.latency_ms / 1000
     commands = []
     position = start_steps
@@ -111,7 +114,10 @@ def led_plan(
     keyboard: KeyboardProfile,
     lead_beats: float = 1.0,
     count_in_bars: int = 1,
+    *,
+    part: str,
 ) -> list[LedCue]:
+    """The light cues guiding a human through ``part`` on a keyboard, after a count-in."""
     spb = seconds_per_beat(score.meta.tempo_bpm)
     cues = []
     total = led_count(keyboard)
@@ -119,7 +125,7 @@ def led_plan(
     for i in range(beats):
         on = (i - beats) * spb
         cues.append(LedCue(on, on + spb / 2, 0, total, COUNT_IN, "count_in"))
-    for t in timed_events(score, "pianist"):
+    for t in timed_events(score, part):
         first, count = led_span(t.event.pitch, keyboard)
         pre_on = max(t.start_s - lead_beats * spb, -beats * spb)
         if pre_on < t.start_s:

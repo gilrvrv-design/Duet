@@ -1,3 +1,5 @@
+import pytest
+
 from duet.listening import Expected, Grade, Report
 from duet.pedagogy import SkillModel, note_features, teach_song
 from helpers import make_score
@@ -10,7 +12,7 @@ def report(score, results):
         Grade(Expected(round(t.start_s * 1e6), t.event.pitch, t.event.bar), r)
         for t, r in zip(timed_events(score, "pianist"), results, strict=True)
     ]
-    return Report(grades, [])
+    return Report(grades, [], part="pianist")
 
 
 EASY = make_score(pianist=[(b, 1, 4, "C4") for b in range(1, 9)], tempo=60)
@@ -25,7 +27,7 @@ JUMPY = make_score(
 
 
 def test_note_features():
-    feats = note_features(JUMPY)
+    feats = note_features(JUMPY, "pianist")
     assert feats[0] == {"steps"}
     assert "jump7" in feats[1]  # C4 -> G4
     assert "black_keys" in feats[2]  # F#4
@@ -33,7 +35,7 @@ def test_note_features():
     chords = make_score(
         pianist=[(1, 1, 2, "C4"), (1, 1, 2, "E4"), (1, 1, 2, "G4"), (1, 2.5, 1, "D4")]
     )
-    feats = note_features(chords)
+    feats = note_features(chords, "pianist")
     assert all("big_chords" in f for f in feats[:3]) and "offbeats" in feats[3]
 
 
@@ -80,7 +82,7 @@ def test_composition_request_carries_the_focus():
         "x",
         difficulty=3,
         bars=4,
-        lead="robot",
+        lead="bot",
         pianist_range=("C4", "C5"),
         tempo_bpm=None,
         time_signature=None,
@@ -132,3 +134,8 @@ def test_cli_teach(tmp_path, capsys):
         "03-level2-70pct.json",
         "04-level2-100pct.json",
     ]
+
+
+def test_a_skill_comes_from_a_graded_part():
+    with pytest.raises(ValueError, match="grading a part"):
+        SkillModel().update(EASY, Report([], []))

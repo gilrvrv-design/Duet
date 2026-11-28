@@ -10,11 +10,11 @@ import math
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from duet.difficulty import clamp_level, pianist_difficulty, pianist_stats, rules_for
-from duet.feasibility import check_robot, max_speed_up
+from duet.difficulty import clamp_level, pianist_stats, rules_for
+from duet.feasibility import max_speed_up
+from duet.performers import Bot, human_difficulty, performer, performers
 from duet.pitch import best_transpose, is_black_key
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
-from duet.repair import repair_robot
 from duet.score import DuetScore, Event, clamp_tempo
 
 if TYPE_CHECKING:
@@ -34,28 +34,29 @@ def is_built_in(instruction: str) -> bool:
     return instruction.strip().lower() in BUILT_IN
 
 
-BEGINNER_RANGE = (48, 84)  # C3..C6, when a score does not give the pianist's range
+BEGINNER_RANGE = (48, 84)  # C3..C6, when a score does not give a human part's range
 
 
-def change_tempo(score: DuetScore, factor: float, robot: RobotProfile) -> DuetScore:
-    """Scale the tempo; when speeding up, never beyond what the robot can play."""
+def change_tempo(score: DuetScore, factor: float, bots: list[Bot]) -> DuetScore:
+    """Scale the tempo; when speeding up, never beyond what every bot can play."""
     if factor > 1:
-        factor = min(factor, max_speed_up(score, robot, part="robot"))
+        for bot in bots:
+            factor = min(factor, max_speed_up(score, bot.profile, part=bot.part))
         tempo = math.floor(score.meta.tempo_bpm * factor * 10) / 10  # round toward safe
     else:
         tempo = round(score.meta.tempo_bpm * factor, 1)
     return score.with_tempo(clamp_tempo(tempo))
 
 
-def simplify_pianist(score: DuetScore, target_level: int, keyboard: KeyboardProfile) -> DuetScore:
-    """Make the pianist part fit ``target_level`` using that level's own rules: chords
+def simplify_part(score: DuetScore, part: str, target_level: int) -> DuetScore:
+    """Make a human's ``part`` fit ``target_level`` using that level's own rules: chords
     shrink to their top notes, offbeats move to the beat, black keys become the white key
     below, jumps shrink (nearest octave, then the nearest allowed key in the same
     direction, inside the part's range), and dense passages keep their strong beats."""
     rules = rules_for(target_level)
-    low, high = score.parts["pianist"].range or BEGINNER_RANGE
-    events = sorted(score.part_events("pianist"), key=lambda e: (e.bar, e.beat, -e.pitch))
-    robot = [e for e in score.events if e.part == "robot"]
+    low, high = score.parts[part].range or BEGINNER_RANGE
+    events = sorted(score.part_events(part), key=lambda e: (e.bar, e.beat, -e.pitch))
+    others = [e for e in score.events if e.part != part]
 
     # Order matters: thinning removes notes, which can make jumps bigger, so jumps go last.
     events = _limit_chords(events, rules.max_polyphony)
@@ -69,13 +70,13 @@ def simplify_pianist(score: DuetScore, target_level: int, keyboard: KeyboardProf
     ]
     for keep in keepers:
         if (
-            pianist_stats(score.with_events(robot + events), part="pianist").notes_per_s
+            pianist_stats(score.with_events(others + events), part=part).notes_per_s
             <= rules.max_notes_per_s
         ):
             break
         events = [e for e in events if keep(e)] or events[:1]
     events = _shrink_jumps(events, rules.max_jump, low, high, rules.black_keys)
-    return score.with_events(robot + events)
+    return score.with_events(others + events)
 
 
 def _limit_chords(events: list[Event], keep: int) -> list[Event]:
@@ -139,20 +140,20 @@ def _shrink_jumps(events, max_jump: int, low: int, high: int, black_ok: bool) ->
     return out
 
 
-def swap_parts(score: DuetScore, robot: RobotProfile, keyboard: KeyboardProfile) -> DuetScore:
-    """The robot takes the pianist's part and the pianist takes the robot's, each moved
-    to where its new instrument can play it."""
-    old_pianist = score.part_events("pianist")
-    old_robot = score.part_events("robot")
-    shift_robot = best_transpose([e.pitch for e in old_pianist], robot.pitches)
-    low, high = score.parts["pianist"].range or (keyboard.low, keyboard.high)
+def swap_parts(score: DuetScore, bot: Bot, keyboard: KeyboardProfile) -> DuetScore:
+    """In a duet, the bot takes the human's notes and the human takes the bot's, each
+    moved to where its instrument can play them."""
+    human = score.part_played_by("human")
+    old_human = score.part_events(human)
+    old_bot = score.part_events(bot.part)
+    shift_bot = best_transpose([e.pitch for e in old_human], bot.instrument.pitches)
+    low, high = score.parts[human].range or (keyboard.low, keyboard.high)
     middle = (low + high) / 2
-    melody = [e.pitch for e in old_robot] or [middle]
-    shift_piano = 12 * round((middle - sum(melody) / len(melody)) / 12)
-    events = [e.revised({"part": "robot", "pitch": e.pitch + shift_robot}) for e in old_pianist]
-    events += [e.revised({"part": "pianist", "pitch": e.pitch + shift_piano}) for e in old_robot]
-    swapped = score.with_events(events)
-    return repair_robot(swapped, robot, part="robot").score
+    melody = [e.pitch for e in old_bot] or [middle]
+    shift_human = 12 * round((middle - sum(melody) / len(melody)) / 12)
+    events = [e.revised({"part": bot.part, "pitch": e.pitch + shift_bot}) for e in old_human]
+    events += [e.revised({"part": human, "pitch": e.pitch + shift_human}) for e in old_bot]
+    return bot.repair(score.with_events(events)).score
 
 
 def vary(
@@ -169,32 +170,39 @@ def vary(
     ``robot``, ``keyboard`` and ``difficulty``."""
     robot = robot or robot_profile()
     keyboard = keyboard or keyboard_profile()
+    in_use = {robot.id: robot.to_instrument(), keyboard.id: keyboard.to_instrument()}
+    bots = [p for p in performers(score, in_use) if isinstance(p, Bot)]
     word = instruction.strip().lower()  # see is_built_in
     if word == "slower":
-        new = change_tempo(score, SLOWER, robot)
+        new = change_tempo(score, SLOWER, bots)
         return new, f"tempo {score.meta.tempo_bpm:g} -> {new.meta.tempo_bpm:g} bpm"
     if word == "faster":
-        new = change_tempo(score, FASTER, robot)
+        new = change_tempo(score, FASTER, bots)
         return new, f"tempo {score.meta.tempo_bpm:g} -> {new.meta.tempo_bpm:g} bpm"
     if word == "easier":
-        before = pianist_difficulty(score, part="pianist")
+        before = human_difficulty(score)
         target = clamp_level(before - 1)
-        new = simplify_pianist(score, target, keyboard)
+        new = score
+        for part in score.parts_played_by("human"):
+            new = simplify_part(new, part, target)
         new = new.revised({"meta": new.meta.revised({"difficulty_target": target})})
-        return new, f"pianist level {before} -> {pianist_difficulty(new, part='pianist')}"
+        return new, f"level {before} -> {human_difficulty(new)}"
     if word == "swap":
-        return swap_parts(score, robot, keyboard), "robot and pianist swapped parts"
+        bot = performer(score, score.part_played_by("bot"), in_use)
+        human = score.part_played_by("human")
+        return swap_parts(score, bot, keyboard), f"{bot.part} and {human} swapped parts"
     if edit is None:
         raise VariationError(
             f"{instruction!r} needs the composer (built in: {', '.join(BUILT_IN)})"
         )
     target = None
     if word == "harder":
-        target = clamp_level(pianist_difficulty(score, part="pianist") + 1)
-        instruction = f"make the pianist part a little harder (level {target})"
+        target = clamp_level(human_difficulty(score) + 1)
+        instruction = f"make the human part a little harder (level {target})"
     result = edit(score, instruction, robot=robot, keyboard=keyboard, difficulty=target)
-    if not check_robot(result.score, robot, part="robot").ok:
-        raise VariationError("the edited duet is not playable by the robot")
+    unplayable = [b.part for b in bots if b.problems(result.score)]
+    if unplayable:
+        raise VariationError(f"the edited duet is not playable by the bot: {unplayable}")
     return result.score, result.explanation or instruction
 
 

@@ -66,11 +66,11 @@ With an acoustic piano, add `--mic` (needs `pip install sounddevice`); the liste
 duet play examples/rain-on-the-bottles.json --sim --wait --mic
 ```
 
-Play one part alone: `--only robot` for the bottles solo, `--only piano` to practise
+Play one part alone: `--only robot` for the bottles solo, `--only pianist` to practise
 your part with the light guide (and grading, in wait or follow mode):
 
 ```bash
-duet play examples/rain-on-the-bottles.json --sim --only piano --wait
+duet play examples/rain-on-the-bottles.json --sim --only pianist --wait
 ```
 
 Play without a PC: store a song on the rig once, then press its play button. The Hub

@@ -17,7 +17,7 @@ from duet.feasibility import DEFAULT_MARGIN_S, Report, check_robot
 from duet.instruments import Instrument, instrument
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.repair import RepairResult, repair_robot
-from duet.score import MIN_LEVEL, DuetScore
+from duet.score import MIN_LEVEL, DuetScore, LineUpError
 
 NO_OVERRIDES: Mapping[str, Instrument] = MappingProxyType({})
 
@@ -69,7 +69,15 @@ def performer(score: DuetScore, part: str, instruments: Instruments = NO_OVERRID
     """The part's performer, on the instrument in use: ``instruments`` (say, a rig's
     calibrated bottles) before the built-in one with the same id."""
     info = score.parts[part]
-    inst = instruments.get(info.instrument) or instrument(info.instrument)
+    try:
+        inst = instruments.get(info.instrument) or instrument(info.instrument)
+    except KeyError:
+        raise LineUpError(f"part {part!r}: unknown instrument {info.instrument!r}") from None
+    if info.performer not in inst.performers:
+        raise LineUpError(
+            f"part {part!r}: {inst.name} cannot be played by a {info.performer} "
+            f"(it can by: {', '.join(inst.performers)})"
+        )
     if info.performer == "bot":
         return Bot(part, inst)
     return Human(part, inst, score.meta.difficulty_target)

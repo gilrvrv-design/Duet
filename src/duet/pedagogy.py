@@ -43,9 +43,10 @@ FEATURE_WORDS = {
 }
 
 
-def note_features(score: DuetScore) -> list[set[str]]:
-    """The features each pianist note exercises, in time order (matches grading order)."""
-    timed = timed_events(score, "pianist")
+def note_features(score: DuetScore, part: str) -> list[set[str]]:
+    """The features each note of a human's part exercises, in time order (matches
+    grading order)."""
+    timed = timed_events(score, part)
     size = {id(t): len(group) for group in onset_groups(timed) for t in group}
     features = []
     prev_pitch, prev_start = None, None
@@ -95,10 +96,14 @@ class SkillModel(BaseModel):
     performances: int = 0
 
     def update(self, score: DuetScore, report: Report) -> list[str]:
-        """Learn from one graded performance; returns features newly mastered."""
+        """Learn from one graded performance of a part (``report.part``); returns features
+        newly mastered."""
+        if report.part is None:
+            raise ValueError("a skill comes from grading a part of a score: use grade_take")
         before = {k for k, s in self.skills.items() if s.known}
         # Grades and features are both in (time, pitch) order, so they line up.
-        for grade_, features in zip(report.grades, note_features(score), strict=False):
+        features_by_note = note_features(score, report.part)
+        for grade_, features in zip(report.grades, features_by_note, strict=False):
             ok = grade_.result in ("hit", "early", "late")
             for feature in features:
                 skill = self.skills.setdefault(feature, Skill())

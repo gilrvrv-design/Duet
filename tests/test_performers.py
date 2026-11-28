@@ -1,3 +1,5 @@
+import pytest
+
 from duet.instruments import Instrument, instrument
 from duet.performers import (
     Bot,
@@ -8,6 +10,7 @@ from duet.performers import (
     repair_bots,
     score_problems,
 )
+from duet.score import LineUpError
 from helpers import make_score
 
 PLAYABLE = make_score(robot=[(1, 1, 1, "C5"), (1, 3, 1, "E5")], pianist=[(1, 1, 4, "C4")])
@@ -45,3 +48,10 @@ def test_the_instruments_in_use_come_before_the_built_in_ones():
     assert performer(PLAYABLE, "robot", in_use).instrument == calibrated
     assert score_problems(PLAYABLE)["robot"] == []
     assert "no bottle for C5" in score_problems(PLAYABLE, in_use)["robot"][0]
+
+
+def test_a_performer_the_instrument_cannot_have_is_refused():
+    data = PLAYABLE.to_dict()
+    data["parts"]["robot"]["performer"] = "human"  # nobody plays bottles by hand yet
+    with pytest.raises(LineUpError, match="cannot be played by a human"):
+        performers(PLAYABLE.revised({"parts": data["parts"]}))

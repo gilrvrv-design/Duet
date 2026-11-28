@@ -120,7 +120,7 @@ def test_performance_over_the_socket_lands_on_time(device):
         assert gateway.errors == []
     sim.rig.run()
     assert sim.rig.faults == []
-    planned = [p for p in perf.planned if p.part == "robot"]
+    planned = [p for p in perf.planned if p.performer == "bot"]
     heard = [s.t_us - sim.clock_offset_us for s in sim.rig.sounds]  # back to Hub time
     assert len(heard) == len(planned) == 9
     worst = max(abs(h - p.t_us) for h, p in zip(heard, planned, strict=True))

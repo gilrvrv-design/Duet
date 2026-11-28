@@ -17,7 +17,7 @@ from duet.listening import KeyInput
 from duet.plans import HOME_STEPS, LedCue, RobotPlan, led_plan, robot_plan
 from duet.profile import KeyboardProfile, RobotProfile
 from duet.protocol import Home, LedFrameAt, Message, MoveAt, StrikeAt, message_time_us
-from duet.score import DuetScore
+from duet.score import DuetScore, Performer
 from duet.timing import seconds_per_beat, timed_events
 
 OFF = (0, 0, 0)
@@ -67,6 +67,7 @@ class VirtualClock:
 @dataclass(frozen=True)
 class PlannedNote:
     part: str
+    performer: Performer
     t_us: int
     pitch: int
     bar: int = 0
@@ -87,7 +88,7 @@ class Performance:
     def expected_pianist(self):
         from duet.listening import Expected
 
-        return [Expected(p.t_us, p.pitch, p.bar) for p in self.planned if p.part == "pianist"]
+        return [Expected(p.t_us, p.pitch, p.bar) for p in self.planned if p.performer == "human"]
 
 
 def home_all(devices: list[Device], timeout_s: float = 30.0) -> None:
@@ -109,13 +110,15 @@ def build_messages(
     count_in: bool = True,
     plan: RobotPlan | None = None,
 ) -> tuple[list[Message], list[PlannedNote]]:
-    """All device messages for one performance, sorted by time. Pass ``plan`` when it
-    was already made from the same score, robot and start position."""
+    """All device messages for one performance of a duet (one bot part, one human part),
+    sorted by time. Pass ``plan`` when it was already made from the same score, robot
+    and start position."""
+    bot, human = score.part_played_by("bot"), score.part_played_by("human")
 
     def us(seconds: float) -> int:
         return start_us + round(seconds * 1_000_000)
 
-    plan = plan or robot_plan(score, robot, start_steps)
+    plan = plan or robot_plan(score, robot, start_steps, part=bot)
     kin = robot.kinematics
     spb = seconds_per_beat(score.meta.tempo_bpm)
     messages: list[Message] = []
@@ -127,12 +130,12 @@ def build_messages(
             )
         messages.append(StrikeAt(us(cmd.fire_s), cmd.pulse_us))
         bar = 1 + int(cmd.sound_s / spb // score.meta.beats_per_bar)
-        planned.append(PlannedNote("robot", us(cmd.sound_s), robot.pitches[cmd.bottle], bar))
-    for cue in led_plan(score, keyboard, count_in_bars=1 if count_in else 0):
+        planned.append(PlannedNote(bot, "bot", us(cmd.sound_s), robot.pitches[cmd.bottle], bar))
+    for cue in led_plan(score, keyboard, count_in_bars=1 if count_in else 0, part=human):
         messages.extend(_led_messages(cue, us))
     planned += [
-        PlannedNote("pianist", us(t.start_s), t.event.pitch, t.event.bar)
-        for t in timed_events(score, "pianist")
+        PlannedNote(human, "human", us(t.start_s), t.event.pitch, t.event.bar)
+        for t in timed_events(score, human)
     ]
     messages.sort(key=message_time_us)
     numbered = [replace(m, seq=i) for i, m in enumerate(messages)]
@@ -176,7 +179,7 @@ def perform(
     if home:
         home_all(devices, homing_timeout_s)
         start_steps = HOME_STEPS
-    plan = robot_plan(score, robot, start_steps)
+    plan = robot_plan(score, robot, start_steps, part=score.part_played_by("bot"))
     count_in_s = (
         score.meta.beats_per_bar * seconds_per_beat(score.meta.tempo_bpm) if count_in else 0
     )
@@ -292,7 +295,8 @@ def _follow(perf, messages, score, robot, sender, clock, keys) -> Performance:
     from duet.follow import Follower
 
     follower = Follower(
-        perf.expected_pianist(), min_rate=1 / max_speed_up(score, robot, part="robot")
+        perf.expected_pianist(),
+        min_rate=1 / max_speed_up(score, robot, part=score.part_played_by("bot")),
     )
     begin = getattr(keys, "begin", None)
     if begin is not None:  # a simulated pianist needs to know when to play
@@ -351,10 +355,10 @@ def _move_leads(messages) -> dict[int, tuple[int, int]]:
 
 
 def _gates(planned: list[PlannedNote]) -> list[tuple[int, frozenset[int]]]:
-    """Pianist onsets (and the keys at each) in time order."""
+    """The human's onsets (and the keys at each) in time order."""
     by_time: dict[int, set[int]] = {}
     for p in planned:
-        if p.part == "pianist":
+        if p.performer == "human":
             by_time.setdefault(p.t_us, set()).add(p.pitch)
     return [(t, frozenset(keys)) for t, keys in sorted(by_time.items())]
 

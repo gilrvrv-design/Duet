@@ -133,6 +133,7 @@ class Instrument(FrozenModel):
     notes: tuple[Note, ...] = ()
     range: tuple[Pitch, Pitch] | None = None
     sound: Sound | None = None
+    midi_program: int = Field(0, ge=0, le=127)  # General MIDI program (0-based) for export
     # How far a note may sound from its name and still play that note. Calibration
     # renames a note that drifts further (calibration.RENAME_CENTS).
     tolerance_cents: float = Field(50.0, gt=0, le=100)

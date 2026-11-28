@@ -18,7 +18,7 @@ from duet.api.views import duet_view, summary_view
 from duet.compose.service import ComposerError, CompositionError, revise
 from duet.jobs import JobFailure
 from duet.midi_io import read_midi, score_to_midi_bytes
-from duet.performers import repair_bots
+from duet.performers import performers, repair_bots
 from duet.score import MAX_LEVEL, MIN_LEVEL, DuetScore
 from duet.variations import VariationError, is_built_in, vary
 
@@ -54,6 +54,7 @@ def create_duet(ctx: Ctx, score: dict):
         parsed = DuetScore.model_validate(score)
     except ValidationError as exc:
         raise Problem("SCORE_INVALID", str(exc)) from exc
+    performers(parsed)  # every part has an instrument that its performer can play
     return duet_view(library.add_duet(ctx.store, parsed, source="json"), ctx.guard)
 
 

@@ -13,8 +13,8 @@ cases:
   - {id: copyright-trap, prompt: "play Let It Be by the Beatles", difficulty: 1, bars: 8}
   - {id: public-domain, prompt: "Ode to Joy", difficulty: 1, bars: 8}
   - {id: twinkle, prompt: "Twinkle Twinkle Little Star", difficulty: 1, bars: 8}
-  - {id: call-response, prompt: "call and response: the robot asks, you answer", difficulty: 2, bars: 8, lead: robot}
-  - {id: pianist-leads, prompt: "you lead with the tune and the robot adds sparkle", difficulty: 3, bars: 8, lead: pianist}
+  - {id: call-response, prompt: "call and response: the robot asks, you answer", difficulty: 2, bars: 8, lead: bot}
+  - {id: pianist-leads, prompt: "you lead with the tune and the robot adds sparkle", difficulty: 3, bars: 8, lead: human}
   - {id: fast-jig, prompt: "a fast Irish jig", difficulty: 3, bars: 8}
   - {id: ragtime, prompt: "a bouncy ragtime piece", difficulty: 4, bars: 8}
   - {id: chorale, prompt: "a calm chorale with long notes", difficulty: 2, bars: 8}

@@ -48,6 +48,9 @@ def difficulty_rules(level: int) -> str:
     return f"Pianist difficulty level {level} of 5: " + "; ".join(parts) + "."
 
 
+LEAD_WORDS = {"bot": "the robot", "human": "the pianist"}  # for a CompositionRequest.lead
+
+
 def request_message(
     prompt: str,
     *,
@@ -62,7 +65,7 @@ def request_message(
     lines = [
         f"Request: {prompt}",
         f"Length: {bars} bars.",
-        f"Who leads with the melody: {lead}.",
+        f"Who leads with the melody: {LEAD_WORDS[lead]}.",
         f"Pianist range: {pianist_range[0]} to {pianist_range[1]}.",
         difficulty_rules(difficulty),
     ]

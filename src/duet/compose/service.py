@@ -7,7 +7,7 @@ a scripted fake and production uses Claude (see :mod:`duet.compose.claude`).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,7 +20,7 @@ from duet.pitch import midi_to_name
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.progress import Progress, no_progress
 from duet.repair import Change
-from duet.score import DuetScore, Level, Tempo
+from duet.score import DuetScore, Duo, Level, Performer, Tempo
 
 MAX_FEEDBACK_ROUNDS = 3
 
@@ -37,7 +37,7 @@ class CompositionRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
     difficulty: Level = 2
     bars: int = Field(8, ge=1, le=64)
-    lead: Literal["robot", "pianist"] = "robot"
+    lead: Performer = "bot"  # who has the melody
     pianist_range: tuple[str, str] = ("C4", "C5")
     tempo_bpm: Tempo | None = None
     time_signature: tuple[int, int] | None = None
@@ -111,7 +111,10 @@ def revise(
     draft instead of starting again, and the result is checked like a new composition."""
     robot = robot or robot_profile()
     keyboard = keyboard or keyboard_profile()
-    pianist_range = score.parts["pianist"].range or (keyboard.low, keyboard.high)
+    pianist_range = score.parts[score.part_played_by("human")].range or (
+        keyboard.low,
+        keyboard.high,
+    )
     request = CompositionRequest(
         prompt=score.meta.prompt or score.meta.title,
         difficulty=difficulty or score.meta.difficulty_target or human_difficulty(score),
@@ -146,15 +149,14 @@ def _converse(request, first_message, composer, robot, keyboard, max_rounds, pro
                 prompt=request.prompt,
                 difficulty=request.difficulty,
                 pianist_range=request.pianist_range,
-                robot_profile_id=robot.id,
-                keyboard_profile_id=keyboard.id,
+                duo=_duo(robot, keyboard),
             )
         except DraftError as exc:
             problems = [str(exc)]
         else:
             best = (score, explanation)
-            in_use = {robot.id: robot.to_instrument(), keyboard.id: keyboard.to_instrument()}
-            problems = [p for found in score_problems(score, in_use).values() for p in found]
+            found = score_problems(score, _in_use(robot, keyboard)).values()
+            problems = [p for part_problems in found for p in part_problems]
             if guard is not None:
                 problems += guard.check(score).problems()
             if not problems:
@@ -177,24 +179,31 @@ def _converse(request, first_message, composer, robot, keyboard, max_rounds, pro
     return result
 
 
+def _duo(robot: RobotProfile, keyboard: KeyboardProfile) -> Duo:
+    """The line-up a composition is for: the rig's two parts, on these instruments."""
+    return Duo(bot_instrument=robot.id, human_instrument=keyboard.id)
+
+
+def _in_use(robot: RobotProfile, keyboard: KeyboardProfile) -> dict:
+    return {robot.id: robot.to_instrument(), keyboard.id: keyboard.to_instrument()}
+
+
 def _finish(best, robot, keyboard, rounds, history) -> CompositionResult:
-    """Deterministic last resort: repair the robot part, drop unplayable pianist notes."""
+    """Deterministic last resort: repair the bot's part, drop the person's notes that are
+    off the keyboard or out of their range."""
     score, explanation = best
-    repaired = repair_bots(
-        score, {robot.id: robot.to_instrument(), keyboard.id: keyboard.to_instrument()}
-    )
+    repaired = repair_bots(score, _in_use(robot, keyboard))
     score = repaired.score
-    low, high = score.parts["pianist"].range or (keyboard.low, keyboard.high)
+    human = score.part_played_by("human")
+    low, high = score.parts[human].range or (keyboard.low, keyboard.high)
     keep = [
         e
         for e in score.events
-        if e.part == "robot" or (keyboard.contains(e.pitch) and low <= e.pitch <= high)
+        if e.part != human or (keyboard.contains(e.pitch) and low <= e.pitch <= high)
     ]
     warnings = []
     if len(keep) < len(score.events):
-        warnings.append(f"dropped {len(score.events) - len(keep)} pianist note(s) out of range")
+        warnings.append(f"dropped {len(score.events) - len(keep)} {human} note(s) out of range")
         score = score.with_events(keep)
-    warnings += [
-        p for p in check_pianist(score, keyboard, part="pianist") if p.startswith("too hard")
-    ]
+    warnings += [p for p in check_pianist(score, keyboard, part=human) if p.startswith("too hard")]
     return CompositionResult(score, explanation, rounds, history, repaired.changes, warnings)

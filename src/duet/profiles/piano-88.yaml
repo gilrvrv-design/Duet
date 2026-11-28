@@ -4,6 +4,7 @@ schema: duet-instrument/1
 id: piano-88
 name: Piano (88 keys)
 range: [A0, C8]
+midi_program: 0  # General MIDI acoustic grand piano
 human:
   guide:
     guide: led_strip

@@ -365,3 +365,15 @@ def test_a_user_named_like_a_duet_cannot_overwrite_it(client):
     take = {"duet_id": duet["id"], "played": [{"t_ms": 0, "pitch": 60}]}
     assert client.post(f"/v1/users/{duet['id']}/performances", json=take).status_code == 201
     assert client.get(f"/v1/duets/{duet['id']}").json()["score"]["meta"]["title"]
+
+
+def test_a_line_up_nobody_can_play_is_refused_before_it_is_stored(client):
+    score = json.loads(EXAMPLE)
+    score["parts"]["pianist"] = {"instrument": "bottles-v1", "performer": "human"}
+    refused = client.post("/v1/duets", json=score)
+    assert refused.status_code == 422 and refused.json()["code"] == "LINE_UP_INVALID"
+    assert "Glass bottles cannot be played by a human" in refused.json()["detail"]
+    before = len(client.get("/v1/duets").json())
+    score["parts"]["pianist"] = {"instrument": "kazoo", "performer": "human"}
+    assert client.post("/v1/duets", json=score).json()["code"] == "LINE_UP_INVALID"
+    assert len(client.get("/v1/duets").json()) == before

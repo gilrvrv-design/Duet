@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import statistics
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 
@@ -139,6 +139,7 @@ class Grade:
 class Report:
     grades: list[Grade]
     extras: list[PlayedNote]
+    part: str | None = None  # the score part graded (grade_take); None for bare note lists
 
     def count(self, result: str) -> int:
         return sum(g.result == result for g in self.grades)
@@ -222,16 +223,16 @@ def grade(
     return Report(grades, unused)
 
 
-def grade_take(score, played: list[PlayedNote]) -> Report:
-    """Grade a recorded take of the pianist part at the score's tempo. Recordings start
+def grade_take(score, played: list[PlayedNote], part: str) -> Report:
+    """Grade a recorded take of a human's ``part`` at the score's tempo. Recordings start
     at any moment, so the first played note is lined up with the first expected one."""
     from duet.timing import timed_events
 
     expected = [
         Expected(round(t.start_s * 1e6), t.event.pitch, t.event.bar)
-        for t in timed_events(score, "pianist")
+        for t in timed_events(score, part)
     ]
     if played and expected:
         shift = expected[0].t_us - min(p.t_us for p in played)
         played = [PlayedNote(p.t_us + shift, p.pitch, p.velocity) for p in played]
-    return grade(expected, played)
+    return replace(grade(expected, played), part=part)

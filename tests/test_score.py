@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from duet.score import DuetScore, load_score
+from duet.score import DuetScore, LineUpError, load_score
 from helpers import make_score
 
 EXAMPLE = {
@@ -72,7 +72,7 @@ def test_defaults_fill_parts():
         ({"turns": [{"bars": [2, 1], "lead": "robot"}]}, "turns"),
         ({"meta": {"time_signature": [5, 3]}}, "time signature"),
         ({"meta": {"tempo_bpm": 5}}, "tempo_bpm"),
-        ({"parts": {"robot": {"instrument_profile": "x"}}}, "a bot part 'robot'"),
+        ({"parts": {"robot": {"instrument_profile": "x"}}}, "no part named 'pianist'"),
         ({"unknown": 1}, "unknown"),
     ],
 )
@@ -135,26 +135,33 @@ def test_parts_by_performer():
     assert score.parts_played_by("human") == ["pianist"]
 
 
+def test_any_line_up_with_named_parts():
+    trio = load_score(
+        {
+            "parts": {
+                "bells": {"instrument": "glock-v1", "performer": "bot"},
+                "bottles": {"instrument": "bottles-v1", "performer": "bot"},
+                "me": {"instrument": "piano-88", "performer": "human"},
+            },
+            "events": [
+                {"part": "bells", "bar": 1, "beat": 1, "dur": 1, "pitch": "C6"},
+                {"part": "me", "bar": 1, "beat": 1, "dur": 1, "pitch": "C4"},
+            ],
+        }
+    )
+    assert trio.parts_played_by("bot") == ["bells", "bottles"]
+    assert trio.part_played_by("human") == "me"
+    with pytest.raises(LineUpError, match="exactly one bot part; the score has"):
+        trio.part_played_by("bot")
+
+
 @pytest.mark.parametrize(
     ("parts", "message"),
     [
-        (
-            {
-                "robot": {"instrument": "bottles-v1", "performer": "human"},
-                "pianist": {"instrument": "piano-88", "performer": "human"},
-            },
-            "for now a score has a bot part 'robot'",
-        ),
-        (
-            {
-                "robot": {"instrument": "bottles-v1", "performer": "bot"},
-                "Pianist!": {"instrument": "piano-88", "performer": "human"},
-            },
-            "pattern",
-        ),
+        ({}, "at least one part"),
+        ({"Pianist!": {"instrument": "piano-88", "performer": "human"}}, "pattern"),
     ],
 )
-def test_line_ups_this_version_cannot_play_are_refused(parts, message):
-    v2 = {"schema": "duetscore/2", "parts": parts}
+def test_bad_line_ups_are_refused(parts, message):
     with pytest.raises(ValidationError, match=message):
-        load_score(v2)
+        load_score({"schema": "duetscore/2", "parts": parts})

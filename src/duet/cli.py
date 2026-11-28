@@ -19,7 +19,7 @@ from duet.profile import (
     robot_profile,
     save_profile_file,
 )
-from duet.score import DuetScore, load_score
+from duet.score import DuetScore, Duo, LineUpError, load_score
 from duet.sim import SimulatedRig
 
 
@@ -89,8 +89,7 @@ def cmd_play(args) -> int:
     robot = _robot(args)
     score = read_score(args.score)
     if args.only:
-        part = ONLY[args.only]
-        score = score.only(part)
+        score = score.only(args.only)
         print(f"playing the {args.only} part only ({len(score.events)} notes)")
     score = _playable(score, args)
     if args.device:
@@ -113,16 +112,13 @@ def cmd_play(args) -> int:
         else:
             print(f"waited {perf.waited_us / 1e6:.1f} s for the pianist")
         print(grade(perf.expected_pianist(), perf.played).feedback())
-    planned = [p for p in perf.planned if p.part == "robot"]
+    planned = [p for p in perf.planned if p.performer == "bot"]
     errors = [abs(s.t_us - p.t_us) for s, p in zip(rig.sounds, planned, strict=False)]
     print(f"robot notes: {len(rig.sounds)}/{len(planned)}, LED frames: {len(rig.led_frames)}")
     print(f"max timing error: {max(errors, default=0)} us, faults: {len(rig.faults)}")
     for fault in rig.faults:
         print("  " + fault)
     return 0 if not rig.faults and len(rig.sounds) == len(planned) else 1
-
-
-ONLY = {"robot": "robot", "piano": "pianist"}  # --only choices -> score parts
 
 
 def _keys(args):
@@ -271,7 +267,7 @@ def cmd_grade(args) -> int:
         now += msg.time
         if msg.type == "note_on" and msg.velocity > 0:
             played.append(PlayedNote(round(now * 1e6), msg.note, msg.velocity))
-    report = grade_take(score, played)
+    report = grade_take(score, played, score.part_played_by("human"))
     for g in report.grades:
         if g.result != "hit":
             print(f"bar {g.expected.bar}: {g.result}")
@@ -293,7 +289,7 @@ def cmd_upload(args) -> int:
     robot = _robot(args)
     score = read_score(args.score)
     if args.only:
-        score = score.only(ONLY[args.only])
+        score = score.only(args.only)
     score = _playable(score, args)
     try:
         slot = check_slot(args.slot)
@@ -375,9 +371,10 @@ def cmd_sweep(args) -> int:
 
     robot = _robot(args)
     beat = 1.0  # one strike per second at 60 bpm
+    duo = Duo(bot_instrument=robot.id)
     events = [
         {
-            "part": "robot",
+            "part": duo.bot,
             "bar": int(t // 4) + 1,
             "beat": t % 4 + 1,
             "dur": beat,
@@ -387,7 +384,11 @@ def cmd_sweep(args) -> int:
         for t, i in plan_sweep(robot, interval_s=beat)
     ]
     score = DuetScore.model_validate(
-        {"meta": {"title": "Calibration sweep", "tempo_bpm": 60}, "events": events}
+        {
+            "meta": {"title": "Calibration sweep", "tempo_bpm": 60},
+            "parts": duo.parts(),
+            "events": events,
+        }
     )
     write_score(score, args.out)
     print(f"play {args.out} on the rig and record it, then run: duet calibrate <recording>")
@@ -487,7 +488,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("out", help="output .json or .mid")
     p.add_argument("--difficulty", type=int, default=2)
     p.add_argument("--bars", type=int, default=8)
-    p.add_argument("--lead", choices=["robot", "pianist"], default="robot")
+    p.add_argument("--lead", choices=["bot", "human"], default="bot", help="who has the melody")
     p.add_argument("--model", default=None, help="Claude model id (default: DUET_MODEL or Opus)")
     p.set_defaults(func=cmd_compose)
 
@@ -509,8 +510,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--only",
-        choices=sorted(ONLY),
-        help="play one part alone: the robot solo, or the piano part to practise alone",
+        metavar="PART",
+        help="play one part alone, e.g. robot (the bottles solo) or pianist (practise alone)",
     )
     p.add_argument("--wait", action="store_true", help="wait mode: pause for each pianist note")
     p.add_argument("--follow", action="store_true", help="follow mode: robot keeps your tempo")
@@ -579,7 +580,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("score")
     p.add_argument("--device", required=True, help="ws://host:port or tcp://host:port")
     p.add_argument("--slot", type=int, default=0, help="song slot 0-7 (default 0)")
-    p.add_argument("--only", choices=sorted(ONLY), help="store one part alone")
+    p.add_argument("--only", metavar="PART", help="store one part alone")
     p.add_argument("--play", action="store_true", help="play it right away")
     p.set_defaults(func=cmd_upload)
 
@@ -592,7 +593,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except LineUpError as exc:  # asked for a part the score does not have, or the like
+        print(f"duet {args.command}: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

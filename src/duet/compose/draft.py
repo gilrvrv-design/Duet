@@ -11,7 +11,7 @@ import json
 
 from pydantic import ValidationError
 
-from duet.score import PARTS, DuetScore
+from duet.score import DUO, DuetScore, Duo
 
 NOTE_SCHEMA = {
     "type": "object",
@@ -34,8 +34,8 @@ DRAFT_SCHEMA = {
         "beats_per_bar": {"type": "integer"},
         "beat_unit": {"type": "integer", "description": "4 for quarter-note beats, 8 for eighths"},
         "tempo_bpm": {"type": "number"},
-        "robot": {"type": "array", "items": NOTE_SCHEMA},
-        "pianist": {"type": "array", "items": NOTE_SCHEMA},
+        "robot": {"type": "array", "items": NOTE_SCHEMA, "description": "the bot's notes"},
+        "pianist": {"type": "array", "items": NOTE_SCHEMA, "description": "the person's notes"},
         "explanation": {"type": "string", "description": "one or two plain sentences"},
     },
     "required": [
@@ -56,17 +56,20 @@ class DraftError(ValueError):
     """The composer's output could not be turned into a score. The message is feedback."""
 
 
+# The draft's two voices, as the composer knows them. Code maps them onto a Duo's parts.
+BOT_VOICE, HUMAN_VOICE = "robot", "pianist"
+
+
 def draft_to_score(
     text: str,
     *,
     prompt: str,
     difficulty: int,
     pianist_range: tuple[str, str],
-    robot_profile_id: str = "bottles-v1",
-    keyboard_profile_id: str = "piano-88",
+    duo: Duo = DUO,
 ):
-    """Parse the composer's JSON text into (DuetScore, explanation). The score names
-    the profiles it was composed for."""
+    """Parse the composer's JSON text into (DuetScore, explanation): the bot voice
+    becomes the duo's bot part, the human voice its human part."""
     try:
         draft = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -77,13 +80,13 @@ def draft_to_score(
     if missing:
         raise DraftError(f"missing fields: {', '.join(missing)}")
     events = []
-    for part in PARTS:
-        notes = draft[part]
+    for voice, part in ((BOT_VOICE, duo.bot), (HUMAN_VOICE, duo.human)):
+        notes = draft[voice]
         if not isinstance(notes, list):
-            raise DraftError(f"{part} must be a list of notes")
+            raise DraftError(f"{voice} must be a list of notes")
         for i, note in enumerate(notes):
             if not isinstance(note, dict):
-                raise DraftError(f'{part}[{i}] must be a note object like {{"bar": 1, ...}}')
+                raise DraftError(f'{voice}[{i}] must be a note object like {{"bar": 1, ...}}')
             events.append({**note, "part": part})
     data = {
         "meta": {
@@ -95,14 +98,8 @@ def draft_to_score(
             "difficulty_target": difficulty,
         },
         "parts": {
-            "robot": {"instrument": robot_profile_id, "performer": "bot", "role": "melody"},
-            "pianist": {
-                "instrument": keyboard_profile_id,
-                "performer": "human",
-                "role": "accompaniment",
-                "hand": "right",
-                "range": list(pianist_range),
-            },
+            name: info.model_dump(mode="json", exclude_none=True)
+            for name, info in duo.parts(human_range=pianist_range).items()
         },
         "events": events,
     }
@@ -117,7 +114,9 @@ def draft_to_score(
 
 
 def score_to_draft(score: DuetScore, explanation: str = "") -> str:
-    """Inverse of :func:`draft_to_score`, used to show the composer its own last draft."""
+    """Inverse of :func:`draft_to_score`, used to show the composer its own last draft.
+    The score must be a duet: one bot part and one human part."""
+    bot, human = score.part_played_by("bot"), score.part_played_by("human")
     data = score.to_dict()
 
     def notes(part):
@@ -134,8 +133,8 @@ def score_to_draft(score: DuetScore, explanation: str = "") -> str:
             "beats_per_bar": score.meta.time_signature[0],
             "beat_unit": score.meta.time_signature[1],
             "tempo_bpm": score.meta.tempo_bpm,
-            "robot": notes("robot"),
-            "pianist": notes("pianist"),
+            BOT_VOICE: notes(bot),
+            HUMAN_VOICE: notes(human),
             "explanation": explanation,
         }
     )
