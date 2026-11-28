@@ -25,6 +25,9 @@ class LevelRules:
     black_keys: bool
 
 
+# Where most people play without stretching, when a part gives no range of its own.
+COMFORTABLE_RANGE = (48, 84)  # C3..C6
+
 LEVELS = (
     LevelRules(1, 1.0, 4, 1, offbeats=False, black_keys=False),
     LevelRules(2, 1.5, 5, 1, offbeats=True, black_keys=False),

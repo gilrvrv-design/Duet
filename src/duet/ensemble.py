@@ -12,11 +12,12 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 
+from duet.difficulty import COMFORTABLE_RANGE
 from duet.instruments import Instrument
 from duet.midi_io import TrackNote
 from duet.profile import RobotProfile
 from duet.repair import repair_robot
-from duet.score import DuetScore, PartInfo
+from duet.score import DUO, DuetScore, PartInfo
 from duet.timing import bar_and_beat
 
 
@@ -24,8 +25,8 @@ from duet.timing import bar_and_beat
 class Member:
     name: str
     robot: RobotProfile | None = None  # None: a person
-    low: int = 48  # a person's comfortable range
-    high: int = 84
+    low: int = COMFORTABLE_RANGE[0]
+    high: int = COMFORTABLE_RANGE[1]
 
     @property
     def is_robot(self) -> bool:
@@ -101,7 +102,7 @@ def build_score(
     assignment: Assignment,
     tempo_bpm: float,
     time_signature: tuple[int, int],
-    keyboard: str = "piano-88",
+    keyboard: str = DUO.human_instrument,
 ) -> tuple[DuetScore, dict[str, Instrument]]:
     """One score, one part per member that plays: a bot part per robot (its track's top
     line, made playable at the written tempo), a human part per person (on

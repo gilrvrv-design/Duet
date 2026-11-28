@@ -10,7 +10,7 @@ import math
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from duet.difficulty import clamp_level, pianist_stats, rules_for
+from duet.difficulty import COMFORTABLE_RANGE, clamp_level, pianist_stats, rules_for
 from duet.feasibility import max_speed_up
 from duet.performers import Bot, human_difficulty, in_use, performer, performers
 from duet.pitch import best_transpose, is_black_key
@@ -34,9 +34,6 @@ def is_built_in(instruction: str) -> bool:
     return instruction.strip().lower() in BUILT_IN
 
 
-BEGINNER_RANGE = (48, 84)  # C3..C6, when a score does not give a human part's range
-
-
 def change_tempo(score: DuetScore, factor: float, bots: list[Bot]) -> DuetScore:
     """Scale the tempo; when speeding up, never beyond what every moving bot can play."""
     if factor > 1:
@@ -54,7 +51,7 @@ def simplify_part(score: DuetScore, part: str, target_level: int) -> DuetScore:
     below, jumps shrink (nearest octave, then the nearest allowed key in the same
     direction, inside the part's range), and dense passages keep their strong beats."""
     rules = rules_for(target_level)
-    low, high = score.parts[part].range or BEGINNER_RANGE
+    low, high = score.parts[part].range or COMFORTABLE_RANGE
     events = sorted(score.part_events(part), key=lambda e: (e.bar, e.beat, -e.pitch))
     others = [e for e in score.events if e.part != part]
 

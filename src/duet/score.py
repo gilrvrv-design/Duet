@@ -26,9 +26,9 @@ from duet.pitch import PitchError, midi_to_name, to_midi
 SCHEMA_ID = "duetscore/2"  # 2: named parts, each with an instrument and a performer
 
 PartName = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$")]
-Performer = Literal["bot", "human"]
+PerformerKind = Literal["bot", "human"]  # who plays a part (duet.performers: how)
 # Version 1 had exactly these two parts, played by these performers.
-V1_PERFORMERS: dict[str, Performer] = {"robot": "bot", "pianist": "human"}
+V1_PERFORMERS: dict[str, PerformerKind] = {"robot": "bot", "pianist": "human"}
 COMMON_TIME = (4, 4)
 MIN_LEVEL, MAX_LEVEL = 1, 5  # pianist difficulty levels; the rules are in duet.difficulty
 Level = Annotated[int, Field(ge=MIN_LEVEL, le=MAX_LEVEL)]
@@ -94,7 +94,7 @@ class Meta(_Model):
 
 class PartInfo(_Model):
     instrument: str  # an instrument id (duet.instruments)
-    performer: Performer
+    performer: PerformerKind
     role: str = "melody"
     hand: Literal["left", "right", "both"] | None = None
     range: tuple[Pitch, Pitch] | None = None
@@ -249,7 +249,7 @@ class DuetScore(_Model):
         end = max((e.bar - 1) * beats + (e.beat - 1) + e.dur for e in self.events)
         return max(1, -(-int(end * 1000) // (beats * 1000)))
 
-    def part_played_by(self, performer: Performer) -> str:
+    def part_played_by(self, performer: PerformerKind) -> str:
         """The one part a bot (or a human) plays, for features made for duets (swapping
         the parts, teaching a part). A score with none or several says so."""
         names = self.parts_played_by(performer)
@@ -259,7 +259,7 @@ class DuetScore(_Model):
             )
         return names[0]
 
-    def parts_played_by(self, performer: Performer) -> list[str]:
+    def parts_played_by(self, performer: PerformerKind) -> list[str]:
         """The names of the parts a bot (or a human) plays, in score order."""
         return [name for name, info in self.parts.items() if info.performer == performer]
 

@@ -86,3 +86,10 @@ def best_transpose(pitches: list[int], available: list[int], max_shift: int = 24
         range(-max_shift, max_shift + 1),
         key=lambda k: (coverage([p + k for p in pitches], available), -abs(k), k < 0),
     )
+
+
+def fold_into(pitch: int, available: list[int]) -> int:
+    """``pitch`` moved onto ``available``: its own pitch class in the nearest octave if
+    there is one, else the nearest available pitch (lower on a tie)."""
+    same_class = [p for p in available if p % 12 == pitch % 12]
+    return min(same_class or available, key=lambda p: (abs(p - pitch), p))

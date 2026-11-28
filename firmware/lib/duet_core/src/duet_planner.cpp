@@ -18,6 +18,7 @@ namespace duet {
 namespace {
 
 constexpr double kMarginS = 0.010;    // duet.feasibility.DEFAULT_MARGIN_S
+
 constexpr double kDutySlack = 1e-12;  // _check_duty
 constexpr double kGridBeats = 0.25;   // duet.repair
 constexpr double kMaxShiftBeats = 0.5;
@@ -141,6 +142,11 @@ class Robot {
   std::vector<double> interval_;  // seconds, from * n_ + to
 };
 
+// duet.feasibility.needed_s: the one rule for how soon after a strike the next can come.
+double needed_s(const Robot& robot, int prev_bottle, int bottle) {
+  return robot.interval(prev_bottle, bottle) + kMarginS;
+}
+
 struct Span {
   int32_t first, count;
 };
@@ -250,7 +256,7 @@ size_t fix_timing(Notes& notes, const Robot& robot, const Meter& m) {
       prev_s = t;
       continue;
     }
-    double earliest = prev_s + robot.interval(prev_bottle, bottle) + kMarginS;
+    double earliest = prev_s + needed_s(robot, prev_bottle, bottle);
     if (t >= earliest - kEpsilon) {
       prev_bottle = bottle;
       prev_s = t;
@@ -315,7 +321,7 @@ double slower_tempo(const MidiScore& score, const Robot& robot, double tempo_bpm
     const ScoreEvent &prev = notes[order[k - 1]], &cur = notes[order[k]];
     double gap = m.seconds(cur) - m.seconds(prev);
     if (gap <= kEpsilon) continue;  // simultaneous notes are dropped whatever the tempo
-    double needed = robot.interval(robot.bottle(prev.pitch), robot.bottle(cur.pitch)) + kMarginS;
+    double needed = needed_s(robot, robot.bottle(prev.pitch), robot.bottle(cur.pitch));
     factor = std::max(factor, needed / gap);
   }
   if (factor == 1.0) return 0;
@@ -329,7 +335,7 @@ const char* violation(const Notes& notes, const Robot& robot, const Meter& m) {
   for (size_t k = 1; k < order.size(); ++k) {
     const ScoreEvent &prev = notes[order[k - 1]], &cur = notes[order[k]];
     double gap = m.seconds(cur) - m.seconds(prev);
-    double needed = robot.interval(robot.bottle(prev.pitch), robot.bottle(cur.pitch)) + kMarginS;
+    double needed = needed_s(robot, robot.bottle(prev.pitch), robot.bottle(cur.pitch));
     if (gap <= kEpsilon) return "two notes at once";
     if (gap < needed - kEpsilon) return "a note too soon after the one before";  // as repair
   }

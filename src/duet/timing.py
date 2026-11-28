@@ -70,12 +70,14 @@ def onset_groups(timed: list[TimedEvent]) -> list[list[TimedEvent]]:
     return groups
 
 
+def sounding_at(timed: list[TimedEvent], t_s: float) -> list[TimedEvent]:
+    """The notes sounding at ``t_s`` (a note ending as another starts does not overlap)."""
+    return [o for o in timed if o.start_s <= t_s + EPSILON < o.end_s]
+
+
 def polyphony(timed: list[TimedEvent]) -> int:
-    """Most notes sounding at once (a note ending as another starts does not overlap)."""
-    return max(
-        (sum(1 for o in timed if o.start_s <= t.start_s + EPSILON < o.end_s) for t in timed),
-        default=0,
-    )
+    """Most notes sounding at once."""
+    return max((len(sounding_at(timed, t.start_s)) for t in timed), default=0)
 
 
 def score_duration_s(score: DuetScore) -> float:

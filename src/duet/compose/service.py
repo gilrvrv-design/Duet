@@ -20,7 +20,7 @@ from duet.pitch import midi_to_name
 from duet.profile import KeyboardProfile, RobotProfile, keyboard_profile, robot_profile
 from duet.progress import Progress, no_progress
 from duet.repair import Change
-from duet.score import DuetScore, Duo, Level, Performer, Tempo
+from duet.score import DuetScore, Duo, Level, PerformerKind, Tempo
 
 MAX_FEEDBACK_ROUNDS = 3
 
@@ -37,7 +37,7 @@ class CompositionRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
     difficulty: Level = 2
     bars: int = Field(8, ge=1, le=64)
-    lead: Performer = "bot"  # who has the melody
+    lead: PerformerKind = "bot"  # who has the melody
     pianist_range: tuple[str, str] = ("C4", "C5")
     tempo_bpm: Tempo | None = None
     time_signature: tuple[int, int] | None = None

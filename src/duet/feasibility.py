@@ -105,6 +105,12 @@ class StrikeGap:
         return self.gap_s <= EPSILON
 
 
+def needed_s(matrix, prev_bottle: int, bottle: int, margin_s: float = DEFAULT_MARGIN_S) -> float:
+    """The one rule for what the robot can play: how soon after a strike on
+    ``prev_bottle`` the next can be on ``bottle`` (travel, the striker, and a margin)."""
+    return matrix.min_interval(prev_bottle, bottle) + margin_s
+
+
 def strike_gaps(
     strikes: list[_Strike], profile: RobotProfile, margin_s: float = DEFAULT_MARGIN_S
 ) -> list[StrikeGap]:
@@ -115,7 +121,7 @@ def strike_gaps(
             prev,
             cur,
             cur.time_s - prev.time_s,
-            matrix.min_interval(prev.bottle, cur.bottle) + margin_s,
+            needed_s(matrix, prev.bottle, cur.bottle, margin_s),
         )
         for prev, cur in zip(strikes, strikes[1:], strict=False)
     ]

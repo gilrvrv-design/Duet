@@ -9,11 +9,11 @@ notes beyond the polyphony; planning turns each note into a note on and a note o
 from __future__ import annotations
 
 from duet.instruments import Instrument, MidiOut
-from duet.pitch import midi_to_name
+from duet.pitch import fold_into, midi_to_name
 from duet.protocol import NoteAt
 from duet.repair import Change, RepairResult
 from duet.score import DuetScore, Event
-from duet.timing import EPSILON, timed_events
+from duet.timing import sounding_at, timed_events
 
 
 def _mechanism(inst: Instrument) -> MidiOut:
@@ -33,7 +33,7 @@ def problems(score: DuetScore, part: str, inst: Instrument) -> list[str]:
     ]
     timed = timed_events(score, part)
     for t in timed:
-        at_once = sum(1 for o in timed if o.start_s <= t.start_s + EPSILON < o.end_s)
+        at_once = len(sounding_at(timed, t.start_s))
         if at_once > mech.polyphony:
             found.append(
                 f"bar {t.event.bar} beat {t.event.beat:g}: {at_once} notes at once "
@@ -54,13 +54,7 @@ def repair(score: DuetScore, part: str, inst: Instrument) -> RepairResult:
         if e.part != part or low <= e.pitch <= high:
             events.append(e)
             continue
-        pitch = e.pitch
-        while pitch < low:
-            pitch += 12
-        while pitch > high:
-            pitch -= 12
-        if not low <= pitch <= high:  # a range narrower than an octave
-            pitch = min(high, max(low, e.pitch))
+        pitch = fold_into(e.pitch, inst.pitches)
         changes.append(
             Change("fold", e.bar, e.beat, f"{midi_to_name(e.pitch)} -> {midi_to_name(pitch)}")
         )
@@ -70,7 +64,7 @@ def repair(score: DuetScore, part: str, inst: Instrument) -> RepairResult:
     dropped: set[int] = set()
     kept = []
     for t in timed:
-        sounding = [k for k in kept if k.start_s <= t.start_s + EPSILON < k.end_s]
+        sounding = sounding_at(kept, t.start_s)
         if len(sounding) >= mech.polyphony:
             dropped.add(id(t.event))
             changes.append(

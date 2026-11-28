@@ -33,7 +33,7 @@ from duet.profile import (
     robot_profile,
     save_profile_file,
 )
-from duet.score import DuetScore, Duo, LineUpError, load_score
+from duet.score import DUO, DuetScore, Duo, LineUpError, load_score
 from duet.sim import SimulatedRig
 from duet.songs import SongError
 from duet.variations import VariationError
@@ -546,9 +546,9 @@ def cmd_transcribe(args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="duet", description=__doc__)
     parser.add_argument(
-        "--robot", default="bottles-v1", help="robot profile id or calibrated .yaml file"
+        "--robot", default=DUO.bot_instrument, help="robot profile id or calibrated .yaml file"
     )
-    parser.add_argument("--piano", default="piano-88", help="keyboard profile")
+    parser.add_argument("--piano", default=DUO.human_instrument, help="keyboard profile")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("check", help="can the robot play this score?")

@@ -16,9 +16,16 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from duet.feasibility import DEFAULT_MARGIN_S, Code, check_robot, robot_strikes, strike_gaps
+from duet.feasibility import (
+    DEFAULT_MARGIN_S,
+    Code,
+    check_robot,
+    needed_s,
+    robot_strikes,
+    strike_gaps,
+)
 from duet.kinematics import reachability
-from duet.pitch import midi_to_name
+from duet.pitch import fold_into, midi_to_name
 from duet.profile import RobotProfile
 from duet.score import DuetScore, Event
 from duet.timing import EPSILON, bar_and_beat, beat_index, seconds_per_beat
@@ -26,7 +33,7 @@ from duet.timing import EPSILON, bar_and_beat, beat_index, seconds_per_beat
 GRID_BEATS = 0.25
 MAX_SHIFT_BEATS = 0.5
 MAX_DROP_RATIO = 0.2
-MIN_TEMPO_BPM = 40.0
+REPAIR_MIN_TEMPO_BPM = 40.0  # repair never slows a piece below this
 
 
 @dataclass(frozen=True)
@@ -103,7 +110,7 @@ def _fold(
         if event.part != part or profile.bottle_index(event.pitch) is not None:
             out.append(event)
             continue
-        target = _fold_pitch(event.pitch, profile.pitches)
+        target = fold_into(event.pitch, profile.pitches)
         changes.append(
             Change(
                 "fold",
@@ -114,13 +121,6 @@ def _fold(
         )
         out.append(event.revised({"pitch": target}))
     return out
-
-
-def _fold_pitch(pitch: int, available: list[int]) -> int:
-    """Same pitch class in the nearest octave if a bottle has it, else the nearest bottle."""
-    same_class = [p for p in available if p % 12 == pitch % 12]
-    pool = same_class or available
-    return min(pool, key=lambda p: (abs(p - pitch), p))
 
 
 def _fix_timing(
@@ -141,7 +141,7 @@ def _fix_timing(
         if prev is None:
             prev = (strike.bottle, strike.time_s)
             continue
-        earliest = prev[1] + matrix.min_interval(prev[0], strike.bottle) + margin_s
+        earliest = prev[1] + needed_s(matrix, prev[0], strike.bottle, margin_s)
         if strike.time_s >= earliest - EPSILON:
             prev = (strike.bottle, strike.time_s)
             continue
@@ -201,4 +201,4 @@ def _slower_tempo(
     factor = max(factor, 1.0)
     if factor == 1.0:
         return None
-    return max(MIN_TEMPO_BPM, math.floor(score.meta.tempo_bpm / factor))
+    return max(REPAIR_MIN_TEMPO_BPM, math.floor(score.meta.tempo_bpm / factor))

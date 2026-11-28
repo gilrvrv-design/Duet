@@ -26,6 +26,7 @@ from duet.instruments import (
     save_instrument_file,
 )
 from duet.pitch import cents_between, midi_to_hz
+from duet.score import DUO
 
 __all__ = [
     "Bottle",
@@ -171,9 +172,9 @@ def load_profile(profile_id: str) -> Profile:
     return _view(instrument(profile_id))
 
 
-def robot_profile(profile_id: str = "bottles-v1") -> RobotProfile:
+def robot_profile(profile_id: str = DUO.bot_instrument) -> RobotProfile:
     return RobotProfile(instrument(profile_id))
 
 
-def keyboard_profile(profile_id: str = "piano-88") -> KeyboardProfile:
+def keyboard_profile(profile_id: str = DUO.human_instrument) -> KeyboardProfile:
     return KeyboardProfile(instrument(profile_id))

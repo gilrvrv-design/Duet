@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from duet.difficulty import COMFORTABLE_RANGE
 from duet.listening import PlayedNote, wait_for_pitches
 from duet.pitch import midi_to_hz
 from duet.profile import RobotProfile
@@ -40,7 +41,7 @@ class RobotSound:
 class MicListener:
     sr: int
     robot: RobotProfile | None = None
-    piano_range: tuple[int, int] = (48, 84)  # C3..C6
+    piano_range: tuple[int, int] = COMFORTABLE_RANGE  # what the pianist plays
     flux_threshold: float = 0.5  # relative to the loudest attack heard so far
     residual_ratio: float = 0.35  # what must remain after masking to count as piano
     robot_sounds: list[RobotSound] = field(default_factory=list)

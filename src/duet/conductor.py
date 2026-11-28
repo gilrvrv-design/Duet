@@ -18,7 +18,7 @@ from duet.listening import KeyInput
 from duet.performers import NO_OVERRIDES, Bot, Instruments, performers
 from duet.plans import HOME_STEPS, LedCue, RobotPlan, led_plan, robot_plan
 from duet.protocol import CHANNEL_KIND, Home, LedFrameAt, Message, MoveAt, StrikeAt, message_time_us
-from duet.score import DuetScore, Performer
+from duet.score import DuetScore, PerformerKind
 from duet.timing import seconds_per_beat, timed_events
 
 OFF = (0, 0, 0)
@@ -74,7 +74,7 @@ class VirtualClock:
 @dataclass(frozen=True)
 class PlannedNote:
     part: str
-    performer: Performer
+    performer: PerformerKind
     t_us: int
     pitch: int
     bar: int = 0
